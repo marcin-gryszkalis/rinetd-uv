@@ -61,10 +61,8 @@ int globalRulesCount = 0;
 ServerInfo *seInfo = NULL;
 int seTotal = 0;
 
-/* Connection management - now using dynamic allocation instead of pool */
-static ConnectionInfo *connectionListHead = NULL;
-static int activeConnections = 0;
-static int totalConnections = 0;  /* For statistics */
+ConnectionInfo *coInfo = NULL;
+int coTotal = 0;
 
 /* On Windows, the maximum number of file descriptors in an fd_set
 	is simply FD_SETSIZE and the first argument to select() is
@@ -125,7 +123,8 @@ static int forked = 0;
 
 static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes);
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket);
-static ConnectionInfo *allocateConnection(void);
+static ConnectionInfo *findAvailableConnection(void);
+static void setConnectionCount(int newCount);
 static int checkConnectionAllowed(ConnectionInfo const *cnx);
 
 static int readArgs (int argc, char **argv, RinetdOptions *options);
@@ -267,8 +266,9 @@ void logInfo(char const *fmt, ...)
 }
 
 static void clearConfiguration(void) {
-	/* Remove server references from all active connections */
-	for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next) {
+	/* Remove references to server information */
+	for (int i = 0; i < coTotal; ++i) {
+		ConnectionInfo *cnx = &coInfo[i];
 		cnx->server = NULL;
 	}
 	/* Close existing server sockets. */
@@ -414,54 +414,79 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
 	++seTotal;
 }
 
-/* Allocate a new connection dynamically */
-static ConnectionInfo *allocateConnection(void)
+static void setConnectionCount(int newCount)
 {
-	ConnectionInfo *cnx = (ConnectionInfo*)malloc(sizeof(ConnectionInfo));
-	if (!cnx) {
-		logError("malloc failed for ConnectionInfo\n");
-		return NULL;
+	if (newCount == coTotal) {
+		return;
 	}
 
-	/* Initialize all fields */
-	memset(cnx, 0, sizeof(*cnx));
+	for (int i = newCount; i < coTotal; ++i) {
+		if (coInfo[i].local.fd != INVALID_SOCKET) {
+			closesocket(coInfo[i].local.fd);
+		}
+		if (coInfo[i].remote.fd != INVALID_SOCKET) {
+			if (coInfo[i].remote.protocol == IPPROTO_TCP)
+				closesocket(coInfo[i].remote.fd);
+		}
+		free(coInfo[i].local.buffer);
+	}
 
-	/* Allocate buffers for both sockets */
-	cnx->local.buffer = (char*)malloc(sizeof(char) * 2 * RINETD_BUFFER_SIZE);
-	if (!cnx->local.buffer) {
-		logError("malloc failed for connection buffers\n");
-		free(cnx);
+	if (newCount == 0) {
+		free(coInfo);
+		coInfo = NULL;
+		coTotal = 0;
+		return;
+	}
+
+	ConnectionInfo * newCoInfo = (ConnectionInfo *)
+		malloc(sizeof(ConnectionInfo) * newCount);
+	if (!newCoInfo) {
+		return;
+	}
+
+	memcpy(newCoInfo, coInfo, sizeof(ConnectionInfo) * coTotal);
+
+	for (int i = coTotal; i < newCount; ++i) {
+		ConnectionInfo *cnx = &newCoInfo[i];
+		memset(cnx, 0, sizeof(*cnx));
+		cnx->local.fd = INVALID_SOCKET;
+		cnx->remote.fd = INVALID_SOCKET;
+		cnx->local.buffer = (char *) malloc(sizeof(char) * 2 * RINETD_BUFFER_SIZE);
+		if (!cnx->local.buffer) {
+			while (i-- >= coTotal) {
+				free(newCoInfo[i].local.buffer);
+			}
+			free(newCoInfo);
+			return;
+		}
+		cnx->remote.buffer = cnx->local.buffer + RINETD_BUFFER_SIZE;
+	}
+
+	free(coInfo);
+	coInfo = newCoInfo;
+	coTotal = newCount;
+}
+
+static ConnectionInfo *findAvailableConnection(void)
+{
+	/* Find an existing closed connection to reuse */
+	for (int j = 0; j < coTotal; ++j) {
+		if (coInfo[j].local.fd == INVALID_SOCKET
+			&& coInfo[j].remote.fd == INVALID_SOCKET) {
+			return &coInfo[j];
+		}
+	}
+
+	/* Allocate new connections and pick the first one */
+	int oldTotal = coTotal;
+	setConnectionCount(coTotal * 4 / 3 + 8);
+	if (coTotal == oldTotal) {
+		logError("not enough memory to add slots. "
+			"Currently %d slots.\n", coTotal);
+		/* Go back to the previous total number of slots */
 		return NULL;
 	}
-	cnx->remote.buffer = cnx->local.buffer + RINETD_BUFFER_SIZE;
-
-	/* Initialize socket state */
-	cnx->local.fd = INVALID_SOCKET;
-	cnx->remote.fd = INVALID_SOCKET;
-	cnx->local.recvPos = cnx->local.sentPos = 0;
-	cnx->remote.recvPos = cnx->remote.sentPos = 0;
-	cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
-	cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
-
-	/* Initialize handle state */
-	cnx->local_handle_initialized = 0;
-	cnx->remote_handle_initialized = 0;
-	cnx->timer_initialized = 0;
-	cnx->local_handle_closing = 0;
-	cnx->remote_handle_closing = 0;
-	cnx->timer_closing = 0;
-
-	cnx->coClosing = 0;
-	cnx->coLog = logUnknownError;
-
-	/* Add to linked list */
-	cnx->next = connectionListHead;
-	connectionListHead = cnx;
-
-	activeConnections++;
-	totalConnections++;
-
-	return cnx;
+	return &coInfo[oldTotal];
 }
 
 /* libuv callback forward declarations */
@@ -470,8 +495,6 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                                const uv_buf_t *buf,
                                const struct sockaddr *addr,
                                unsigned flags);
-static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
-                                       uv_buf_t *buf);
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
                             uv_buf_t *buf);
 
@@ -515,7 +538,7 @@ static void startServerListening(ServerInfo *srv)
 
 		/* Start receiving datagrams */
 		int ret = uv_udp_recv_start(&srv->uv_handle.udp,
-		                            alloc_buffer_udp_server_cb, udp_server_recv_cb);
+		                            alloc_buffer_cb, udp_server_recv_cb);
 		if (ret != 0) {
 			logError("uv_udp_recv_start() failed: %s\n", uv_strerror(ret));
 			exit(1);
@@ -538,17 +561,9 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
 	if (status < 0) {
 		logError("connect error: %s\n", uv_strerror(status));
 		logEvent(cnx, cnx->server, logLocalConnectFailed);
-		/* Close local handle that was initialized but failed to connect */
-		uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
-		/* Close remote handle */
-		if (cnx->remote_handle_initialized) {
-			uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
-		}
+		handleClose(cnx, &cnx->local, &cnx->remote);
 		return;
 	}
-
-	/* Mark local handle as initialized now that connection succeeded */
-	cnx->local_handle_initialized = 1;
 
 	/* Extract fd for Socket struct */
 	uv_os_fd_t fd;
@@ -585,7 +600,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	}
 
 	ServerInfo *srv = (ServerInfo*)server->data;
-	ConnectionInfo *cnx = allocateConnection();
+	ConnectionInfo *cnx = findAvailableConnection();
 	if (!cnx) {
 		return;
 	}
@@ -600,7 +615,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	int ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.tcp);
 	if (ret != 0) {
 		logError("uv_accept error: %s\n", uv_strerror(ret));
-		uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+		uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, NULL);
+		cnx->remote_handle_initialized = 0;
 		return;
 	}
 
@@ -637,6 +653,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	int logCode = checkConnectionAllowed(cnx);
 	if (logCode != logAllowed) {
 		uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+		cnx->remote_handle_initialized = 0;
 		logEvent(cnx, srv, logCode);
 		return;
 	}
@@ -644,6 +661,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	/* Initialize local handle (backend connection) */
 	uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
 	cnx->local_handle_type = UV_TCP;
+	cnx->local_handle_initialized = 1;
 	cnx->local_uv_handle.tcp.data = cnx;
 
 	/* Bind to source address if specified */
@@ -660,9 +678,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
 	if (!connect_req) {
 		logError("malloc failed for connect request\n");
-		/* Close both handles - local was initialized but never connected */
-		uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
-		uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+		handleClose(cnx, &cnx->local, &cnx->remote);
 		return;
 	}
 	connect_req->data = cnx;
@@ -672,9 +688,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	if (ret != 0) {
 		logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
 		free(connect_req);
-		/* Close both handles - local was initialized but never connected */
-		uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
-		uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+		handleClose(cnx, &cnx->local, &cnx->remote);
 		return;
 	}
 
@@ -682,33 +696,15 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	/* This will be done in tcp_connect_cb */
 }
 
-/* Buffer allocation callback for UDP server sockets */
-static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
-                                       uv_buf_t *buf)
-{
-	(void)handle;
-	(void)suggested_size;
-
-	/* Allocate a temporary buffer for UDP datagrams */
-	buf->base = malloc(65536);
-	if (!buf->base) {
-		buf->len = 0;
-	} else {
-		buf->len = 65536;
-	}
-}
-
-/* Buffer allocation callback for libuv reads (connections) */
+/* Buffer allocation callback for libuv reads */
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
                             uv_buf_t *buf)
 {
-	(void)suggested_size;
-
 	ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
 	if (!cnx) {
-		/* Should not happen for connection sockets */
-		buf->base = NULL;
-		buf->len = 0;
+		/* For UDP server sockets, we need to allocate a temporary buffer */
+		buf->base = malloc(65536);
+		buf->len = 65536;
 		return;
 	}
 
@@ -750,11 +746,14 @@ static void tcp_trigger_write(ConnectionInfo *cnx, Socket *socket,
 		return;
 	}
 
-	/* Store connection info for callback */
-	req->data = cnx;
+	/* Store socket info for callback */
+	req->data = socket;
 
 	int to_send = other_socket->recvPos - socket->sentPos;
 	uv_buf_t wrbuf = uv_buf_init(other_socket->buffer + socket->sentPos, to_send);
+
+	logError("tcp_trigger_write: sending %d bytes (recvPos=%d, sentPos=%d)\n",
+	         to_send, other_socket->recvPos, socket->sentPos);
 
 	int ret = uv_write(req, stream, &wrbuf, 1, tcp_write_cb);
 	if (ret != 0) {
@@ -798,6 +797,9 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 	socket->recvPos += nread;
 	socket->totalBytesIn += nread;
 
+	logError("tcp_read_cb: read %ld bytes on %s, recvPos=%d\n",
+	         (long)nread, socket == &cnx->local ? "local" : "remote", socket->recvPos);
+
 	/* Trigger write to other socket */
 	tcp_trigger_write(cnx, other_socket, socket, other_stream);
 }
@@ -805,18 +807,31 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 /* TCP write completion callback */
 static void tcp_write_cb(uv_write_t *req, int status)
 {
-	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+	Socket *socket = (Socket*)req->data;
 
-	/* Determine which socket based on the handle */
-	Socket *socket, *other_socket;
-	uv_stream_t *stream = req->handle;
+	/* Find the connection - need to search through coInfo */
+	ConnectionInfo *cnx = NULL;
+	for (int i = 0; i < coTotal; ++i) {
+		if (&coInfo[i].local == socket || &coInfo[i].remote == socket) {
+			cnx = &coInfo[i];
+			break;
+		}
+	}
 
-	if (stream == (uv_stream_t*)&cnx->local_uv_handle.tcp) {
-		socket = &cnx->local;
+	if (!cnx) {
+		free(req);
+		return;
+	}
+
+	/* Determine which socket and other socket */
+	Socket *other_socket;
+	uv_stream_t *stream;
+	if (socket == &cnx->local) {
 		other_socket = &cnx->remote;
+		stream = (uv_stream_t*)&cnx->local_uv_handle.tcp;
 	} else {
-		socket = &cnx->remote;
 		other_socket = &cnx->local;
+		stream = (uv_stream_t*)&cnx->remote_uv_handle.tcp;
 	}
 
 	free(req);
@@ -844,57 +859,12 @@ static void tcp_write_cb(uv_write_t *req, int status)
 	}
 }
 
-/* Helper to close a connection's handle and mark it as closing */
-static void close_connection_handle(ConnectionInfo *cnx, uv_handle_t *handle, int *closing_flag)
-{
-	if (handle && !uv_is_closing(handle)) {
-		*closing_flag = 1;
-		uv_close(handle, handle_close_cb);
-	}
-}
-
 /* Handle close callback */
 static void handle_close_cb(uv_handle_t *handle)
 {
 	/* Called after handle fully closed */
-	if (!handle || !handle->data) {
-		return;
-	}
-
-	ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
-
-	/* Mark the specific handle as closed */
-	if ((uv_handle_t*)&cnx->local_uv_handle == handle) {
-		cnx->local_handle_closing = 0;
-		cnx->local_handle_initialized = 0;
-	} else if ((uv_handle_t*)&cnx->remote_uv_handle == handle) {
-		cnx->remote_handle_closing = 0;
-		cnx->remote_handle_initialized = 0;
-	} else if ((uv_handle_t*)&cnx->timeout_timer == handle) {
-		cnx->timer_closing = 0;
-		cnx->timer_initialized = 0;
-	}
-
-	/* Check if all handles are closed - if so, free the connection */
-	if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
-	    !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
-	    !cnx->timer_initialized && !cnx->timer_closing) {
-		/* All handles are closed - remove from list and free */
-
-		/* Remove from linked list */
-		ConnectionInfo **ptr = &connectionListHead;
-		while (*ptr) {
-			if (*ptr == cnx) {
-				*ptr = cnx->next;
-				break;
-			}
-			ptr = &(*ptr)->next;
-		}
-
-		activeConnections--;
-		free(cnx->local.buffer);  /* This also frees remote.buffer */
-		free(cnx);
-	}
+	/* Cleanup is done via handle_initialized flags */
+	(void)handle;  /* Unused */
 }
 
 /* Forward declarations for UDP */
@@ -1046,12 +1016,11 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
 	/* Look for existing connection from this address */
 	ConnectionInfo *cnx = NULL;
-	for (ConnectionInfo *c = connectionListHead; c; c = c->next) {
-		if (c->remote.fd == (SOCKET)server_fd &&
-		    c->remote.protocol == IPPROTO_UDP &&
-		    sameSocketAddress(&c->remoteAddress,
+	for (int i = 0; i < coTotal; ++i) {
+		if (coInfo[i].remote.fd == (SOCKET)server_fd &&
+		    sameSocketAddress(&coInfo[i].remoteAddress,
 		                      (struct sockaddr_storage*)addr)) {
-			cnx = c;
+			cnx = &coInfo[i];
 			break;
 		}
 	}
@@ -1068,18 +1037,22 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 	}
 
 	/* New connection */
-	cnx = allocateConnection();
+	cnx = findAvailableConnection();
 	if (!cnx) {
 		free(buf->base);
 		return;
 	}
 
-	/* Setup UDP-specific connection state (allocateConnection already initialized most fields) */
+	/* Setup connection state */
 	cnx->remote.fd = server_fd;
 	cnx->remote.family = srv->fromAddrInfo->ai_family;
 	cnx->remote.protocol = IPPROTO_UDP;
+	cnx->remote.recvPos = cnx->remote.sentPos = 0;
+	cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
 	cnx->remoteAddress = *(struct sockaddr_storage*)addr;
 	cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
+	cnx->coClosing = 0;
+	cnx->coLog = logUnknownError;
 	cnx->server = srv;
 
 	/* Remote handle shared with server (don't initialize separate handle) */
@@ -1136,7 +1109,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
 	/* Start receiving on local socket */
 	ret = uv_udp_recv_start(&cnx->local_uv_handle.udp,
-	                        alloc_buffer_udp_server_cb, udp_local_recv_cb);
+	                        alloc_buffer_cb, udp_local_recv_cb);
 	if (ret != 0) {
 		logError("uv_udp_recv_start (local) error: %s\n", uv_strerror(ret));
 		handleClose(cnx, &cnx->local, &cnx->remote);
@@ -1154,6 +1127,139 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 	logEvent(cnx, srv, logOpened);
 }
 
+static void selectPass(void)
+{
+	int const fdSetCount = maxfd / FD_SETSIZE + 1;
+#	define FD_ZERO_EXT(ar) for (int i = 0; i < fdSetCount; ++i) { FD_ZERO(&(ar)[i]); }
+#ifdef _WIN32
+	/* On Windows, only one fd_set is usable because of its structure. */
+#	define FD_SET_EXT(fd, ar) FD_SET(fd, &(ar)[0])
+#	define FD_ISSET_EXT(fd, ar) FD_ISSET(fd, &(ar)[0])
+#else
+#	define FD_SET_EXT(fd, ar) FD_SET((fd) % FD_SETSIZE, &(ar)[(fd) / FD_SETSIZE])
+#	define FD_ISSET_EXT(fd, ar) FD_ISSET((fd) % FD_SETSIZE, &(ar)[(fd) / FD_SETSIZE])
+#endif
+
+	/* Timeout value -- infinite by default */
+	struct timeval timeout;
+	timeout.tv_sec = timeout.tv_usec = 0;
+	time_t now = time(NULL);
+
+#ifdef _MSC_VER
+	fd_set* readfds = (fd_set*)alloca(sizeof(*readfds) * fdSetCount);
+	fd_set* writefds = (fd_set*)alloca(sizeof(*writefds) * fdSetCount);
+#else
+	fd_set readfds[fdSetCount], writefds[fdSetCount];
+#endif
+	FD_ZERO_EXT(readfds);
+	FD_ZERO_EXT(writefds);
+	/* Server sockets */
+	for (int i = 0; i < seTotal; ++i) {
+		if (seInfo[i].fd != INVALID_SOCKET) {
+			FD_SET_EXT(seInfo[i].fd, readfds);
+		}
+	}
+	/* Connection sockets */
+	for (int i = 0; i < coTotal; ++i) {
+		ConnectionInfo *cnx = &coInfo[i];
+		if (cnx->local.fd != INVALID_SOCKET) {
+			/* Accept more output from the local
+				server if there's room */
+			if (cnx->local.recvPos < RINETD_BUFFER_SIZE) {
+				FD_SET_EXT(cnx->local.fd, readfds);
+			}
+			/* Send more input to the local server
+				if we have any, or if we’re closing */
+			if (cnx->local.sentPos < cnx->remote.recvPos || cnx->coClosing) {
+				FD_SET_EXT(cnx->local.fd, writefds);
+			}
+		}
+		if (cnx->remote.fd != INVALID_SOCKET) {
+			/* Get more input if we have room for it */
+			if (cnx->remote.recvPos < RINETD_BUFFER_SIZE) {
+				FD_SET_EXT(cnx->remote.fd, readfds);
+				/* For UDP connections, we need to handle timeouts */
+				if (cnx->remote.protocol == IPPROTO_UDP) {
+					long delay = (long)(cnx->remoteTimeout - now);
+					timeout.tv_sec = delay <= 1 ? 1
+						: (delay < timeout.tv_sec || timeout.tv_sec == 0) ? delay
+						: timeout.tv_sec;
+				}
+			}
+			/* Send more output if we have any, or if we’re closing */
+			if (cnx->remote.sentPos < cnx->local.recvPos || cnx->coClosing) {
+				FD_SET_EXT(cnx->remote.fd, writefds);
+			}
+		}
+	}
+
+	select(maxfd + 1, readfds, writefds, 0, timeout.tv_sec ? &timeout : NULL);
+	for (int i = 0; i < coTotal; ++i) {
+		ConnectionInfo *cnx = &coInfo[i];
+		if (cnx->remote.fd != INVALID_SOCKET) {
+			/* Do not read on remote UDP sockets, the server does it,
+				but handle timeouts instead. */
+			if (cnx->remote.protocol == IPPROTO_TCP) {
+				if (FD_ISSET_EXT(cnx->remote.fd, readfds)) {
+					handleRead(cnx, &cnx->remote, &cnx->local);
+				}
+			} else {
+				if (now > cnx->remoteTimeout) {
+					handleClose(cnx, &cnx->remote, &cnx->local);
+				}
+			}
+		}
+		if (cnx->remote.fd != INVALID_SOCKET) {
+			if (FD_ISSET_EXT(cnx->remote.fd, writefds)) {
+				handleWrite(cnx, &cnx->remote, &cnx->local);
+			}
+		}
+		if (cnx->local.fd != INVALID_SOCKET) {
+			if (FD_ISSET_EXT(cnx->local.fd, readfds)) {
+				handleRead(cnx, &cnx->local, &cnx->remote);
+			}
+		}
+		if (cnx->local.fd != INVALID_SOCKET) {
+			if (FD_ISSET_EXT(cnx->local.fd, writefds)) {
+				handleWrite(cnx, &cnx->local, &cnx->remote);
+			}
+		}
+	}
+	/* Handle servers last because handleAccept() may modify coTotal */
+	for (int i = 0; i < seTotal; ++i) {
+		ServerInfo *srv = &seInfo[i];
+		if (srv->fd != INVALID_SOCKET) {
+			if (FD_ISSET_EXT(srv->fd, readfds)) {
+				handleAccept(srv);
+			}
+		}
+	}
+}
+
+static void handleRead(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
+{
+	if (RINETD_BUFFER_SIZE == socket->recvPos) {
+		return;
+	}
+	int wanted = RINETD_BUFFER_SIZE - socket->recvPos;
+	int got = recv(socket->fd, socket->buffer + socket->recvPos, wanted, 0);
+	if (got < 0) {
+		if (GetLastError() == WSAEWOULDBLOCK) {
+			return;
+		}
+		if (GetLastError() == WSAEINPROGRESS) {
+			return;
+		}
+	}
+	if (got <= 0) {
+		/* Prepare for closing */
+		handleClose(cnx, socket, other_socket);
+		return;
+	}
+	socket->totalBytesIn += got;
+	socket->recvPos += got;
+}
+
 static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes)
 {
 	Socket *socket = &cnx->remote;
@@ -1163,6 +1269,44 @@ static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes)
 		memcpy(socket->buffer + socket->recvPos, buffer, got);
 		socket->totalBytesIn += got;
 		socket->recvPos += got;
+	}
+}
+
+static void handleWrite(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
+{
+	if (cnx->coClosing && (socket->sentPos == other_socket->recvPos)) {
+		PERROR("rinetd: local closed and no more output");
+		logEvent(cnx, cnx->server, cnx->coLog);
+		if (socket->protocol == IPPROTO_TCP)
+			closesocket(socket->fd);
+		socket->fd = INVALID_SOCKET;
+		return;
+	}
+
+	struct sockaddr const *addr = NULL;
+	SOCKLEN_T addrlen = 0;
+	if (socket->protocol == IPPROTO_UDP && socket == &cnx->remote) {
+		addr = (struct sockaddr const*)&cnx->remoteAddress;
+		addrlen = (SOCKLEN_T)sizeof(cnx->remoteAddress);
+	}
+
+	int wanted = other_socket->recvPos - socket->sentPos;
+	int got = sendto(socket->fd, other_socket->buffer + socket->sentPos,
+		wanted, 0, addr, addrlen);
+	if (got < 0) {
+		if (GetLastError() == WSAEWOULDBLOCK) {
+			return;
+		}
+		if (GetLastError() == WSAEINPROGRESS) {
+			return;
+		}
+		handleClose(cnx, socket, other_socket);
+		return;
+	}
+	socket->sentPos += got;
+	socket->totalBytesOut += got;
+	if (got == wanted) {
+		socket->sentPos = other_socket->recvPos = 0;
 	}
 }
 
@@ -1180,12 +1324,14 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 			} else {
 				handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
 			}
+			cnx->local_handle_initialized = 0;
 		} else if (socket == &cnx->remote && cnx->remote_handle_initialized) {
 			if (cnx->remote_handle_type == UV_TCP) {
 				handle = (uv_handle_t*)&cnx->remote_uv_handle.tcp;
 			} else {
 				handle = (uv_handle_t*)&cnx->remote_uv_handle.udp;
 			}
+			cnx->remote_handle_initialized = 0;
 		}
 
 		if (handle && !uv_is_closing(handle)) {
@@ -1197,7 +1343,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 
 	/* Close timer if active */
 	if (cnx->timer_initialized && !uv_is_closing((uv_handle_t*)&cnx->timeout_timer)) {
-		uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
+		uv_close((uv_handle_t*)&cnx->timeout_timer, NULL);
+		cnx->timer_initialized = 0;
 	}
 
 	/* Handle the other socket */
@@ -1207,6 +1354,7 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 			uv_handle_t *handle = NULL;
 			if (cnx->local_handle_initialized) {
 				handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
+				cnx->local_handle_initialized = 0;
 			}
 			if (handle && !uv_is_closing(handle)) {
 				uv_close(handle, handle_close_cb);
@@ -1218,6 +1366,160 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 		cnx->coLog = socket == &cnx->local ?
 			logLocalClosedFirst : logRemoteClosedFirst;
 	}
+}
+
+static void handleAccept(ServerInfo const *srv)
+{
+	int udpBytes = 0;
+
+	struct sockaddr_storage addr;
+	SOCKLEN_T addrlen = sizeof(addr);
+
+	SOCKET nfd;
+	if (srv->fromAddrInfo->ai_protocol == IPPROTO_TCP) {
+		/* In TCP mode, get remote address using accept(). */
+		nfd = accept(srv->fd, (struct sockaddr *)&addr, &addrlen);
+		if (nfd == INVALID_SOCKET) {
+			logError("accept(%llu): %m\n", (long long unsigned int)srv->fd);
+			logEvent(NULL, srv, logAcceptFailed);
+			return;
+		}
+
+		setSocketDefaults(nfd);
+	} else /* if (srv->fromAddrInfo->ai_protocol == IPPROTO_UDP) */ {
+		/* In UDP mode, get remote address using recvfrom() and check
+			for an existing connection from this client. We need
+			to read a lot of data otherwise the datagram contents
+			may be lost later. */
+		nfd = srv->fd;
+		SSIZE_T ret = recvfrom(nfd, globalUdpBuffer,
+				sizeof(globalUdpBuffer), 0, (struct sockaddr *)&addr, &addrlen);
+		if (ret < 0) {
+			if (GetLastError() == WSAEWOULDBLOCK) {
+				return;
+			}
+			if (GetLastError() == WSAEINPROGRESS) {
+				return;
+			}
+			logError("recvfrom(%llu): %m\n", (long long unsigned int)srv->fd);
+			logEvent(NULL, srv, logAcceptFailed);
+			return;
+		}
+
+		udpBytes = (int)ret;
+
+		/* Look for an existing connection with the same remote host and port. */
+		for (int i = 0; i < coTotal; ++i) {
+			ConnectionInfo *cnx = &coInfo[i];
+			if (cnx->remote.fd == nfd && sameSocketAddress(&cnx->remoteAddress, &addr)) {
+				cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
+				handleUdpRead(cnx, globalUdpBuffer, udpBytes);
+				return;
+			}
+		}
+	}
+
+	ConnectionInfo *cnx = findAvailableConnection();
+	if (!cnx) {
+		return;
+	}
+
+	cnx->local.fd = INVALID_SOCKET;
+	cnx->local.family = srv->toAddrInfo->ai_family;
+	cnx->local.protocol = srv->toAddrInfo->ai_protocol;
+	cnx->local.recvPos = cnx->local.sentPos = 0;
+	cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
+
+	cnx->remote.fd = nfd;
+	cnx->remote.family = srv->fromAddrInfo->ai_family;
+	cnx->remote.protocol = srv->fromAddrInfo->ai_protocol;
+	cnx->remote.recvPos = cnx->remote.sentPos = 0;
+	cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
+	cnx->remoteAddress = addr;
+	if (srv->fromAddrInfo->ai_protocol == IPPROTO_UDP)
+		cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
+
+	cnx->coClosing = 0;
+	cnx->coLog = logUnknownError;
+	cnx->server = srv;
+
+	int logCode = checkConnectionAllowed(cnx);
+	if (logCode != logAllowed) {
+		/* Local fd is not open yet, so only
+			close the remote socket. */
+		if (cnx->remote.protocol == IPPROTO_TCP)
+			closesocket(cnx->remote.fd);
+		cnx->remote.fd = INVALID_SOCKET;
+		logEvent(cnx, cnx->server, logCode);
+		return;
+	}
+
+	/* Now open a connection to the local server.
+		This, too, is nonblocking. Why wait
+		for anything when you don't have to? */
+	struct addrinfo* to = srv->toAddrInfo;
+	cnx->local.fd = socket(to->ai_family, to->ai_socktype, to->ai_protocol);
+	if (cnx->local.fd == INVALID_SOCKET) {
+		logError("socket(): %m\n");
+		if (cnx->remote.protocol == IPPROTO_TCP)
+			closesocket(cnx->remote.fd);
+		cnx->remote.fd = INVALID_SOCKET;
+		logEvent(cnx, srv, logLocalSocketFailed);
+		return;
+	}
+
+	if (srv->toAddrInfo->ai_protocol == IPPROTO_TCP)
+		setSocketDefaults(cnx->local.fd);
+
+	/* Bind the local socket even though we use connect() later, so that
+		we can specify a source address. */
+	if (srv->sourceAddrInfo) {
+		if (bind(cnx->local.fd, srv->sourceAddrInfo->ai_addr,
+				srv->sourceAddrInfo->ai_addrlen) == SOCKET_ERROR) {
+			logError("bind(): %m\n");
+		}
+	}
+
+	if (connect(cnx->local.fd, srv->toAddrInfo->ai_addr,
+			srv->toAddrInfo->ai_addrlen) == SOCKET_ERROR)
+	{
+		if ((GetLastError() != WSAEINPROGRESS) &&
+			(GetLastError() != WSAEWOULDBLOCK))
+		{
+			PERROR("rinetd: connect");
+			closesocket(cnx->local.fd);
+			if (cnx->remote.protocol == IPPROTO_TCP)
+				closesocket(cnx->remote.fd);
+			cnx->remote.fd = INVALID_SOCKET;
+			cnx->local.fd = INVALID_SOCKET;
+			logEvent(cnx, srv, logLocalConnectFailed);
+			return;
+		}
+	}
+
+	/* Send a zero-size UDP packet to simulate a connection */
+	if (srv->toAddrInfo->ai_protocol == IPPROTO_UDP) {
+		int got = sendto(cnx->local.fd, NULL, 0, 0,
+			srv->toAddrInfo->ai_addr, srv->toAddrInfo->ai_addrlen);
+		/* FIXME: we ignore errors here... is it safe? */
+		(void)got;
+	}
+
+	/* Send UDP data to the other socket */
+	if (srv->fromAddrInfo->ai_protocol == IPPROTO_UDP) {
+		handleUdpRead(cnx, globalUdpBuffer, udpBytes);
+	}
+
+#ifndef _WIN32
+	if (cnx->local.fd > maxfd) {
+		maxfd = cnx->local.fd;
+	}
+	if (cnx->remote.fd > maxfd) {
+		maxfd = cnx->remote.fd;
+	}
+#endif /* _WIN32 */
+
+	logEvent(cnx, srv, logOpened);
 }
 
 static int checkConnectionAllowed(ConnectionInfo const *cnx)
@@ -1312,7 +1614,8 @@ RETSIGTYPE quit(int s)
 	if (logFile) {
 		fclose(logFile);
 	}
-	/* Clear configuration (connections will be freed when process exits) */
+	/* ...and get rid of memory allocations */
+	setConnectionCount(0);
 	clearConfiguration();
 	exit(0);
 }

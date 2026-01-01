@@ -13,6 +13,13 @@ AC_PROG_INSTALL
 # Checks for libraries.
 AC_CHECK_LIB(ws2_32, main, [LIBS="${LIBS} -lws2_32"])
 
+# Check for libuv (required for event loop)
+PKG_CHECK_MODULES([LIBUV], [libuv >= 1.0], [], [
+    AC_MSG_ERROR([libuv >= 1.0 not found. Install with: apt-get install libuv1-dev (Debian/Ubuntu) or brew install libuv (macOS)])
+])
+AC_SUBST([LIBUV_CFLAGS])
+AC_SUBST([LIBUV_LIBS])
+
 # Checks for header files.
 AC_HEADER_STDC
 AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h netdb.h netinet/in.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h syslog.h unistd.h])

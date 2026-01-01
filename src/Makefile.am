@@ -20,5 +20,7 @@ parse.c: parse.peg
 # _GNU_SOURCE is for h_errno and gethostbyname-related macros
 ___rinetd_CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L \
                    -D_XOPEN_SOURCE -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
-                   -Wall -Wextra -Wwrite-strings
+                   -Wall -Wextra -Wwrite-strings $(LIBUV_CFLAGS)
+
+___rinetd_LDADD = $(LIBUV_LIBS)
 

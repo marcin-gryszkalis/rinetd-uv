@@ -10,6 +10,7 @@
 
 #include <time.h>
 #include <stdint.h>
+#include <uv.h>
 
 typedef enum _rule_type ruleType;
 enum _rule_type {
@@ -27,6 +28,14 @@ struct _rule
 typedef struct _server_info ServerInfo;
 struct _server_info {
 	SOCKET fd;
+
+	/* libuv handles for event-driven I/O */
+	union {
+		uv_tcp_t tcp;
+		uv_udp_t udp;
+	} uv_handle;
+	uv_handle_type handle_type;  /* UV_TCP or UV_UDP */
+	int handle_initialized;      /* Track if uv_*_init() called */
 
 	/* In network order, for network purposes */
 	struct addrinfo *fromAddrInfo, *toAddrInfo, *sourceAddrInfo;
@@ -58,11 +67,37 @@ typedef struct _connection_info ConnectionInfo;
 struct _connection_info
 {
 	Socket remote, local;
+
+	/* libuv handles for active connections */
+	union {
+		uv_tcp_t tcp;
+		uv_udp_t udp;
+	} local_uv_handle;
+	uv_handle_type local_handle_type;
+	int local_handle_initialized;
+	int local_handle_closing;  /* Set when uv_close() called, cleared in callback */
+
+	union {
+		uv_tcp_t tcp;
+		uv_udp_t udp;
+	} remote_uv_handle;
+	uv_handle_type remote_handle_type;
+	int remote_handle_initialized;
+	int remote_handle_closing;  /* Set when uv_close() called, cleared in callback */
+
+	/* libuv timer for UDP timeouts */
+	uv_timer_t timeout_timer;
+	int timer_initialized;
+	int timer_closing;  /* Set when uv_close() called, cleared in callback */
+
 	struct sockaddr_storage remoteAddress;
 	time_t remoteTimeout;
 	int coClosing;
 	int coLog;
 	ServerInfo const *server; // only useful for logEvent
+
+	/* Linked list for tracking active connections */
+	struct _connection_info *next;
 };
 
 /* Option parsing */
