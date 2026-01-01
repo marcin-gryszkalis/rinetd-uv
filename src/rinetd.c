@@ -22,6 +22,7 @@
 #	include "getopt.h"
 #else
 #	include <getopt.h>
+#	include <unistd.h>
 #	if TIME_WITH_SYS_TIME
 #		include <sys/time.h>
 #		include <time.h>
@@ -80,9 +81,6 @@ static uv_loop_t *main_loop = NULL;
 
 /* libuv signal handlers */
 static uv_signal_t sighup_handle, sigint_handle, sigterm_handle, sigpipe_handle;
-
-/* Global static buffer for UDP data. */
-static char globalUdpBuffer[65536];
 
 char *logFileName = NULL;
 char *pidLogFileName = NULL;
@@ -478,6 +476,7 @@ static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
 /* libuv signal handler callback */
 static void signal_cb(uv_signal_t *handle, int signum)
 {
+	(void)handle;  /* Unused parameter */
 	if (signum == SIGHUP) {
 		hup(signum);
 	} else if (signum == SIGINT || signum == SIGTERM) {
@@ -767,6 +766,7 @@ static void tcp_trigger_write(ConnectionInfo *cnx, Socket *socket,
 /* TCP read callback */
 static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 {
+	(void)buf;  /* Unused parameter - data already in socket buffer */
 	ConnectionInfo *cnx = (ConnectionInfo*)stream->data;
 
 	/* Determine which socket and the other socket */
@@ -841,15 +841,6 @@ static void tcp_write_cb(uv_write_t *req, int status)
 	if (cnx->coClosing && socket->sentPos == other_socket->recvPos) {
 		logEvent(cnx, cnx->server, cnx->coLog);
 		uv_close((uv_handle_t*)stream, handle_close_cb);
-	}
-}
-
-/* Helper to close a connection's handle and mark it as closing */
-static void close_connection_handle(ConnectionInfo *cnx, uv_handle_t *handle, int *closing_flag)
-{
-	if (handle && !uv_is_closing(handle)) {
-		*closing_flag = 1;
-		uv_close(handle, handle_close_cb);
 	}
 }
 
@@ -949,7 +940,8 @@ static void udp_trigger_write_to_remote(ConnectionInfo *cnx)
 
 	req->data = cnx;
 
-	ServerInfo const *srv = cnx->server;
+	/* Cast away const - we're not modifying ServerInfo, just using its handle for I/O */
+	ServerInfo *srv = (ServerInfo *)cnx->server;
 	int ret = uv_udp_send(req, &srv->uv_handle.udp, &wrbuf, 1,
 	                      (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
 	if (ret != 0) {
@@ -961,9 +953,7 @@ static void udp_trigger_write_to_remote(ConnectionInfo *cnx)
 /* UDP send completion callback */
 static void udp_send_cb(uv_udp_send_t *req, int status)
 {
-	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
-	free(req);
-
+	(void)req;  /* Unused - connection info not needed for UDP send completion */
 	if (status < 0) {
 		logError("UDP send error: %s\n", uv_strerror(status));
 		/* For UDP, we don't close on send errors - just log */
