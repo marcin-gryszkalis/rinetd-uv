@@ -1198,20 +1198,15 @@ static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes)
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
 {
-	/* If not already closing, log the event with final byte counts */
+	/* If not already closing, log the event with final byte counts.
+	   Note: handleClose() may be called twice (once for each socket) - this is normal.
+	   We only log on the first call. */
 	if (!cnx->coClosing) {
 		cnx->coLog = (socket == &cnx->local) ?
 			logLocalClosedFirst : logRemoteClosedFirst;
 		logEvent(cnx, cnx->server, cnx->coLog);
 		cnx->coClosing = 1;
 	}
-#ifdef DEBUG
-	else {
-		/* Duplicate close detected - log for debugging */
-		logError("handleClose called again on already-closing connection %p (coClosing=%d)\n",
-		         (void*)cnx, cnx->coClosing);
-	}
-#endif
 
 	/* Close the socket's libuv handle */
 	if (socket->fd != INVALID_SOCKET) {
