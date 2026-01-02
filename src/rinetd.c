@@ -892,6 +892,13 @@ static void handle_close_cb(uv_handle_t *handle)
 	    !cnx->timer_initialized && !cnx->timer_closing) {
 		/* All handles are closed - remove from list and free */
 
+		/* IMPORTANT: Clear all handle->data pointers BEFORE freeing to prevent
+		   race condition where another callback tries to free the same connection.
+		   This makes subsequent callbacks return early at the !handle->data check. */
+		cnx->local_uv_handle.tcp.data = NULL;   /* Union - sets both tcp.data and udp.data */
+		cnx->remote_uv_handle.tcp.data = NULL;  /* Union - sets both tcp.data and udp.data */
+		cnx->timeout_timer.data = NULL;
+
 		/* Remove from linked list */
 		ConnectionInfo **ptr = &connectionListHead;
 		while (*ptr) {
