@@ -33,12 +33,7 @@
 #else
 #	include <getopt.h>
 #	include <unistd.h>
-#	if TIME_WITH_SYS_TIME
-#		include <sys/time.h>
-#		include <time.h>
-#	elif HAVE_SYS_TIME_H
-#		include <sys/time.h>
-#	endif
+#	include <sys/time.h>
 #	include <syslog.h>
 #endif /* _WIN32 */
 
@@ -48,10 +43,9 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#if _WIN32 || (!TIME_WITH_SYS_TIME && !HAVE_SYS_TIME_H)
-#	include <time.h>
-#endif
+#include <time.h>
 #include <ctype.h>
+#include <syslog.h>
 
 #ifdef DEBUG
 #	define PERROR perror
