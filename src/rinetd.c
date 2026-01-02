@@ -6,16 +6,6 @@
    the GNU Public License, version 2 or higher. NO WARRANTY
    IS EXPRESSED OR IMPLIED. USE THIS SOFTWARE AT YOUR OWN RISK. */
 
-/* Feature test macros for BSD systems - must be before any includes */
-#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || defined(__APPLE__)
-#	ifndef _BSD_SOURCE
-#		define _BSD_SOURCE 1
-#	endif
-#	ifndef _DEFAULT_SOURCE
-#		define _DEFAULT_SOURCE 1
-#	endif
-#endif
-
 #if HAVE_CONFIG_H
 #	include <config.h>
 #endif
