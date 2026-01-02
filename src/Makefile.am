@@ -18,8 +18,10 @@ parse.c: parse.peg
 # _DARWIN_C_SOURCE is for NI_MAXHOST on OS X
 # _XOPEN_SOURCE is for struct sigaction
 # _GNU_SOURCE is for h_errno and gethostbyname-related macros
+# _BSD_SOURCE and _DEFAULT_SOURCE are for daemon() and vsyslog() on BSD systems
 ___rinetd_CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L \
                    -D_XOPEN_SOURCE -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
+                   -D_BSD_SOURCE -D_DEFAULT_SOURCE \
                    -Wall -Wextra -Wwrite-strings $(LIBUV_CFLAGS)
 
 ___rinetd_LDADD = $(LIBUV_LIBS)
