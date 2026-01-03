@@ -1146,18 +1146,49 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
 		return;
 	}
 
+	/* Determine direction based on which handle was used */
+	/* If handle is cnx->local_uv_handle.udp, we're sending to backend (local) */
+	/* If handle is server's handle, we're sending to client (remote) */
+	int is_send_to_local = (req->handle == &cnx->local_uv_handle.udp);
+	
+	if (is_send_to_local) {
+		/* Sending from remote buffer to local (backend) */
+		/* Update local.sentPos to reflect data sent */
+		int bytes_sent = cnx->remote.recvPos - cnx->local.sentPos;
+		cnx->local.sentPos = cnx->remote.recvPos;
+		cnx->local.totalBytesOut += bytes_sent;
+		
+		/* Reset buffers if all sent */
+		if (cnx->local.sentPos == cnx->remote.recvPos) {
+			cnx->local.sentPos = cnx->remote.recvPos = 0;
+		}
+		
+		/* Check if more data is available to send */
+		if (cnx->local.sentPos < cnx->remote.recvPos && !cnx->coClosing) {
+			udp_trigger_write_to_local(cnx);
+		}
+	} else {
+		/* Sending from local buffer to remote (client) */
+		/* Update remote.sentPos to reflect data sent */
+		int bytes_sent = cnx->local.recvPos - cnx->remote.sentPos;
+		cnx->remote.sentPos = cnx->local.recvPos;
+		cnx->remote.totalBytesOut += bytes_sent;
+		
+		/* Reset buffers if all sent */
+		if (cnx->remote.sentPos == cnx->local.recvPos) {
+			cnx->remote.sentPos = cnx->local.recvPos = 0;
+		}
+		
+		/* Check if more data is available to send */
+		if (cnx->remote.sentPos < cnx->local.recvPos && !cnx->coClosing) {
+			udp_trigger_write_to_remote(cnx);
+		}
+	}
+
 	free(req);
 
 	/* Check if connection should be freed now (all handles closed and no pending writes) */
-	if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
-	    !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
-	    !cnx->timer_initialized && !cnx->timer_closing &&
-	    cnx->pending_writes == 0) {
-		/* Connection can be freed - trigger cleanup */
-		/* Note: This will be handled by handle_close_cb, but we check here
-		   in case this was the last pending write */
-		handle_close_cb((uv_handle_t*)&cnx->local_uv_handle.tcp);
-	}
+	/* This will be handled by handle_close_cb when the last handle closes */
 }
 
 /* UDP timeout callback */
