@@ -889,6 +889,15 @@ static void tcp_write_cb(uv_write_t *req, int status)
 {
 	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
 
+	/* Check if connection was already freed (shouldn't happen, but defensive) */
+	if (!cnx) {
+		free(req);
+		return;
+	}
+
+	/* Decrement pending writes counter */
+	cnx->pending_writes--;
+
 	/* Determine which socket based on the handle */
 	Socket *socket, *other_socket;
 	uv_stream_t *stream = req->handle;
@@ -959,13 +968,13 @@ static void handle_close_cb(uv_handle_t *handle)
 		cnx->timer_initialized = 0;
 	}
 
-	/* Check if all handles are closed - if so, free the connection */
-	/* IMPORTANT: Check all handles are closed BEFORE clearing data pointers.
-	   This prevents race conditions where another callback might access the
-	   connection after data is cleared but before the connection is freed. */
+	/* Check if all handles are closed AND no pending writes - if so, free the connection */
+	/* IMPORTANT: Check all handles are closed AND no pending operations BEFORE clearing data pointers.
+	   This prevents race conditions where write callbacks might access freed connections. */
 	if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
 	    !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
-	    !cnx->timer_initialized && !cnx->timer_closing) {
+	    !cnx->timer_initialized && !cnx->timer_closing &&
+	    cnx->pending_writes == 0) {
 		/* All handles are closed - safe to free the connection */
 
 		/* Remove from linked list first */
@@ -1024,10 +1033,15 @@ static void udp_trigger_write_to_local(ConnectionInfo *cnx)
 
 	req->data = cnx;
 
+	/* Increment pending writes counter */
+	cnx->pending_writes++;
+
 	int ret = uv_udp_send(req, &cnx->local_uv_handle.udp, &wrbuf, 1,
 	                      cnx->server->toAddrInfo->ai_addr, udp_send_cb);
 	if (ret != 0) {
 		logError("uv_udp_send (to local) error: %s\n", uv_strerror(ret));
+		/* Decrement counter since send failed immediately */
+		cnx->pending_writes--;
 		free(req);
 	}
 }
@@ -1072,15 +1086,36 @@ static void udp_trigger_write_to_remote(ConnectionInfo *cnx)
 /* UDP send completion callback */
 static void udp_send_cb(uv_udp_send_t *req, int status)
 {
-	(void)req;  /* Unused - connection info not needed for UDP send completion */
-	if (status < 0) {
-		logError("UDP send error: %s\n", uv_strerror(status));
-		/* For UDP, we don't close on send errors - just log */
+	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+
+	/* Check if connection was already freed (shouldn't happen, but defensive) */
+	if (!cnx) {
+		free(req);
 		return;
 	}
 
-	/* Note: We don't track individual packet sends in the original code either */
-	/* The buffer management is done when we initiate the send */
+	/* Decrement pending writes counter */
+	cnx->pending_writes--;
+
+	if (status < 0) {
+		logError("UDP send error: %s\n", uv_strerror(status));
+		/* For UDP, we don't close on send errors - just log */
+		free(req);
+		return;
+	}
+
+	free(req);
+
+	/* Check if connection should be freed now (all handles closed and no pending writes) */
+	if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
+	    !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
+	    !cnx->timer_initialized && !cnx->timer_closing &&
+	    cnx->pending_writes == 0) {
+		/* Connection can be freed - trigger cleanup */
+		/* Note: This will be handled by handle_close_cb, but we check here
+		   in case this was the last pending write */
+		handle_close_cb((uv_handle_t*)&cnx->local_uv_handle.tcp);
+	}
 }
 
 /* UDP timeout callback */

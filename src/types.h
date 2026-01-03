@@ -96,6 +96,9 @@ struct _connection_info
 	int coLog;
 	ServerInfo const *server; // only useful for logEvent
 
+	/* Reference counting for pending operations */
+	int pending_writes;  /* Number of pending write operations */
+
 	/* Linked list for tracking active connections */
 	struct _connection_info *next;
 };
