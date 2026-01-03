@@ -191,9 +191,9 @@ int main(int argc, char *argv[])
 
 	/* Set up signal handlers using libuv */
 #ifndef _WIN32
-	/* SIGPIPE - ignore */
+	/* SIGPIPE - ignore (start with no-op callback) */
 	uv_signal_init(main_loop, &sigpipe_handle);
-	/* Note: libuv doesn't have SIG_IGN equivalent, so we use callback that does nothing */
+	uv_signal_start(&sigpipe_handle, signal_cb, SIGPIPE);
 
 	/* SIGHUP - reload configuration */
 	uv_signal_init(main_loop, &sighup_handle);
@@ -521,12 +521,11 @@ static void startServerListening(ServerInfo *srv)
 		return;  /* Already initialized */
 	}
 
-	/* Set data pointer to server info for callbacks */
-	srv->uv_handle.tcp.data = srv;
-
 	if (srv->handle_type == UV_TCP) {
 		/* Initialize TCP handle and attach to existing socket */
 		uv_tcp_init(main_loop, &srv->uv_handle.tcp);
+		/* Set data pointer to server info for callbacks (after initialization) */
+		srv->uv_handle.tcp.data = srv;
 		uv_tcp_open(&srv->uv_handle.tcp, srv->fd);
 
 		/* Start listening for connections */
@@ -539,6 +538,8 @@ static void startServerListening(ServerInfo *srv)
 	} else {  /* UV_UDP */
 		/* Initialize UDP handle and attach to existing socket */
 		uv_udp_init(main_loop, &srv->uv_handle.udp);
+		/* Set data pointer to server info for callbacks (after initialization) */
+		srv->uv_handle.udp.data = srv;
 		uv_udp_open(&srv->uv_handle.udp, srv->fd);
 
 		/* Start receiving datagrams */
@@ -1339,7 +1340,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 	int logCode = checkConnectionAllowed(cnx);
 	if (logCode != logAllowed) {
 		uv_timer_stop(&cnx->timeout_timer);
-		uv_close((uv_handle_t*)&cnx->timeout_timer, NULL);
+		uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
 		cnx->timer_initialized = 0;
 		logEvent(cnx, srv, logCode);
 		free(buf->base);
