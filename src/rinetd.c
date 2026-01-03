@@ -465,6 +465,7 @@ static ConnectionInfo *allocateConnection(void)
 
 	cnx->coClosing = 0;
 	cnx->coLog = logUnknownError;
+	cnx->pending_writes = 0;
 
 	/* Add to linked list */
 	cnx->next = connectionListHead;
@@ -698,6 +699,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
 	cnx->coClosing = 0;
 	cnx->coLog = logUnknownError;
+	cnx->pending_writes = 0;
 	cnx->server = srv;
 	cnx->timer_initialized = 0;
 
