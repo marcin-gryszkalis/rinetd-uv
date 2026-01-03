@@ -140,6 +140,7 @@ static RETSIGTYPE quit(int s);
 /* libuv functions */
 static void signal_cb(uv_signal_t *handle, int signum);
 static void startServerListening(ServerInfo *srv);
+static void server_handle_close_cb(uv_handle_t *handle);
 
 
 int main(int argc, char *argv[])
@@ -263,24 +264,43 @@ static void clearConfiguration(void) {
 	for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next) {
 		cnx->server = NULL;
 	}
-	/* Close existing server sockets. */
+	/* Close existing server libuv handles and sockets. */
+	int any_handles_to_close = 0;
 	for (int i = 0; i < seTotal; ++i) {
 		ServerInfo *srv = &seInfo[i];
-		if (srv->fd != INVALID_SOCKET) {
-			closesocket(srv->fd);
-		}
-		free(srv->fromHost);
-		free(srv->toHost);
-		freeaddrinfo(srv->fromAddrInfo);
-		freeaddrinfo(srv->toAddrInfo);
-		if (srv->sourceAddrInfo) {
-			freeaddrinfo(srv->sourceAddrInfo);
+		if (srv->handle_initialized) {
+			any_handles_to_close = 1;
+			/* Stop listening/recv before closing */
+			if (srv->handle_type == UV_TCP) {
+				/* TCP: close the handle (this stops accepting) */
+				uv_close((uv_handle_t*)&srv->uv_handle.tcp, server_handle_close_cb);
+			} else {  /* UV_UDP */
+				/* UDP: stop receiving before closing */
+				uv_udp_recv_stop(&srv->uv_handle.udp);
+				uv_close((uv_handle_t*)&srv->uv_handle.udp, server_handle_close_cb);
+			}
+		} else {
+			/* Handle not initialized, just close socket directly */
+			if (srv->fd != INVALID_SOCKET) {
+				closesocket(srv->fd);
+			}
+			/* Free resources immediately if handle wasn't initialized */
+			free(srv->fromHost);
+			free(srv->toHost);
+			freeaddrinfo(srv->fromAddrInfo);
+			freeaddrinfo(srv->toAddrInfo);
+			if (srv->sourceAddrInfo) {
+				freeaddrinfo(srv->sourceAddrInfo);
+			}
 		}
 	}
-	/* Free memory associated with previous set. */
-	free(seInfo);
-	seInfo = NULL;
-	seTotal = 0;
+	/* If no handles to close, free seInfo immediately */
+	if (!any_handles_to_close) {
+		free(seInfo);
+		seInfo = NULL;
+		seTotal = 0;
+	}
+	/* Otherwise, seInfo will be freed in server_handle_close_cb after all handles close */
 	/* Forget existing rules. */
 	for (int i = 0; i < allRulesCount; ++i) {
 		free(allRules[i].pattern);
@@ -516,6 +536,61 @@ static void startServerListening(ServerInfo *srv)
 	}
 
 	srv->handle_initialized = 1;
+}
+
+/* Server handle close callback - frees server resources */
+static void server_handle_close_cb(uv_handle_t *handle)
+{
+	if (!handle || !handle->data) {
+		return;
+	}
+
+	ServerInfo *srv = (ServerInfo*)handle->data;
+	
+	/* Mark handle as no longer initialized */
+	srv->handle_initialized = 0;
+	
+	/* Close the underlying socket */
+	if (srv->fd != INVALID_SOCKET) {
+		closesocket(srv->fd);
+		srv->fd = INVALID_SOCKET;
+	}
+
+	/* Free server resources */
+	free(srv->fromHost);
+	srv->fromHost = NULL;
+	free(srv->toHost);
+	srv->toHost = NULL;
+	freeaddrinfo(srv->fromAddrInfo);
+	srv->fromAddrInfo = NULL;
+	freeaddrinfo(srv->toAddrInfo);
+	srv->toAddrInfo = NULL;
+	if (srv->sourceAddrInfo) {
+		freeaddrinfo(srv->sourceAddrInfo);
+		srv->sourceAddrInfo = NULL;
+	}
+
+	/* Check if all server handles are closed - if so, free seInfo */
+	/* Note: This is called for each handle, so we need to check if all are done */
+	if (!seInfo) {
+		return;  /* Already freed */
+	}
+	
+	int all_closed = 1;
+	for (int i = 0; i < seTotal; ++i) {
+		if (seInfo[i].handle_initialized || 
+		    uv_is_closing((uv_handle_t*)&seInfo[i].uv_handle.tcp) ||
+		    uv_is_closing((uv_handle_t*)&seInfo[i].uv_handle.udp)) {
+			all_closed = 0;
+			break;
+		}
+	}
+	
+	if (all_closed) {
+		free(seInfo);
+		seInfo = NULL;
+		seTotal = 0;
+	}
 }
 
 /* Forward declarations for connection handling */
