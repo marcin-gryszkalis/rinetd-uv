@@ -1417,6 +1417,12 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 		}
 
 		if (handle && closing_flag && !(*closing_flag) && !uv_is_closing(handle)) {
+			/* Stop reading/recv before closing (libuv best practice) */
+			if (socket->protocol == IPPROTO_TCP) {
+				uv_read_stop((uv_stream_t*)handle);
+			} else if (socket->protocol == IPPROTO_UDP) {
+				uv_udp_recv_stop((uv_udp_t*)handle);
+			}
 			*closing_flag = 1;  /* Set BEFORE calling uv_close() */
 			uv_close(handle, handle_close_cb);
 		}
@@ -1439,6 +1445,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 				handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
 			}
 			if (handle && !cnx->local_handle_closing && !uv_is_closing(handle)) {
+				/* Stop recv before closing (libuv best practice) */
+				uv_udp_recv_stop((uv_udp_t*)handle);
 				cnx->local_handle_closing = 1;  /* Set BEFORE calling uv_close() */
 				uv_close(handle, handle_close_cb);
 			}
