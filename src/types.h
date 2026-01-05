@@ -101,10 +101,6 @@ struct _connection_info
 	int local_write_in_progress;  /* Flag: write in progress on local socket */
 	int remote_write_in_progress;  /* Flag: write in progress on remote socket */
 
-	/* Flow control: track read state to implement backpressure */
-	int local_read_active;   /* Flag: reading active on local socket */
-	int remote_read_active;  /* Flag: reading active on remote socket */
-
 	/* Linked list for tracking active connections */
 	struct _connection_info *next;
 };
