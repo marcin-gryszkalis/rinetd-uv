@@ -56,14 +56,23 @@ struct _socket
 {
 	SOCKET fd;
 	int family, protocol;
-	/* recv: received on this socket
-		sent: sent through this socket from the other buffer */
-	int recvPos, sentPos;
+	/* Statistics only - no buffer management */
 	uint64_t totalBytesIn, totalBytesOut;
-	char *buffer;
 };
 
+/* Forward declaration for write request */
 typedef struct _connection_info ConnectionInfo;
+
+/* Write request data - holds buffer and connection info */
+typedef struct _write_req WriteReq;
+struct _write_req
+{
+	uv_write_t req;
+	ConnectionInfo *cnx;
+	char *buffer;
+	int buffer_size;
+	Socket *socket;  /* Which socket this write is for (local or remote) */
+};
 struct _connection_info
 {
 	Socket remote, local;
@@ -95,21 +104,6 @@ struct _connection_info
 	int coClosing;
 	int coLog;
 	ServerInfo const *server; // only useful for logEvent
-
-	/* Reference counting for pending operations */
-	int pending_writes;  /* Number of pending write operations */
-	int local_write_in_progress;  /* Flag: write in progress on local socket */
-	int remote_write_in_progress;  /* Flag: write in progress on remote socket */
-
-	/* Flow control timing diagnostics */
-	uint64_t local_read_stopped_time;   /* hrtime when local reading was stopped */
-	uint64_t remote_read_stopped_time;  /* hrtime when remote reading was stopped */
-	int local_read_stopped;             /* Flag: local reading is stopped */
-	int remote_read_stopped;            /* Flag: remote reading is stopped */
-
-	/* Write timing diagnostics */
-	uint64_t local_write_start_time;    /* hrtime when local write started */
-	uint64_t remote_write_start_time;   /* hrtime when remote write started */
 
 	/* Linked list for tracking active connections */
 	struct _connection_info *next;

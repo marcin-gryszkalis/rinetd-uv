@@ -116,7 +116,9 @@ static RinetdOptions options = {
 
 static int forked = 0;
 
+#if 0  /* UDP disabled */
 static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes);
+#endif
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket);
 static ConnectionInfo *allocateConnection(void);
 static int checkConnectionAllowed(ConnectionInfo const *cnx);
@@ -447,49 +449,13 @@ static ConnectionInfo *allocateConnection(void)
 		return NULL;
 	}
 
-	/* Initialize all fields */
+	/* Initialize all fields to zero */
 	memset(cnx, 0, sizeof(*cnx));
-
-	/* Allocate buffers for both sockets */
-	cnx->local.buffer = (char*)malloc(sizeof(char) * 2 * RINETD_BUFFER_SIZE);
-	if (!cnx->local.buffer) {
-		logError("malloc failed for connection buffers\n");
-		free(cnx);
-		return NULL;
-	}
-	cnx->remote.buffer = cnx->local.buffer + RINETD_BUFFER_SIZE;
 
 	/* Initialize socket state */
 	cnx->local.fd = INVALID_SOCKET;
 	cnx->remote.fd = INVALID_SOCKET;
-	cnx->local.recvPos = cnx->local.sentPos = 0;
-	cnx->remote.recvPos = cnx->remote.sentPos = 0;
-	cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
-	cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
-
-	/* Initialize handle state */
-	cnx->local_handle_initialized = 0;
-	cnx->remote_handle_initialized = 0;
-	cnx->timer_initialized = 0;
-	cnx->local_handle_closing = 0;
-	cnx->remote_handle_closing = 0;
-	cnx->timer_closing = 0;
-
-	cnx->coClosing = 0;
 	cnx->coLog = logUnknownError;
-	cnx->pending_writes = 0;
-	cnx->local_write_in_progress = 0;
-	cnx->remote_write_in_progress = 0;
-
-	/* Initialize flow control timing fields */
-	cnx->local_read_stopped = 0;
-	cnx->remote_read_stopped = 0;
-	cnx->local_read_stopped_time = 0;
-	cnx->remote_read_stopped_time = 0;
-
-	/* Initialize write timing fields */
-	cnx->local_write_start_time = 0;
-	cnx->remote_write_start_time = 0;
 
 	/* Add to linked list */
 	cnx->next = connectionListHead;
@@ -503,12 +469,15 @@ static ConnectionInfo *allocateConnection(void)
 
 /* libuv callback forward declarations */
 static void tcp_server_accept_cb(uv_stream_t *server, int status);
+
+#if 0  /* UDP disabled */
 static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                                const uv_buf_t *buf,
                                const struct sockaddr *addr,
                                unsigned flags);
 static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
                                        uv_buf_t *buf);
+#endif
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
                             uv_buf_t *buf);
 
@@ -547,7 +516,9 @@ static void startServerListening(ServerInfo *srv)
 			logError("uv_listen() failed: %s\n", uv_strerror(ret));
 			exit(1);
 		}
-	} else {  /* UV_UDP */
+	}
+#if 0  /* UDP disabled */
+	else {  /* UV_UDP */
 		/* Initialize UDP handle and attach to existing socket */
 		uv_udp_init(main_loop, &srv->uv_handle.udp);
 		/* Set data pointer to server info for callbacks (after initialization) */
@@ -562,6 +533,7 @@ static void startServerListening(ServerInfo *srv)
 			exit(1);
 		}
 	}
+#endif
 
 	srv->handle_initialized = 1;
 }
@@ -719,20 +691,15 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 	/* Initialize connection state */
 	cnx->remote.family = srv->fromAddrInfo->ai_family;
 	cnx->remote.protocol = IPPROTO_TCP;
-	cnx->remote.recvPos = cnx->remote.sentPos = 0;
 	cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
 
 	cnx->local.fd = INVALID_SOCKET;
 	cnx->local.family = srv->toAddrInfo->ai_family;
 	cnx->local.protocol = IPPROTO_TCP;
-	cnx->local.recvPos = cnx->local.sentPos = 0;
 	cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
 	cnx->coClosing = 0;
 	cnx->coLog = logUnknownError;
-	cnx->pending_writes = 0;
-	cnx->local_write_in_progress = 0;
-	cnx->remote_write_in_progress = 0;
 	cnx->server = srv;
 	cnx->timer_initialized = 0;
 
@@ -811,131 +778,34 @@ static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_siz
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
                             uv_buf_t *buf)
 {
-	(void)suggested_size;
+	(void)handle;  /* Unused - we don't need connection info to allocate */
 
-	ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
-	if (!cnx) {
-		/* Should not happen for connection sockets */
+	/* Allocate a fresh buffer for each read - will be freed in write callback */
+	char *buffer = (char*)malloc(suggested_size);
+	if (!buffer) {
+		logError("malloc failed for read buffer\n");
 		buf->base = NULL;
 		buf->len = 0;
 		return;
 	}
 
-	/* Determine which socket (local or remote) */
-	Socket *socket;
-	if ((uv_handle_t*)&cnx->local_uv_handle == handle) {
-		socket = &cnx->local;
-	} else {
-		socket = &cnx->remote;
-	}
-
-	int available = RINETD_BUFFER_SIZE - socket->recvPos;
-	if (available <= 0) {
-		/* Buffer full - shouldn't happen if we stop reading */
-		buf->base = NULL;
-		buf->len = 0;
-		return;
-	}
-
-	buf->base = socket->buffer + socket->recvPos;
-	buf->len = available;
+	buf->base = buffer;
+	buf->len = suggested_size;
 }
 
 /* Forward declaration for write callback */
 static void tcp_write_cb(uv_write_t *req, int status);
 
-/* Trigger TCP write when data is available */
-static void tcp_trigger_write(ConnectionInfo *cnx, Socket *socket,
-                              Socket *other_socket, uv_stream_t *stream)
-{
-	if (socket->sentPos >= other_socket->recvPos && !cnx->coClosing) {
-		return;  /* Nothing to send */
-	}
-
-	/* Check if a write is already in progress for this socket */
-	int *write_in_progress = NULL;
-	if (socket == &cnx->local) {
-		write_in_progress = &cnx->local_write_in_progress;
-	} else {
-		write_in_progress = &cnx->remote_write_in_progress;
-	}
-
-	if (write_in_progress && *write_in_progress) {
-		/* Write already in progress, don't queue another */
-		return;
-	}
-
-	/* Check if the handle we're writing to is closing */
-	int is_closing = 0;
-	if (socket == &cnx->local) {
-		is_closing = cnx->local_handle_closing;
-	} else {
-		is_closing = cnx->remote_handle_closing;
-	}
-
-	if (is_closing || uv_is_closing((uv_handle_t*)stream)) {
-		/* Handle is closing, don't try to write */
-		return;
-	}
-
-	uv_write_t *req = malloc(sizeof(uv_write_t));
-	if (!req) {
-		logError("malloc failed for write request\n");
-		handleClose(cnx, socket, other_socket);
-		return;
-	}
-
-	/* Store connection info for callback */
-	req->data = cnx;
-
-	/* Mark write as in progress */
-	if (write_in_progress) {
-		*write_in_progress = 1;
-	}
-
-	/* Increment pending writes counter */
-	cnx->pending_writes++;
-
-	/* Calculate how much to send */
-	int to_send = other_socket->recvPos - socket->sentPos;
-
-	/* Store the amount we're writing in the request so we can update sentPos correctly */
-	/* We'll use pending_writes counter creatively - store size in high bits */
-	/* Actually, let's just write everything - chunking won't help with the timeout issue */
-
-	uv_buf_t wrbuf = uv_buf_init(other_socket->buffer + socket->sentPos, to_send);
-
-	/* Record write start time for diagnostics */
-	uint64_t now = uv_hrtime();
-	if (socket == &cnx->local) {
-		cnx->local_write_start_time = now;
-	} else {
-		cnx->remote_write_start_time = now;
-	}
-
-	int ret = uv_write(req, stream, &wrbuf, 1, tcp_write_cb);
-	if (ret != 0) {
-		logError("uv_write error: %s\n", uv_strerror(ret));
-		/* Clear write in progress flag */
-		if (write_in_progress) {
-			*write_in_progress = 0;
-		}
-		/* Decrement counter since write failed immediately */
-		cnx->pending_writes--;
-		free(req);
-		handleClose(cnx, socket, other_socket);
-		return;
-	}
-}
-
 /* TCP read callback */
 static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 {
-	(void)buf;  /* Unused parameter - data already in socket buffer */
 	ConnectionInfo *cnx = (ConnectionInfo*)stream->data;
 
 	/* Defensive null check */
 	if (!cnx) {
+		if (buf->base) {
+			free(buf->base);
+		}
 		return;
 	}
 
@@ -953,25 +823,10 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 	}
 
 	if (nread < 0) {
-		/* UV_ENOBUFS means buffer is full - stop reading temporarily */
-		if (nread == UV_ENOBUFS) {
-			/* Buffer full - stop reading, will resume when buffer drains */
-			uint64_t now = uv_hrtime();
-			if (socket == &cnx->local) {
-				cnx->local_read_stopped = 1;
-				cnx->local_read_stopped_time = now;
-				logInfo("Flow control: local read stopped (UV_ENOBUFS), buffer=%d/%d bytes\n",
-				        socket->recvPos, RINETD_BUFFER_SIZE);
-			} else {
-				cnx->remote_read_stopped = 1;
-				cnx->remote_read_stopped_time = now;
-				logInfo("Flow control: remote read stopped (UV_ENOBUFS), buffer=%d/%d bytes\n",
-				        socket->recvPos, RINETD_BUFFER_SIZE);
-			}
-			uv_read_stop(stream);
-			return;
+		/* Error or EOF - free buffer and close */
+		if (buf->base) {
+			free(buf->base);
 		}
-
 		if (nread != UV_EOF) {
 			logError("read error: %s\n", uv_strerror((int)nread));
 		}
@@ -980,160 +835,89 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 	}
 
 	if (nread == 0) {
-		return;  /* EAGAIN - try again later */
+		/* EAGAIN - free buffer and try again later */
+		if (buf->base) {
+			free(buf->base);
+		}
+		return;
 	}
 
-	/* Update buffer position and statistics */
-	socket->recvPos += nread;
+	/* Update statistics */
 	socket->totalBytesIn += nread;
 
-	/* Stop reading only when buffer is nearly full (>90%) to prevent UV_ENOBUFS */
-	/* Higher threshold allows more pipelining before stopping */
-	if (socket->recvPos > (RINETD_BUFFER_SIZE * 9 / 10)) {
-		uint64_t now = uv_hrtime();
-		if (socket == &cnx->local) {
-			cnx->local_read_stopped = 1;
-			cnx->local_read_stopped_time = now;
-			logInfo("Flow control: local read stopped (90%% full), buffer=%d/%d bytes\n",
-			        socket->recvPos, RINETD_BUFFER_SIZE);
-		} else {
-			cnx->remote_read_stopped = 1;
-			cnx->remote_read_stopped_time = now;
-			logInfo("Flow control: remote read stopped (90%% full), buffer=%d/%d bytes\n",
-			        socket->recvPos, RINETD_BUFFER_SIZE);
-		}
-		uv_read_stop(stream);
+	/* Check if the other socket is still open before writing */
+	int *other_closing = (other_socket == &cnx->local)
+		? &cnx->local_handle_closing
+		: &cnx->remote_handle_closing;
+
+	if (*other_closing || uv_is_closing((uv_handle_t*)other_stream)) {
+		/* Other side is closing, discard this data */
+		free(buf->base);
+		return;
 	}
 
-	/* Trigger write to other socket */
-	tcp_trigger_write(cnx, other_socket, socket, other_stream);
+	/* Create write request with buffer info */
+	WriteReq *wreq = (WriteReq*)malloc(sizeof(WriteReq));
+	if (!wreq) {
+		logError("malloc failed for WriteReq\n");
+		free(buf->base);
+		handleClose(cnx, socket, other_socket);
+		return;
+	}
+
+	wreq->cnx = cnx;
+	wreq->buffer = buf->base;  /* Take ownership of buffer */
+	wreq->buffer_size = nread;
+	wreq->socket = other_socket;  /* Writing to OTHER socket */
+
+	/* Set up uv_write request */
+	uv_buf_t wrbuf = uv_buf_init(buf->base, nread);
+	int ret = uv_write(&wreq->req, other_stream, &wrbuf, 1, tcp_write_cb);
+	if (ret != 0) {
+		logError("uv_write error: %s\n", uv_strerror(ret));
+		free(wreq->buffer);
+		free(wreq);
+		handleClose(cnx, socket, other_socket);
+		return;
+	}
+
+	/* Buffer and wreq will be freed in tcp_write_cb */
 }
 
 /* TCP write completion callback */
 static void tcp_write_cb(uv_write_t *req, int status)
 {
-	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+	/* Get WriteReq which contains the connection and buffer */
+	WriteReq *wreq = (WriteReq*)req;
+	ConnectionInfo *cnx = wreq->cnx;
 
-	/* Check if connection was already freed (shouldn't happen, but defensive) */
-	if (!cnx) {
-		free(req);
-		return;
-	}
+	/* Update statistics */
+	wreq->socket->totalBytesOut += wreq->buffer_size;
 
-	/* Decrement pending writes counter */
-	cnx->pending_writes--;
+	/* Free the buffer that was allocated in tcp_read_cb */
+	free(wreq->buffer);
 
-	/* Determine which socket based on the handle */
-	Socket *socket, *other_socket;
-	uv_stream_t *stream = req->handle;
-	int *write_in_progress = NULL;
-
-	if (stream == (uv_stream_t*)&cnx->local_uv_handle.tcp) {
-		socket = &cnx->local;
-		other_socket = &cnx->remote;
-		write_in_progress = &cnx->local_write_in_progress;
-	} else {
-		socket = &cnx->remote;
-		other_socket = &cnx->local;
-		write_in_progress = &cnx->remote_write_in_progress;
-	}
-
-	/* Clear write in progress flag */
-	if (write_in_progress) {
-		*write_in_progress = 0;
-	}
-
-	free(req);
-
+	/* Handle write errors */
 	if (status < 0) {
 		logError("write error: %s\n", uv_strerror(status));
+		/* Determine which socket failed based on handle */
+		Socket *socket, *other_socket;
+		if (req->handle == (uv_stream_t*)&cnx->local_uv_handle.tcp) {
+			socket = &cnx->local;
+			other_socket = &cnx->remote;
+		} else {
+			socket = &cnx->remote;
+			other_socket = &cnx->local;
+		}
+		free(wreq);
 		handleClose(cnx, socket, other_socket);
 		return;
 	}
 
-	/* Calculate write duration for diagnostics */
-	uint64_t now = uv_hrtime();
-	uint64_t start_time = (socket == &cnx->local)
-		? cnx->local_write_start_time
-		: cnx->remote_write_start_time;
+	/* Free the write request */
+	free(wreq);
 
-	if (start_time > 0) {
-		double duration_ms = (now - start_time) / 1000000.0;
-		/* Log writes that take >10ms - accumulation of these could cause timeouts */
-		if (duration_ms > 10.0) {
-			char const *socket_name = (socket == &cnx->local) ? "local" : "remote";
-			int bytes_to_write = other_socket->recvPos - socket->sentPos;
-			logInfo("SLOW WRITE: %s write took %.2f ms for %d bytes (%.2f MB/s)\n",
-			        socket_name, duration_ms, bytes_to_write,
-			        (bytes_to_write / (duration_ms / 1000.0)) / (1024.0 * 1024.0));
-		}
-	}
-
-	/* Update position (uv_write sends all or fails) */
-	int bytes_written = other_socket->recvPos - socket->sentPos;
-	socket->sentPos = other_socket->recvPos;
-	socket->totalBytesOut += bytes_written;
-
-	/* Always try to resume reading after any write completes */
-	/* This prevents stalls when writes are slow - buffer will naturally stop us if full */
-	uv_stream_t *other_stream = (other_socket == &cnx->local)
-		? (uv_stream_t*)&cnx->local_uv_handle.tcp
-		: (uv_stream_t*)&cnx->remote_uv_handle.tcp;
-
-	int *other_handle_closing = (other_socket == &cnx->local)
-		? &cnx->local_handle_closing
-		: &cnx->remote_handle_closing;
-
-	if (other_handle_closing && !(*other_handle_closing) &&
-	    !uv_is_closing((uv_handle_t*)other_stream)) {
-		/* Resume reading - safe even if already reading (returns UV_EALREADY) */
-		/* If buffer is still full, alloc_buffer_cb will return 0 and we'll stop again */
-		int ret = uv_read_start(other_stream, alloc_buffer_cb, tcp_read_cb);
-		if (ret != 0 && ret != UV_EALREADY) {
-			logError("uv_read_start resume error: %s\n", uv_strerror(ret));
-		} else if (ret == 0) {
-			/* Successfully resumed - check if we were stopped and log timing */
-			uint64_t now = uv_hrtime();
-			if (other_socket == &cnx->local && cnx->local_read_stopped) {
-				double delay_ms = (now - cnx->local_read_stopped_time) / 1000000.0;
-				logInfo("Flow control: local read resumed after %.2f ms, buffer=%d/%d bytes (wrote %d)\n",
-				        delay_ms, other_socket->recvPos, RINETD_BUFFER_SIZE, bytes_written);
-				cnx->local_read_stopped = 0;
-			} else if (other_socket == &cnx->remote && cnx->remote_read_stopped) {
-				double delay_ms = (now - cnx->remote_read_stopped_time) / 1000000.0;
-				logInfo("Flow control: remote read resumed after %.2f ms, buffer=%d/%d bytes (wrote %d)\n",
-				        delay_ms, other_socket->recvPos, RINETD_BUFFER_SIZE, bytes_written);
-				cnx->remote_read_stopped = 0;
-			}
-		}
-	}
-
-	/* Trigger next write if there's more data */
-	if (socket->sentPos < other_socket->recvPos && !cnx->coClosing) {
-		tcp_trigger_write(cnx, socket, other_socket, stream);
-	}
-
-	/* Reset buffers if all sent */
-	if (socket->sentPos == other_socket->recvPos) {
-		socket->sentPos = other_socket->recvPos = 0;
-	}
-
-	/* Close if pending and buffer flushed */
-	if (cnx->coClosing && socket->sentPos == other_socket->recvPos) {
-		/* Determine which handle's closing flag to check/set */
-		int *closing_flag = NULL;
-		if (socket == &cnx->local) {
-			closing_flag = &cnx->local_handle_closing;
-		} else {
-			closing_flag = &cnx->remote_handle_closing;
-		}
-
-		/* Only close if not already closing */
-		if (closing_flag && !(*closing_flag) && !uv_is_closing((uv_handle_t*)stream)) {
-			*closing_flag = 1;  /* Set BEFORE calling uv_close() */
-			uv_close((uv_handle_t*)stream, handle_close_cb);
-		}
-	}
+	/* That's it! No flow control, no position tracking - just free and done */
 }
 
 /* Handle close callback */
@@ -1158,13 +942,12 @@ static void handle_close_cb(uv_handle_t *handle)
 		cnx->timer_initialized = 0;
 	}
 
-	/* Check if all handles are closed AND no pending writes - if so, free the connection */
-	/* IMPORTANT: Check all handles are closed AND no pending operations BEFORE clearing data pointers.
-	   This prevents race conditions where write callbacks might access freed connections. */
+	/* Check if all handles are closed - if so, free the connection */
+	/* IMPORTANT: uv_close() waits for pending I/O before calling this callback,
+	   so we don't need to check for pending writes separately. */
 	if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
 	    !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
-	    !cnx->timer_initialized && !cnx->timer_closing &&
-	    cnx->pending_writes == 0) {
+	    !cnx->timer_initialized && !cnx->timer_closing) {
 		/* All handles are closed - safe to free the connection */
 
 		/* Remove from linked list first */
@@ -1185,11 +968,13 @@ static void handle_close_cb(uv_handle_t *handle)
 		cnx->remote_uv_handle.tcp.data = NULL;  /* Union - sets both tcp.data and udp.data */
 		cnx->timeout_timer.data = NULL;
 
-		/* Now safe to free the connection */
-		free(cnx->local.buffer);  /* This also frees remote.buffer */
+		/* Now safe to free the connection (no fixed buffers to free) */
 		free(cnx);
 	}
 }
+
+/* UDP code temporarily disabled for TCP-only testing - needs refactoring for dynamic buffers */
+#if 0
 
 /* Forward declarations for UDP */
 static void udp_send_cb(uv_udp_send_t *req, int status);
@@ -1532,6 +1317,8 @@ static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes)
 	}
 }
 
+#endif /* UDP code disabled */
+
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
 {
 	/* If not already closing, log the event with final byte counts.
@@ -1585,51 +1372,38 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 		uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
 	}
 
-	/* Handle the other socket */
+	/* Close the other socket as well - no need to wait for buffers to drain */
+	/* uv_close() will wait for pending I/O operations to complete */
 	if (other_socket->fd != INVALID_SOCKET) {
-		/* For UDP, immediately close the local socket */
-		if (other_socket->protocol == IPPROTO_UDP && other_socket == &cnx->local) {
-			uv_handle_t *handle = NULL;
-			if (cnx->local_handle_initialized) {
-				handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
+		uv_handle_t *other_handle = NULL;
+		int *other_closing_flag = NULL;
+
+		if (other_socket == &cnx->local && cnx->local_handle_initialized) {
+			if (cnx->local_handle_type == UV_TCP) {
+				other_handle = (uv_handle_t*)&cnx->local_uv_handle.tcp;
+			} else {
+				other_handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
 			}
-			if (handle && !cnx->local_handle_closing && !uv_is_closing(handle)) {
-				/* Stop recv before closing (libuv best practice) */
-				uv_udp_recv_stop((uv_udp_t*)handle);
-				cnx->local_handle_closing = 1;  /* Set BEFORE calling uv_close() */
-				uv_close(handle, handle_close_cb);
+			other_closing_flag = &cnx->local_handle_closing;
+		} else if (other_socket == &cnx->remote && cnx->remote_handle_initialized) {
+			if (cnx->remote_handle_type == UV_TCP) {
+				other_handle = (uv_handle_t*)&cnx->remote_uv_handle.tcp;
+			} else {
+				other_handle = (uv_handle_t*)&cnx->remote_uv_handle.udp;
 			}
-			other_socket->fd = INVALID_SOCKET;
+			other_closing_flag = &cnx->remote_handle_closing;
 		}
-		/* For TCP, close immediately if no data to send AND no pending writes */
-		else if (other_socket->protocol == IPPROTO_TCP) {
-			/* Check if we need to wait for writes to complete */
-			int *other_write_in_progress = (other_socket == &cnx->local)
-				? &cnx->local_write_in_progress
-				: &cnx->remote_write_in_progress;
 
-			/* If all data has been sent AND no writes are in progress, close the other socket now */
-			if (socket->sentPos >= other_socket->recvPos &&
-			    other_write_in_progress && !(*other_write_in_progress)) {
-				uv_handle_t *other_handle = NULL;
-				int *other_closing_flag = NULL;
-
-				if (other_socket == &cnx->local && cnx->local_handle_initialized) {
-					other_handle = (uv_handle_t*)&cnx->local_uv_handle.tcp;
-					other_closing_flag = &cnx->local_handle_closing;
-				} else if (other_socket == &cnx->remote && cnx->remote_handle_initialized) {
-					other_handle = (uv_handle_t*)&cnx->remote_uv_handle.tcp;
-					other_closing_flag = &cnx->remote_handle_closing;
-				}
-
-				if (other_handle && other_closing_flag && !(*other_closing_flag) && !uv_is_closing(other_handle)) {
-					uv_read_stop((uv_stream_t*)other_handle);
-					*other_closing_flag = 1;  /* Set BEFORE calling uv_close() */
-					uv_close(other_handle, handle_close_cb);
-					other_socket->fd = INVALID_SOCKET;
-				}
+		if (other_handle && other_closing_flag && !(*other_closing_flag) && !uv_is_closing(other_handle)) {
+			/* Stop reading/recv before closing (libuv best practice) */
+			if (other_socket->protocol == IPPROTO_TCP) {
+				uv_read_stop((uv_stream_t*)other_handle);
+			} else if (other_socket->protocol == IPPROTO_UDP) {
+				uv_udp_recv_stop((uv_udp_t*)other_handle);
 			}
-			/* Otherwise, tcp_write_cb will close it after pending writes complete */
+			*other_closing_flag = 1;  /* Set BEFORE calling uv_close() */
+			uv_close(other_handle, handle_close_cb);
+			other_socket->fd = INVALID_SOCKET;
 		}
 	}
 }
