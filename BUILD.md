@@ -6,7 +6,7 @@ This document describes how to build and install rinetd-uv from source.
 
 ### Required Dependencies
 
-- **C Compiler**: GCC or compatible C compiler
+- **C Compiler**: GCC, LLVM or other compatible C compiler
 - **GNU Autotools**:
   - autoconf (version 2.52 or later)
   - automake (version 1.18 or later recommended)
@@ -19,6 +19,12 @@ This document describes how to build and install rinetd-uv from source.
 - **peg/leg**: PEG parser generator (only needed if modifying `src/parse.peg`)
 - **roffit**: Man page to HTML converter (only needed for regenerating `index.html`)
 - **pandoc**: Universal document converter (for generating documentation from Markdown)
+
+### Test Scripts Dependencies
+
+Python 3 and common python libraries are required to run scripts int `test/`:
+- **dnspython**
+- **requests**
 
 ## Installing Dependencies
 

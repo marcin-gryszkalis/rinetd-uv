@@ -12,6 +12,14 @@
  * Updated documentation: single-source markdown with auto-generated man page and HTML
  * Backward compatible with original rinetd configuration files
  * Modern C99 codebase with improved error handling
+ * **UDP improvements:**
+   - Reduced default UDP timeout from 72s to 10s to prevent FD exhaustion
+   - Added connection limit of 1000 UDP connections per forwarding rule
+   - Implemented LRU (Least Recently Used) eviction when limit reached
+   - Prevents "too many open files" errors under high UDP load
+   - Maintains RFC 5452 compliance (source port randomization for DNS security)
+ * **INCOMPATIBILITY** Renamed configuration option: `pidlogfile` → `pidfile`
+ * **INCOMPATIBILITY** Changed date format in log file
 
 ## Version 0.73 (2021/02/19)
 

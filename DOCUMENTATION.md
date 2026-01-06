@@ -91,13 +91,15 @@ Both IP addresses and hostnames are accepted for *bindaddress* and *connectaddre
 
 ### UDP Timeout Option
 
-Since UDP is a connectionless protocol, a timeout is necessary or forwarding connections may accumulate with time and exhaust resources. By default, if no data is sent or received on a UDP connection for 72 seconds, the other connection is closed. This value can be changed using the *timeout* option:
+Since UDP is a connectionless protocol, a timeout is necessary or forwarding connections may accumulate with time and exhaust resources. By default, if no data is sent or received on a UDP connection for 10 seconds, the other connection is closed. This value can be changed using the *timeout* option:
 
 ```
 0.0.0.0 8000/udp  10.1.1.2 53/udp  [timeout=3600]
 ```
 
 This rule will forward all data received on UDP port 8000 to host 10.1.1.2 on UDP port 53, and will close the connection after no data is received on the UDP port for 3600 seconds.
+
+**Note:** rinetd-uv limits UDP connections to 1000 concurrent outgoing connections per forwarding rule to prevent file descriptor exhaustion. When this limit is reached, the oldest (least recently used) connection is automatically closed to make room for new connections. This is particularly important for high-volume UDP proxies (e.g., DNS).
 
 ### Source Address Option
 

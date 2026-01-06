@@ -14,7 +14,8 @@
 
 static int const RINETD_DEFAULT_BUFFER_SIZE = 65536;
 static int const RINETD_LISTEN_BACKLOG = 128;
-static int const RINETD_DEFAULT_UDP_TIMEOUT = 72;
+static int const RINETD_DEFAULT_UDP_TIMEOUT = 10;
+static int const RINETD_MAX_UDP_CONNECTIONS = 1000;
 
 #define RINETD_CONFIG_FILE "/etc/rinetd.conf"
 #define RINETD_PID_FILE "/var/run/rinetd.pid"

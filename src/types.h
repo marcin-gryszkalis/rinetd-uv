@@ -49,6 +49,9 @@ struct _server_info {
 	/* Timeout for UDP traffic before we consider the connection
 		was dropped by the remote host. */
 	int serverTimeout;
+	/* Track number of active UDP connections for this forwarding rule
+	   to prevent file descriptor exhaustion */
+	int udp_connection_count;
 };
 
 typedef struct _socket Socket;

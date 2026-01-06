@@ -1054,6 +1054,28 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
 	/* That's it! No position tracking, no buffer management */
 }
 
+/* Find and close the oldest UDP connection for a given server (LRU eviction) */
+static void close_oldest_udp_connection(ServerInfo *srv)
+{
+	ConnectionInfo *oldest = NULL;
+	time_t oldest_time = 0;
+
+	/* Find the connection with the oldest (smallest) timeout value */
+	for (ConnectionInfo *c = connectionListHead; c; c = c->next) {
+		if (c->server == srv &&
+		    c->remote.protocol == IPPROTO_UDP &&
+		    !c->coClosing &&
+		    (oldest == NULL || c->remoteTimeout < oldest_time)) {
+			oldest = c;
+			oldest_time = c->remoteTimeout;
+		}
+	}
+
+	if (oldest) {
+		handleClose(oldest, &oldest->remote, &oldest->local);
+	}
+}
+
 /* UDP timeout callback */
 static void udp_timeout_cb(uv_timer_t *timer)
 {
@@ -1138,7 +1160,12 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 		return;
 	}
 
-	/* New connection */
+	/* New connection - check if we've reached the limit */
+	if (srv->udp_connection_count >= RINETD_MAX_UDP_CONNECTIONS) {
+		/* Close oldest connection to make room */
+		close_oldest_udp_connection((ServerInfo*)srv);
+	}
+
 	cnx = allocateConnection();
 	if (!cnx) {
 		free(buf->base);
@@ -1222,6 +1249,9 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 	udp_send_to_backend(cnx, buf->base, (int)nread);
 
 	logEvent(cnx, srv, logOpened);
+
+	/* Increment UDP connection count for this forwarding rule */
+	((ServerInfo*)srv)->udp_connection_count++;
 }
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
@@ -1234,6 +1264,11 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 			logLocalClosedFirst : logRemoteClosedFirst;
 		logEvent(cnx, cnx->server, cnx->coLog);
 		cnx->coClosing = 1;
+
+		/* Decrement UDP connection count for this forwarding rule */
+		if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
+			((ServerInfo*)cnx->server)->udp_connection_count--;
+		}
 	}
 
 	/* Close the socket's libuv handle */
