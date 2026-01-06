@@ -1,6 +1,7 @@
 /* Copyright © 1997—1999 Thomas Boutell <boutell@boutell.com>
                          and Boutell.Com, Inc.
              © 2003—2021 Sam Hocevar <sam@hocevar.net>
+             © 2026 Marcin Gryszkalis <mg@fork.pl>
 
    This software is released for free use under the terms of
    the GNU Public License, version 2 or higher. NO WARRANTY
@@ -134,11 +135,8 @@ int main(int argc, char *argv[])
 	WSADATA wsaData;
 	int result = WSAStartup(MAKEWORD(1, 1), &wsaData);
 	if (result != 0) {
-		fprintf(stderr, "Your computer was not connected "
-			"to the Internet at the time that "
-			"this program was launched, or you "
-			"do not have a 32-bit "
-			"connection to the Internet.");
+		logError("Your computer was not connected to the Internet at the time that "
+			"this program was launched, or you do not have a 32-bit connection to the Internet.\n");
 		exit(1);
 	}
 #else
@@ -1616,8 +1614,7 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
 			case 'c':
 				options->conf_file = optarg;
 				if (!options->conf_file) {
-					fprintf(stderr, "Not enough memory to "
-						"launch rinetd.\n");
+					logError("Not enough memory to launch rinetd-uv.\n");
 					exit(1);
 				}
 				break;

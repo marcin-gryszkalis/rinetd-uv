@@ -1,7 +1,7 @@
 /* Copyright © 1997—1999 Thomas Boutell <boutell@boutell.com>
                          and Boutell.Com, Inc.
              © 2003—2021 Sam Hocevar <sam@hocevar.net>
-
+             © 2026 Marcin Gryszkalis <mg@fork.pl>
    This software is released for free use under the terms of
    the GNU Public License, version 2 or higher. NO WARRANTY
    IS EXPRESSED OR IMPLIED. USE THIS SOFTWARE AT YOUR OWN RISK. */
@@ -44,7 +44,7 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
 
 	int ret = getaddrinfo(address, port, &hints, ai);
 	if (ret != 0) {
-		fprintf(stderr, "rinetd: cannot resolve host \"%s\" port %s "
+		fprintf(stderr, "rinetd-uv: cannot resolve host \"%s\" port %s "
 				"(getaddrinfo() error: %s)\n",
 			address, port ? port : "<null>", gai_strerror(ret));
 	}
