@@ -1,140 +1,402 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
- "http://www.w3.org/TR/html4/loose.dtd">
-<html><head>
-<title>rinetd man page</title>
-<meta name="generator" content="roffit">
-<STYLE type="text/css">
-P.level0 {
- padding-left: 2em;
-}
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="dcterms.date" content="2026-01-06" />
+  <title>rinetd - internet redirection server</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">rinetd - internet redirection server</h1>
+<p class="date">2026-01-06</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#rinetd8---internet-redirection-server"
+id="toc-rinetd8---internet-redirection-server">rinetd(8) - internet
+redirection server</a>
+<ul>
+<li><a href="#name" id="toc-name">NAME</a></li>
+<li><a href="#synopsis" id="toc-synopsis">SYNOPSIS</a></li>
+<li><a href="#description" id="toc-description">DESCRIPTION</a></li>
+<li><a href="#options" id="toc-options">OPTIONS</a></li>
+<li><a href="#forwarding-rules" id="toc-forwarding-rules">FORWARDING
+RULES</a></li>
+<li><a href="#forwarding-options" id="toc-forwarding-options">FORWARDING
+OPTIONS</a></li>
+<li><a href="#global-configuration-options"
+id="toc-global-configuration-options">GLOBAL CONFIGURATION
+OPTIONS</a></li>
+<li><a href="#allow-and-deny-rules" id="toc-allow-and-deny-rules">ALLOW
+AND DENY RULES</a></li>
+<li><a href="#example-configuration"
+id="toc-example-configuration">EXAMPLE CONFIGURATION</a></li>
+<li><a href="#reinitializing-rinetd"
+id="toc-reinitializing-rinetd">REINITIALIZING RINETD</a></li>
+<li><a href="#bugs-and-limitations" id="toc-bugs-and-limitations">BUGS
+AND LIMITATIONS</a></li>
+<li><a href="#performance-notes" id="toc-performance-notes">PERFORMANCE
+NOTES</a></li>
+<li><a href="#license" id="toc-license">LICENSE</a></li>
+<li><a href="#contact-information" id="toc-contact-information">CONTACT
+INFORMATION</a></li>
+<li><a href="#thanks" id="toc-thanks">THANKS</a></li>
+<li><a href="#see-also" id="toc-see-also">SEE ALSO</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="rinetd8---internet-redirection-server">rinetd(8) - internet
+redirection server</h1>
+<h2 id="name">NAME</h2>
+<p>rinetd - internet redirection server</p>
+<h2 id="synopsis">SYNOPSIS</h2>
+<pre><code>rinetd [-f] [-c configuration]
+rinetd -h
+rinetd -v</code></pre>
+<h2 id="description">DESCRIPTION</h2>
+<p><strong>rinetd</strong> redirects TCP or UDP connections from one IP
+address and port to another. <strong>rinetd</strong> is a single-process
+server which handles any number of connections to the address/port pairs
+specified in the file <code>/etc/rinetd.conf</code>. Since
+<strong>rinetd</strong> runs as a single process using nonblocking I/O
+(via libuv event loop), it is able to redirect a large number of
+connections without a severe impact on the machine. This makes it
+practical to run services on machines inside an IP masquerading
+firewall.</p>
+<p><strong>rinetd</strong> is typically launched at boot time, using the
+following syntax:</p>
+<pre><code>/usr/sbin/rinetd</code></pre>
+<p>The configuration file is found in the file
+<code>/etc/rinetd.conf</code>, unless another file is specified using
+the <code>-c</code> command line option.</p>
+<h2 id="options">OPTIONS</h2>
+<dl>
+<dt><strong>-f</strong></dt>
+<dd>
+Run <strong>rinetd</strong> in the foreground, without forking to the
+background.
+</dd>
+<dt><strong>-c</strong> <em>configuration</em></dt>
+<dd>
+Specify an alternate configuration file.
+</dd>
+<dt><strong>-v</strong></dt>
+<dd>
+Display the version number and exit.
+</dd>
+<dt><strong>-h</strong></dt>
+<dd>
+Produce a short help message and exit.
+</dd>
+</dl>
+<h2 id="forwarding-rules">FORWARDING RULES</h2>
+<p>Most entries in the configuration file are forwarding rules. The
+format of a forwarding rule is as follows:</p>
+<pre><code>bindaddress bindport connectaddress connectport [options...]</code></pre>
+<p>For example:</p>
+<pre><code>206.125.69.81 80  10.1.1.2 80</code></pre>
+<p>Would redirect all connections to port 80 of the “real” IP address
+206.125.69.81, which could be a virtual interface, through
+<strong>rinetd</strong> to port 80 of the address 10.1.1.2, which would
+typically be a machine on the inside of a firewall which has no direct
+routing to the outside world.</p>
+<p>Although responding on individual interfaces rather than on all
+interfaces is one of <strong>rinetd</strong>’s primary features,
+sometimes it is preferable to respond on all IP addresses that belong to
+the server. In this situation, the special IP address
+<code>0.0.0.0</code> can be used. For example:</p>
+<pre><code>0.0.0.0 23  10.1.1.2 23</code></pre>
+<p>Would redirect all connections to port 23, for all IP addresses
+assigned to the server. This is the default behavior for most other
+programs.</p>
+<h3 id="protocol-specification">Protocol Specification</h3>
+<p>Ports default to TCP. To specify the protocol, append
+<code>/udp</code> or <code>/tcp</code> to the port number:</p>
+<pre><code>206.125.69.81 80/tcp  10.1.1.2 8000/tcp
+0.0.0.0 53/udp  8.8.8.8 53/udp</code></pre>
+<p><strong>Note:</strong> Mixed-mode forwarding (TCP to UDP or UDP to
+TCP) is not currently supported.</p>
+<h3 id="service-names">Service Names</h3>
+<p>Service names can be specified instead of port numbers. On most
+systems, service names are defined in the file
+<code>/etc/services</code>.</p>
+<h3 id="ip-addresses-and-hostnames">IP Addresses and Hostnames</h3>
+<p>Both IP addresses and hostnames are accepted for <em>bindaddress</em>
+and <em>connectaddress</em>, including IPv6.</p>
+<h2 id="forwarding-options">FORWARDING OPTIONS</h2>
+<h3 id="udp-timeout-option">UDP Timeout Option</h3>
+<p>Since UDP is a connectionless protocol, a timeout is necessary or
+forwarding connections may accumulate with time and exhaust resources.
+By default, if no data is sent or received on a UDP connection for 72
+seconds, the other connection is closed. This value can be changed using
+the <em>timeout</em> option:</p>
+<pre><code>0.0.0.0 8000/udp  10.1.1.2 53/udp  [timeout=3600]</code></pre>
+<p>This rule will forward all data received on UDP port 8000 to host
+10.1.1.2 on UDP port 53, and will close the connection after no data is
+received on the UDP port for 3600 seconds.</p>
+<h3 id="source-address-option">Source Address Option</h3>
+<p>A forwarding rule option allows binding to a specific local address
+when sending data to the other end. This is done using the <em>src</em>
+option:</p>
+<pre><code>192.168.1.1 80  10.1.1.127 80  [src=10.1.1.2]</code></pre>
+<p>Assuming the local host has two IP addresses, 10.1.1.1 and 10.1.1.2,
+this rule ensures that forwarded packets are sent using source address
+10.1.1.2.</p>
+<h2 id="global-configuration-options">GLOBAL CONFIGURATION OPTIONS</h2>
+<h3 id="buffer-size">Buffer Size</h3>
+<p>The buffer size used for I/O operations can be configured globally.
+This affects memory usage and performance characteristics.</p>
+<pre><code>buffersize 32768</code></pre>
+<p><strong>Range:</strong> 1024 to 1048576 bytes (1 KB to 1 MB)
+<strong>Default:</strong> 65536 bytes (64 KB)</p>
+<p><strong>Recommendations:</strong> - <strong>DNS proxy (small
+packets):</strong> <code>buffersize 2048</code> - Reduces memory usage -
+<strong>HTTP proxy (medium packets):</strong>
+<code>buffersize 32768</code> - Balanced performance - <strong>High
+throughput:</strong> <code>buffersize 131072</code> - Maximum
+performance (if memory allows) - <strong>Memory-constrained
+systems:</strong> <code>buffersize 4096</code> - Minimum practical
+size</p>
+<p>The buffer size multiplied by the number of concurrent connections
+determines total memory usage. For example, with 1000 concurrent
+connections: - <code>buffersize 4096</code>: ~4 MB memory -
+<code>buffersize 65536</code>: ~64 MB memory</p>
+<h3 id="logging">Logging</h3>
+<p><strong>rinetd</strong> is able to produce a log file in either of
+two formats: tab-delimited and web server-style “common log format”.</p>
+<p>By default, <strong>rinetd</strong> does not produce a log file. To
+activate logging, add the following line to the configuration file:</p>
+<pre><code>logfile /var/log/rinetd.log</code></pre>
+<p>By default, <strong>rinetd</strong> logs in a simple tab-delimited
+format containing the following information:</p>
+<ul>
+<li>Date and time</li>
+<li>Client address</li>
+<li>Listening host</li>
+<li>Listening port</li>
+<li>Forwarded-to host</li>
+<li>Forwarded-to port</li>
+<li>Bytes received from client</li>
+<li>Bytes sent to client</li>
+<li>Result message</li>
+</ul>
+<p>To activate web server-style “common log format” logging, add the
+following line to the configuration file:</p>
+<pre><code>logcommon</code></pre>
+<h3 id="pid-file">PID File</h3>
+<p>Under Linux the process ID is saved in the file
+<code>/var/run/rinetd.pid</code> by default. An alternate filename can
+be provided:</p>
+<pre><code>pidlogfile /var/run/myrinetd.pid</code></pre>
+<h2 id="allow-and-deny-rules">ALLOW AND DENY RULES</h2>
+<p>Configuration files can also contain allow and deny rules.</p>
+<p>Allow rules which appear <strong>before the first forwarding
+rule</strong> are applied globally: if at least one global allow rule
+exists, and the address of a new connection does not satisfy at least
+one of the global allow rules, that connection is immediately rejected,
+regardless of any other rules.</p>
+<p>Allow rules which appear <strong>after a specific forwarding
+rule</strong> apply to that forwarding rule only. If at least one allow
+rule exists for a particular forwarding rule, and the address of a new
+connection does not satisfy at least one of the allow rules for that
+forwarding rule, that connection is immediately rejected, regardless of
+any other rules.</p>
+<p>Deny rules which appear <strong>before the first forwarding
+rule</strong> are applied globally: if the address of a new connection
+satisfies any of the global deny rules, that connection is immediately
+rejected, regardless of any other rules.</p>
+<p>Deny rules which appear <strong>after a specific forwarding
+rule</strong> apply to that forwarding rule only. If the address of a
+new connection satisfies any of the deny rules for that forwarding rule,
+that connection is immediately rejected, regardless of any other
+rules.</p>
+<h3 id="rule-format">Rule Format</h3>
+<p>The format of an allow or deny rule is as follows:</p>
+<pre><code>allow pattern
+deny pattern</code></pre>
+<p>Patterns can contain the following characters: <code>0</code>,
+<code>1</code>, <code>2</code>, <code>3</code>, <code>4</code>,
+<code>5</code>, <code>6</code>, <code>7</code>, <code>8</code>,
+<code>9</code>, <code>.</code> (period), <code>?</code>, and
+<code>*</code>. The <code>?</code> wildcard matches any one character.
+The <code>*</code> wildcard matches any number of characters, including
+zero.</p>
+<p>For example:</p>
+<pre><code>allow 206.125.69.*</code></pre>
+<p>This allow rule matches all IP addresses in the 206.125.69 class C
+domain.</p>
+<p><strong>Important:</strong> Host names are <strong>NOT</strong>
+permitted in allow and deny rules. The performance cost of looking up IP
+addresses to find their corresponding names is prohibitive. Since
+<strong>rinetd</strong> is a single process server, all other
+connections would be forced to pause during the address lookup.</p>
+<h2 id="example-configuration">EXAMPLE CONFIGURATION</h2>
+<pre><code># Global settings
+logfile /var/log/rinetd.log
+buffersize 32768
 
-P.level1 {
- padding-left: 4em;
-}
+# Global access control
+allow 192.168.*
+deny *
 
-P.level2 {
- padding-left: 6em;
-}
+# TCP forwarding
+0.0.0.0 80 192.168.1.10 8080
+0.0.0.0 443 192.168.1.10 8443
 
-span.emphasis {
- font-style: italic;
-}
+# UDP forwarding (DNS)
+0.0.0.0 53/udp 8.8.8.8 53/udp [timeout=30]
 
-span.bold {
- font-weight: bold;
-}
+# Forwarding with source address binding
+192.168.1.1 3306 10.1.1.50 3306 [src=192.168.1.100]
 
-span.manpage {
- font-weight: bold;
-}
-
-h2.nroffsh {
- background-color: #e0e0e0;
-}
-
-span.nroffip {
- font-weight: bold;
- font-size: 120%;
- font-family: monospace;
-}
-
-p.roffit {
- text-align: center;
- font-size: 80%;
-}
-</STYLE>
-</head><body>
-
-<p class="level0">
-<p class="level0"><a name="NAME"></a><h2 class="nroffsh">NAME</h2>
-<p class="level0">rinetd - internet redirection server 
-<p class="level0"><a name="SYNOPSIS"></a><h2 class="nroffsh">SYNOPSIS</h2>
-<p class="level0"><span Class="bold">rinetd</span> [<span Class="bold">-f</span>] [<span Class="bold">-c</span> <span Class="emphasis">configuration</span>] 
-<p class="level0"><span Class="bold">rinetd -h</span> 
-<p class="level0"><span Class="bold">rinetd -v</span> 
-<p class="level0"><a name="DESCRIPTION"></a><h2 class="nroffsh">DESCRIPTION</h2>
-<p class="level0">
-<p class="level0"><span Class="bold">rinetd</span> redirects TCP or UDP connections from one IP address and port to another. <span Class="bold">rinetd</span> is a single-process server which handles any number of connections to the address/port pairs specified in the file <span Class="emphasis">/etc/rinetd.conf</span>. Since <span Class="bold">rinetd</span> runs as a single process using nonblocking I/O, it is able to redirect a large number of connections without a severe impact on the machine. This makes it practical to run services on machines inside an IP masquerading firewall. 
-<p class="level0"><span Class="bold">rinetd</span> is typically launched at boot time, using the following syntax: 
-<p class="level0"><span Class="bold">    /usr/sbin/rinetd</span> 
-<p class="level0">The configuration file is found in the file <span Class="emphasis">/etc/rinetd.conf</span>, unless another file is specified using the <span Class="bold">-c</span> command line option. 
-<p class="level0"><a name="OPTIONS"></a><h2 class="nroffsh">OPTIONS</h2>
-<p class="level0">
-<p class="level0"><span Class="bold">-f</span> Run <span Class="bold">rinetd</span> in the foreground, without forking to the background. 
-<p class="level0"><span Class="bold">-c</span> <span Class="emphasis">configuration</span> Specify an alternate configuration file. 
-<p class="level0"><span Class="bold">-v</span> Display the version number and exit. 
-<p class="level0"><span Class="bold">-h</span> Produce a short help message and exit. 
-<p class="level0"><a name="FORWARDING"></a><h2 class="nroffsh">FORWARDING RULES</h2>
-<p class="level0">
-<p class="level0">Most entries in the configuration file are forwarding rules. The format of a forwarding rule is as follows: 
-<p class="level0"><span Class="bold">    bindaddress bindport connectaddress connectport [options...]</span> 
-<p class="level0">For example: 
-<p class="level0"><span Class="bold">    206.125.69.81 80  10.1.1.2 80</span> 
-<p class="level0">Would redirect all connections to port 80 of the "real" IP address 206.125.69.81, which could be a virtual interface, through <span Class="bold">rinetd</span> to port 80 of the address 10.1.1.2, which would typically be a machine on the inside of a firewall which has no direct routing to the outside world. 
-<p class="level0">
-<p class="level0">is one of <span Class="bold">rinetd</span>'s primary features, sometimes it is preferable to respond on all IP addresses that belong to the server. In this situation, the special IP address 0.0.0.0 can be used. For example: 
-<p class="level0">
-<p class="level0"><span Class="bold">    0.0.0.0 23  10.1.1.2 23</span> 
-<p class="level0">Would redirect all connections to port 23, for all IP addresses assigned to the server. This is the default behavior for most other programs. 
-<p class="level0">Ports default to TCP. To specify the protocol, append <span Class="emphasis">/udp</span> or <span Class="emphasis">/tcp</span> to the port number: 
-<p class="level0"><span Class="bold">    206.125.69.81 80/tcp  10.1.1.2 8000/udp</span> 
-<p class="level0">Service names can be specified instead of port numbers. On most systems, service names are defined in the file <span Class="emphasis">/etc/services</span>. 
-<p class="level0">Both IP addresses and hostnames are accepted for bindaddress and connectaddress, including IPv6. 
-<p class="level0">
-<p class="level0"><a name="UDP"></a><h2 class="nroffsh">UDP timeout option</h2>
-<p class="level0">Since UDP is a connectionless protocol, a timeout is necessary or forwarding connections may accumulate with time and exhaust resources. By default, if no data is sent or received on a UDP connection for 72 seconds, the other connection is closed. This value can be changed using the <span Class="emphasis">timeout</span> option: 
-<p class="level0"><span Class="bold">    0.0.0.0 8000/udp  10.1.1.2 80  [timeout=3600]</span> 
-<p class="level0">This rule will forward all data received on UDP port 8000 to host 10.1.1.2 on TCP port 80, and will close the connection after no data is received on the UDP port for 3600 seconds. 
-<p class="level0"><a name="Source"></a><h2 class="nroffsh">Source address option</h2>
-<p class="level0">A forwarding rule option allows to bind to a specific local address when sending data to the other end. This is done using the <span Class="emphasis">src</span> option: 
-<p class="level0"><span Class="bold">    192.168.1.1 80  10.1.1.127 80  [src=10.1.1.2]</span> 
-<p class="level0">Assuming the local host has two IP addresses, 10.1.1.1 and 10.1.1.2, this rule ensures that forwarded packets are sent using source address 10.1.1.2. 
-<p class="level0"><a name="ALLOW"></a><h2 class="nroffsh">ALLOW AND DENY RULES</h2>
-<p class="level0">Configuration files can also contain allow and deny rules. 
-<p class="level0">Allow rules which appear before the first forwarding rule are applied globally: if at least one global allow rule exists, and the address of a new connection does not satisfy at least one of the global allow rules, that connection is immediately rejected, regardless of any other rules. 
-<p class="level0">Allow rules which appear after a specific forwarding rule apply to that forwarding rule only. If at least one allow rule exists for a particular forwarding rule, and the address of a new connection does not satisfy at least one of the allow rules for that forwarding rule, that connection is immediately rejected, regardless of any other rules. 
-<p class="level0">Deny rules which appear before the first forwarding rule are applied globally: if the address of a new connection satisfies any of the global deny rules, that connection is immediately rejected, regardless of any other rules. 
-<p class="level0">Deny rules which appear after a specific forwarding rule apply to that forwarding rule only. If the address of a new connection satisfies any of the deny rules for that forwarding rule, that connection is immediately rejected, regardless of any other rules. 
-<p class="level0">The format of an allow rule is as follows: 
-<p class="level0"><span Class="bold">    allow|deny pattern</span> 
-<p class="level0">Patterns can contain the following characters: <span Class="bold">0</span>, <span Class="bold">1</span>, <span Class="bold">2</span>, <span Class="bold">3</span>, <span Class="bold">4</span>, <span Class="bold">5</span>, <span Class="bold">6</span>, <span Class="bold">7</span>, <span Class="bold">8</span>, <span Class="bold">9</span>, <span Class="bold">.</span> (period), <span Class="bold">?</span>, and <span Class="bold">*</span>. The <span Class="bold">?</span> wildcard matches any one character. The <span Class="bold">*</span> wildcard matches any number of characters, including zero. 
-<p class="level0">For example: 
-<p class="level0"><span Class="bold">    allow 206.125.69.*</span> 
-<p class="level0">This allow rule matches all IP addresses in the 206.125.69 class C domain. 
-<p class="level0">Host names are NOT permitted in allow and deny rules. The performance cost of looking up IP addresses to find their corresponding names is prohibitive. Since <span Class="bold">rinetd</span> is a single process server, all other connections would be forced to pause during the address lookup. 
-<p class="level0"><a name="LOGGING"></a><h2 class="nroffsh">LOGGING</h2>
-<p class="level0"><span Class="bold">rinetd</span> is able to produce a log file in either of two formats: tab-delimited and web server-style "common log format". 
-<p class="level0">By default, <span Class="bold">rinetd</span> does not produce a log file. To activate logging, add the following line to the configuration file: 
-<p class="level0"><span Class="bold">    logfile log-file-location</span> 
-<p class="level0">Example: 
-<p class="level0"><span Class="bold">    logfile /var/log/rinetd.log</span> 
-<p class="level0">By default, <span Class="bold">rinetd</span> logs in a simple tab-delimited format containing the following information: 
-<p class="level0">&nbsp;   Date and time 
-<p class="level0">&nbsp;   Client address 
-<p class="level0">&nbsp;   Listening host 
-<p class="level0">&nbsp;   Listening port 
-<p class="level0">&nbsp;   Forwarded-to host 
-<p class="level0">&nbsp;   Forwarded-to port 
-<p class="level0">&nbsp;   Bytes received from client 
-<p class="level0">&nbsp;   Bytes sent to client 
-<p class="level0">&nbsp;   Result message 
-<p class="level0">To activate web server-style "common log format" logging, add the following line to the configuration file: 
-<p class="level0"><span Class="bold">    logcommon</span> 
-<p class="level0"><a name="REINITIALIZING"></a><h2 class="nroffsh">REINITIALIZING RINETD</h2>
-<p class="level0">
-<p class="level0">The <span Class="bold">kill -1</span> signal (<span Class="emphasis">SIGHUP</span>) can be used to cause <span Class="bold">rinetd</span> to reload its configuration file without interrupting existing connections. 
-<p class="level0">Under Linux(tm the process id is saved in the file <span Class="emphasis">/var/run/rinetd.pid</span> to facilitate the <span Class="bold">kill -HUP</span>. An alternate filename can be provided by using the pidlogfile configuration file option. 
-<p class="level0"><a name="BUGS"></a><h2 class="nroffsh">BUGS AND LIMITATIONS</h2>
-<p class="level0">
-<p class="level0"><span Class="bold">rinetd</span> only redirects protocols which use a single TCP or UDP socket. This rules out FTP. 
-<p class="level0">The server redirected to is not able to identify the host the client really came from. This cannot be corrected; however, the log produced by <span Class="bold">rinetd</span> provides a way to obtain this information. Under Unix, Sockets would theoretically lose data when closed with SO_LINGER turned off, but in Linux this is not the case (kernel source comments support this belief on my part). On non-Linux Unix platforms, alternate code which uses a different trick to work around blocking close() is provided, but this code is untested. 
-<p class="level0">The logging is inadequate. The duration of each connection should be logged. <a name="LICENSE"></a><h2 class="nroffsh">LICENSE</h2>
-<p class="level0">Copyright (c) 1997, 1998, 1999, Thomas Boutell and Boutell.Com, Inc. 
-<p class="level0">Copyright (c) 2003-2021 Sam Hocevar 
-<p class="level0">This software is released for free use under the terms of the GNU General Public License, version 2 or higher. NO WARRANTY IS EXPRESSED OR IMPLIED. USE THIS SOFTWARE AT YOUR OWN RISK. <a name="CONTACT"></a><h2 class="nroffsh">CONTACT INFORMATION</h2>
-<p class="level0">See https://github.com/samhocevar/rinetd/releases for the latest release. 
-<p class="level0">Thomas Boutell can be reached by email: boutell@boutell.com 
-<p class="level0">Sam Hocevar can be reached by email: sam@hocevar.net <a name="THANKS"></a><h2 class="nroffsh">THANKS</h2>
-<p class="level0">Thanks are due to Bill Davidsen, Libor Pechachek, Sascha Ziemann, the Apache Group, and many others who have contributed advice and/or source code to this and other free software projects. <p class="roffit">
- This HTML page was made with <a href="http://daniel.haxx.se/projects/roffit/">roffit</a>.
-</body></html>
+# Per-rule access control
+0.0.0.0 22 192.168.1.20 22
+allow 10.0.0.*</code></pre>
+<h2 id="reinitializing-rinetd">REINITIALIZING RINETD</h2>
+<p>The <code>kill -1</code> signal (SIGHUP) can be used to cause
+<strong>rinetd</strong> to reload its configuration file without
+interrupting existing connections.</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd.pid<span class="va">)</span></span></code></pre></div>
+<p>Or simply:</p>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd</span></code></pre></div>
+<h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
+<p><strong>rinetd</strong> only redirects protocols which use a single
+TCP or UDP socket. This rules out FTP (which uses multiple connections
+for data transfer).</p>
+<p>The server redirected to is not able to identify the host the client
+really came from. This cannot be corrected; however, the log produced by
+<strong>rinetd</strong> provides a way to obtain this information.</p>
+<p>Mixed-mode forwarding (TCP client to UDP backend, or UDP client to
+TCP backend) is not supported due to fundamental protocol
+incompatibilities. See <code>TCP-UDP_MIXED_MODE.md</code> for technical
+details.</p>
+<h2 id="performance-notes">PERFORMANCE NOTES</h2>
+<p><strong>rinetd</strong> uses libuv for event-driven I/O, providing
+excellent performance characteristics:</p>
+<ul>
+<li>Single-process, event-driven architecture</li>
+<li>Dynamic buffer allocation with zero-copy forwarding</li>
+<li>Efficient handling of thousands of concurrent connections</li>
+<li>Low CPU overhead per connection</li>
+</ul>
+<p>Memory usage can be tuned via the <code>buffersize</code> option.
+Typical memory usage:</p>
+<pre><code>Total Memory = buffersize × concurrent_connections</code></pre>
+<p>For high-performance deployments, consider: - Using larger buffer
+sizes (64 KB - 128 KB) for better throughput - Using smaller buffer
+sizes (2 KB - 8 KB) when memory is constrained - Monitoring active
+connections and adjusting buffer size accordingly</p>
+<h2 id="license">LICENSE</h2>
+<p>Copyright (c) 1997, 1998, 1999, Thomas Boutell and Boutell.Com,
+Inc.</p>
+<p>Copyright (c) 2003-2021 Sam Hocevar</p>
+<p>This software is released for free use under the terms of the GNU
+General Public License, version 2 or higher. NO WARRANTY IS EXPRESSED OR
+IMPLIED. USE THIS SOFTWARE AT YOUR OWN RISK.</p>
+<h2 id="contact-information">CONTACT INFORMATION</h2>
+<p>See https://github.com/samhocevar/rinetd/releases for the latest
+release.</p>
+<p><strong>Thomas Boutell</strong> can be reached by email:
+boutell@boutell.com</p>
+<p><strong>Sam Hocevar</strong> can be reached by email:
+sam@hocevar.net</p>
+<h2 id="thanks">THANKS</h2>
+<p>Thanks are due to Bill Davidsen, Libor Pechachek, Sascha Ziemann, the
+Apache Group, and many others who have contributed advice and/or source
+code to this and other free software projects.</p>
+<h2 id="see-also">SEE ALSO</h2>
+<p>Additional documentation: - <code>BUILD.md</code> - Build
+requirements and instructions - <code>BUFFER_OPTIMIZATION.md</code> -
+Buffer management and optimization details -
+<code>TCP-UDP_MIXED_MODE.md</code> - Technical analysis of mixed-mode
+limitations - <code>CLEANUP_SUMMARY.md</code> - Code cleanup and
+maintenance notes</p>
+</body>
+</html>
