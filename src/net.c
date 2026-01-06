@@ -13,26 +13,6 @@
 #include <stdio.h>
 #include "net.h"
 
-void setSocketDefaults(SOCKET fd) {
-    /* Make socket non-blocking (FIXME: this uses legacy API) */
-    FIONBIO_ARG_T ioctltmp = 1;
-#if _WIN32
-    ioctlsocket(fd, FIONBIO, &ioctltmp);
-#else
-    ioctl(fd, FIONBIO, &ioctltmp);
-#endif
-
-#if defined __linux__
-    int tmp = 0;
-    setsockopt(fd, SOL_SOCKET, SO_LINGER, &tmp, sizeof(tmp));
-#endif
-
-#if !defined __linux__ && !defined _WIN32
-    int tmp = 1024;
-    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &tmp, sizeof(tmp));
-#endif
-}
-
 int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinfo **ai)
 {
     struct addrinfo hints = {

@@ -350,57 +350,26 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         .fromHost = strdup(bindAddress),
         .toHost = strdup(connectAddress),
         .serverTimeout = serverTimeout,
+        .fd = INVALID_SOCKET,
     };
 
-    /* Make a server socket */
+    /* Resolve bind address */
     struct addrinfo *ai;
     int ret = getAddrInfoWithProto(bindAddress, bindPort, bindProtocol, &ai);
     if (ret != 0) {
         exit(1);
     }
-
-    si.fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-    if (si.fd == INVALID_SOCKET) {
-        logError("couldn't create server socket! (%m)\n");
-        freeaddrinfo(ai);
-        exit(1);
-    }
-
-    int tmp = 1;
-    setsockopt(si.fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&tmp, sizeof(tmp));
-
-    if (bind(si.fd, ai->ai_addr, ai->ai_addrlen) == SOCKET_ERROR) {
-        logError("couldn't bind to address %s port %s (%m)\n",
-            bindAddress, bindPort);
-        closesocket(si.fd);
-        freeaddrinfo(ai);
-        exit(1);
-    }
-
-    if (bindProtocol == IPPROTO_TCP) {
-        if (listen(si.fd, RINETD_LISTEN_BACKLOG) == SOCKET_ERROR) {
-            /* Warn and close socket -- but continue with other servers */
-            logError("couldn't listen to address %s port %s (%m)\n",
-                bindAddress, bindPort);
-            closesocket(si.fd);
-        }
-
-        /* Make socket nonblocking in TCP mode only, otherwise
-            we may miss some data. */
-        setSocketDefaults(si.fd);
-    }
     si.fromAddrInfo = ai;
 
-    /* Resolve destination address. */
+    /* Resolve destination address */
     ret = getAddrInfoWithProto(connectAddress, connectPort, connectProtocol, &ai);
     if (ret != 0) {
         freeaddrinfo(si.fromAddrInfo);
-        closesocket(si.fd);
         exit(1);
     }
     si.toAddrInfo = ai;
 
-    /* Resolve source address if applicable. */
+    /* Resolve source address if applicable */
     if (sourceAddress) {
         ret = getAddrInfoWithProto(sourceAddress, NULL, connectProtocol, &ai);
         if (ret != 0) {
@@ -411,7 +380,7 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         si.sourceAddrInfo = ai;
     }
 
-    /* Set up libuv handle type (actual initialization happens later) */
+    /* Set up libuv handle type (initialization happens in startServerListening) */
     si.handle_type = (bindProtocol == IPPROTO_TCP) ? UV_TCP : UV_UDP;
     si.handle_initialized = 0;
 
@@ -496,35 +465,67 @@ static void startServerListening(ServerInfo *srv)
         return;  /* Already initialized */
     }
 
+    int ret;
+
     if (srv->handle_type == UV_TCP) {
-        /* Initialize TCP handle and attach to existing socket */
-        uv_tcp_init(main_loop, &srv->uv_handle.tcp);
-        /* Set data pointer to server info for callbacks (after initialization) */
+        /* Initialize TCP handle */
+        ret = uv_tcp_init(main_loop, &srv->uv_handle.tcp);
+        if (ret != 0) {
+            logError("uv_tcp_init() failed: %s\n", uv_strerror(ret));
+            exit(1);
+        }
         srv->uv_handle.tcp.data = srv;
-        uv_tcp_open(&srv->uv_handle.tcp, srv->fd);
+
+        /* Bind to address (libuv sets SO_REUSEADDR automatically) */
+        ret = uv_tcp_bind(&srv->uv_handle.tcp, srv->fromAddrInfo->ai_addr, 0);
+        if (ret != 0) {
+            logError("uv_tcp_bind() failed for %s:%d: %s\n",
+                srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
+            exit(1);
+        }
 
         /* Start listening for connections */
-        int ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp,
-                            RINETD_LISTEN_BACKLOG, tcp_server_accept_cb);
+        ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp,
+                        RINETD_LISTEN_BACKLOG, tcp_server_accept_cb);
         if (ret != 0) {
             logError("uv_listen() failed: %s\n", uv_strerror(ret));
             exit(1);
         }
+
+        /* Get the actual fd for logging/cleanup */
+        uv_os_fd_t fd;
+        uv_fileno((uv_handle_t*)&srv->uv_handle.tcp, &fd);
+        srv->fd = fd;
     }
     else {  /* UV_UDP */
-        /* Initialize UDP handle and attach to existing socket */
-        uv_udp_init(main_loop, &srv->uv_handle.udp);
-        /* Set data pointer to server info for callbacks (after initialization) */
+        /* Initialize UDP handle */
+        ret = uv_udp_init(main_loop, &srv->uv_handle.udp);
+        if (ret != 0) {
+            logError("uv_udp_init() failed: %s\n", uv_strerror(ret));
+            exit(1);
+        }
         srv->uv_handle.udp.data = srv;
-        uv_udp_open(&srv->uv_handle.udp, srv->fd);
+
+        /* Bind to address with SO_REUSEADDR */
+        ret = uv_udp_bind(&srv->uv_handle.udp, srv->fromAddrInfo->ai_addr, UV_UDP_REUSEADDR);
+        if (ret != 0) {
+            logError("uv_udp_bind() failed for %s:%d: %s\n",
+                srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
+            exit(1);
+        }
 
         /* Start receiving datagrams */
-        int ret = uv_udp_recv_start(&srv->uv_handle.udp,
-                                    alloc_buffer_udp_server_cb, udp_server_recv_cb);
+        ret = uv_udp_recv_start(&srv->uv_handle.udp,
+                                alloc_buffer_udp_server_cb, udp_server_recv_cb);
         if (ret != 0) {
             logError("uv_udp_recv_start() failed: %s\n", uv_strerror(ret));
             exit(1);
         }
+
+        /* Get the actual fd for logging/cleanup */
+        uv_os_fd_t fd;
+        uv_fileno((uv_handle_t*)&srv->uv_handle.udp, &fd);
+        srv->fd = fd;
     }
 
     srv->handle_initialized = 1;
@@ -542,11 +543,8 @@ static void server_handle_close_cb(uv_handle_t *handle)
     /* Mark handle as no longer initialized */
     srv->handle_initialized = 0;
 
-    /* Close the underlying socket */
-    if (srv->fd != INVALID_SOCKET) {
-        closesocket(srv->fd);
-        srv->fd = INVALID_SOCKET;
-    }
+    /* libuv has already closed the socket, just clear the fd */
+    srv->fd = INVALID_SOCKET;
 
     /* Free server resources */
     free(srv->fromHost);
