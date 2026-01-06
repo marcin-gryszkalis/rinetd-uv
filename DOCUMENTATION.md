@@ -235,7 +235,7 @@ deny 2001:618:*:e43f
 # Options: [timeout=seconds,src=sourceaddress]
 
 # TCP forwarding examples
-0.0.0.0 80 192.168.1.10 8080
+0.0.0.0 80/tcp 192.168.1.10 8080/tcp
 192.168.0.1 https server.example.com 8443 [src=192.168.1.1]
 :: http ipv6.google.com http
 
