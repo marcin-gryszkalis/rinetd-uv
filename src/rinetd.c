@@ -76,6 +76,7 @@ char const *logMessages[] = {
 	"local-bind-failed -",
 	"local-connect-failed -",
 	"opened",
+	"allowed",
 	"not-allowed",
 	"denied",
 };
