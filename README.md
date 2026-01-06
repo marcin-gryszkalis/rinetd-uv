@@ -32,7 +32,7 @@ While maintaining general configuration file compatibility, rinetd-uv features:
 - Configurable buffer sizes (1 KB to 1 MB)
 - Zero-copy forwarding for better performance
 
-For detailed discussion of incompatibilities check [DOCUMENTATION.md#incompatibilities](appriopriate section of DOCUMENTATION.md) or in the manual.
+For detailed discussion of incompatibilities check [appriopriate section of DOCUMENTATION.md](DOCUMENTATION.md#incompatibilities) or in the manual.
 
 Original rinetd: https://github.com/samhocevar/rinetd
 
