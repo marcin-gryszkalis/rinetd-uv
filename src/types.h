@@ -101,6 +101,16 @@ struct _connection_info
 	int local_write_in_progress;  /* Flag: write in progress on local socket */
 	int remote_write_in_progress;  /* Flag: write in progress on remote socket */
 
+	/* Flow control timing diagnostics */
+	uint64_t local_read_stopped_time;   /* hrtime when local reading was stopped */
+	uint64_t remote_read_stopped_time;  /* hrtime when remote reading was stopped */
+	int local_read_stopped;             /* Flag: local reading is stopped */
+	int remote_read_stopped;            /* Flag: remote reading is stopped */
+
+	/* Write timing diagnostics */
+	uint64_t local_write_start_time;    /* hrtime when local write started */
+	uint64_t remote_write_start_time;   /* hrtime when remote write started */
+
 	/* Linked list for tracking active connections */
 	struct _connection_info *next;
 };

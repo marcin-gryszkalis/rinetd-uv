@@ -481,6 +481,16 @@ static ConnectionInfo *allocateConnection(void)
 	cnx->local_write_in_progress = 0;
 	cnx->remote_write_in_progress = 0;
 
+	/* Initialize flow control timing fields */
+	cnx->local_read_stopped = 0;
+	cnx->remote_read_stopped = 0;
+	cnx->local_read_stopped_time = 0;
+	cnx->remote_read_stopped_time = 0;
+
+	/* Initialize write timing fields */
+	cnx->local_write_start_time = 0;
+	cnx->remote_write_start_time = 0;
+
 	/* Add to linked list */
 	cnx->next = connectionListHead;
 	connectionListHead = cnx;
@@ -886,8 +896,22 @@ static void tcp_trigger_write(ConnectionInfo *cnx, Socket *socket,
 	/* Increment pending writes counter */
 	cnx->pending_writes++;
 
+	/* Calculate how much to send */
 	int to_send = other_socket->recvPos - socket->sentPos;
+
+	/* Store the amount we're writing in the request so we can update sentPos correctly */
+	/* We'll use pending_writes counter creatively - store size in high bits */
+	/* Actually, let's just write everything - chunking won't help with the timeout issue */
+
 	uv_buf_t wrbuf = uv_buf_init(other_socket->buffer + socket->sentPos, to_send);
+
+	/* Record write start time for diagnostics */
+	uint64_t now = uv_hrtime();
+	if (socket == &cnx->local) {
+		cnx->local_write_start_time = now;
+	} else {
+		cnx->remote_write_start_time = now;
+	}
 
 	int ret = uv_write(req, stream, &wrbuf, 1, tcp_write_cb);
 	if (ret != 0) {
@@ -929,9 +953,22 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 	}
 
 	if (nread < 0) {
-		/* UV_ENOBUFS means buffer is full - not an error, just wait for drain */
+		/* UV_ENOBUFS means buffer is full - stop reading temporarily */
 		if (nread == UV_ENOBUFS) {
-			/* Buffer full - flow control will resume reading after write completes */
+			/* Buffer full - stop reading, will resume when buffer drains */
+			uint64_t now = uv_hrtime();
+			if (socket == &cnx->local) {
+				cnx->local_read_stopped = 1;
+				cnx->local_read_stopped_time = now;
+				logInfo("Flow control: local read stopped (UV_ENOBUFS), buffer=%d/%d bytes\n",
+				        socket->recvPos, RINETD_BUFFER_SIZE);
+			} else {
+				cnx->remote_read_stopped = 1;
+				cnx->remote_read_stopped_time = now;
+				logInfo("Flow control: remote read stopped (UV_ENOBUFS), buffer=%d/%d bytes\n",
+				        socket->recvPos, RINETD_BUFFER_SIZE);
+			}
+			uv_read_stop(stream);
 			return;
 		}
 
@@ -943,12 +980,30 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 	}
 
 	if (nread == 0) {
-		return;  /* EAGAIN, try again later */
+		return;  /* EAGAIN - try again later */
 	}
 
 	/* Update buffer position and statistics */
 	socket->recvPos += nread;
 	socket->totalBytesIn += nread;
+
+	/* Stop reading only when buffer is nearly full (>90%) to prevent UV_ENOBUFS */
+	/* Higher threshold allows more pipelining before stopping */
+	if (socket->recvPos > (RINETD_BUFFER_SIZE * 9 / 10)) {
+		uint64_t now = uv_hrtime();
+		if (socket == &cnx->local) {
+			cnx->local_read_stopped = 1;
+			cnx->local_read_stopped_time = now;
+			logInfo("Flow control: local read stopped (90%% full), buffer=%d/%d bytes\n",
+			        socket->recvPos, RINETD_BUFFER_SIZE);
+		} else {
+			cnx->remote_read_stopped = 1;
+			cnx->remote_read_stopped_time = now;
+			logInfo("Flow control: remote read stopped (90%% full), buffer=%d/%d bytes\n",
+			        socket->recvPos, RINETD_BUFFER_SIZE);
+		}
+		uv_read_stop(stream);
+	}
 
 	/* Trigger write to other socket */
 	tcp_trigger_write(cnx, other_socket, socket, other_stream);
@@ -996,10 +1051,67 @@ static void tcp_write_cb(uv_write_t *req, int status)
 		return;
 	}
 
+	/* Calculate write duration for diagnostics */
+	uint64_t now = uv_hrtime();
+	uint64_t start_time = (socket == &cnx->local)
+		? cnx->local_write_start_time
+		: cnx->remote_write_start_time;
+
+	if (start_time > 0) {
+		double duration_ms = (now - start_time) / 1000000.0;
+		/* Log writes that take >10ms - accumulation of these could cause timeouts */
+		if (duration_ms > 10.0) {
+			char const *socket_name = (socket == &cnx->local) ? "local" : "remote";
+			int bytes_to_write = other_socket->recvPos - socket->sentPos;
+			logInfo("SLOW WRITE: %s write took %.2f ms for %d bytes (%.2f MB/s)\n",
+			        socket_name, duration_ms, bytes_to_write,
+			        (bytes_to_write / (duration_ms / 1000.0)) / (1024.0 * 1024.0));
+		}
+	}
+
 	/* Update position (uv_write sends all or fails) */
 	int bytes_written = other_socket->recvPos - socket->sentPos;
 	socket->sentPos = other_socket->recvPos;
 	socket->totalBytesOut += bytes_written;
+
+	/* Always try to resume reading after any write completes */
+	/* This prevents stalls when writes are slow - buffer will naturally stop us if full */
+	uv_stream_t *other_stream = (other_socket == &cnx->local)
+		? (uv_stream_t*)&cnx->local_uv_handle.tcp
+		: (uv_stream_t*)&cnx->remote_uv_handle.tcp;
+
+	int *other_handle_closing = (other_socket == &cnx->local)
+		? &cnx->local_handle_closing
+		: &cnx->remote_handle_closing;
+
+	if (other_handle_closing && !(*other_handle_closing) &&
+	    !uv_is_closing((uv_handle_t*)other_stream)) {
+		/* Resume reading - safe even if already reading (returns UV_EALREADY) */
+		/* If buffer is still full, alloc_buffer_cb will return 0 and we'll stop again */
+		int ret = uv_read_start(other_stream, alloc_buffer_cb, tcp_read_cb);
+		if (ret != 0 && ret != UV_EALREADY) {
+			logError("uv_read_start resume error: %s\n", uv_strerror(ret));
+		} else if (ret == 0) {
+			/* Successfully resumed - check if we were stopped and log timing */
+			uint64_t now = uv_hrtime();
+			if (other_socket == &cnx->local && cnx->local_read_stopped) {
+				double delay_ms = (now - cnx->local_read_stopped_time) / 1000000.0;
+				logInfo("Flow control: local read resumed after %.2f ms, buffer=%d/%d bytes (wrote %d)\n",
+				        delay_ms, other_socket->recvPos, RINETD_BUFFER_SIZE, bytes_written);
+				cnx->local_read_stopped = 0;
+			} else if (other_socket == &cnx->remote && cnx->remote_read_stopped) {
+				double delay_ms = (now - cnx->remote_read_stopped_time) / 1000000.0;
+				logInfo("Flow control: remote read resumed after %.2f ms, buffer=%d/%d bytes (wrote %d)\n",
+				        delay_ms, other_socket->recvPos, RINETD_BUFFER_SIZE, bytes_written);
+				cnx->remote_read_stopped = 0;
+			}
+		}
+	}
+
+	/* Trigger next write if there's more data */
+	if (socket->sentPos < other_socket->recvPos && !cnx->coClosing) {
+		tcp_trigger_write(cnx, socket, other_socket, stream);
+	}
 
 	/* Reset buffers if all sent */
 	if (socket->sentPos == other_socket->recvPos) {
@@ -1489,10 +1601,16 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 			}
 			other_socket->fd = INVALID_SOCKET;
 		}
-		/* For TCP, close immediately if no data to send, otherwise wait for writes to complete */
+		/* For TCP, close immediately if no data to send AND no pending writes */
 		else if (other_socket->protocol == IPPROTO_TCP) {
-			/* If all data has been sent already, close the other socket now */
-			if (socket->sentPos >= other_socket->recvPos) {
+			/* Check if we need to wait for writes to complete */
+			int *other_write_in_progress = (other_socket == &cnx->local)
+				? &cnx->local_write_in_progress
+				: &cnx->remote_write_in_progress;
+
+			/* If all data has been sent AND no writes are in progress, close the other socket now */
+			if (socket->sentPos >= other_socket->recvPos &&
+			    other_write_in_progress && !(*other_write_in_progress)) {
 				uv_handle_t *other_handle = NULL;
 				int *other_closing_flag = NULL;
 
