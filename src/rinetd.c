@@ -116,9 +116,6 @@ static RinetdOptions options = {
 
 static int forked = 0;
 
-#if 0  /* UDP disabled */
-static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes);
-#endif
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket);
 static ConnectionInfo *allocateConnection(void);
 static int checkConnectionAllowed(ConnectionInfo const *cnx);
@@ -470,14 +467,12 @@ static ConnectionInfo *allocateConnection(void)
 /* libuv callback forward declarations */
 static void tcp_server_accept_cb(uv_stream_t *server, int status);
 
-#if 0  /* UDP disabled */
 static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                                const uv_buf_t *buf,
                                const struct sockaddr *addr,
                                unsigned flags);
 static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
                                        uv_buf_t *buf);
-#endif
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
                             uv_buf_t *buf);
 
@@ -517,7 +512,6 @@ static void startServerListening(ServerInfo *srv)
 			exit(1);
 		}
 	}
-#if 0  /* UDP disabled */
 	else {  /* UV_UDP */
 		/* Initialize UDP handle and attach to existing socket */
 		uv_udp_init(main_loop, &srv->uv_handle.udp);
@@ -533,7 +527,6 @@ static void startServerListening(ServerInfo *srv)
 			exit(1);
 		}
 	}
-#endif
 
 	srv->handle_initialized = 1;
 }
@@ -973,9 +966,6 @@ static void handle_close_cb(uv_handle_t *handle)
 	}
 }
 
-/* UDP code temporarily disabled for TCP-only testing - needs refactoring for dynamic buffers */
-#if 0
-
 /* Forward declarations for UDP */
 static void udp_send_cb(uv_udp_send_t *req, int status);
 static void udp_timeout_cb(uv_timer_t *timer);
@@ -984,144 +974,108 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
                               const struct sockaddr *addr,
                               unsigned flags);
 
-/* Helper to trigger UDP write from remote buffer to local (backend) */
-static void udp_trigger_write_to_local(ConnectionInfo *cnx)
+/* UDP send to backend - takes ownership of buffer */
+static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len)
 {
-	if (cnx->local.sentPos >= cnx->remote.recvPos) {
-		return;  /* Nothing to send */
-	}
-
 	/* Check if local handle is closing */
 	if (cnx->local_handle_closing || !cnx->local_handle_initialized ||
 	    uv_is_closing((uv_handle_t*)&cnx->local_uv_handle.udp)) {
-		return;  /* Handle is closing, don't try to send */
-	}
-
-	int to_send = cnx->remote.recvPos - cnx->local.sentPos;
-	uv_buf_t wrbuf = uv_buf_init(cnx->remote.buffer + cnx->local.sentPos, to_send);
-
-	uv_udp_send_t *req = malloc(sizeof(uv_udp_send_t));
-	if (!req) {
-		logError("malloc failed for UDP send request\n");
+		free(data);  /* Can't send, free the buffer */
 		return;
 	}
 
-	req->data = cnx;
+	/* Create send request with buffer info */
+	UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
+	if (!sreq) {
+		logError("malloc failed for UdpSendReq\n");
+		free(data);
+		return;
+	}
 
-	/* Increment pending writes counter */
-	cnx->pending_writes++;
+	sreq->cnx = cnx;
+	sreq->buffer = data;  /* Take ownership */
+	sreq->buffer_size = data_len;
+	sreq->is_to_backend = 1;
+	sreq->dest_addr = *(struct sockaddr_storage*)cnx->server->toAddrInfo->ai_addr;
 
-	int ret = uv_udp_send(req, &cnx->local_uv_handle.udp, &wrbuf, 1,
+	/* Set up buffer for sending */
+	uv_buf_t wrbuf = uv_buf_init(data, data_len);
+
+	int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1,
 	                      cnx->server->toAddrInfo->ai_addr, udp_send_cb);
 	if (ret != 0) {
-		logError("uv_udp_send (to local) error: %s\n", uv_strerror(ret));
-		/* Decrement counter since send failed immediately */
-		cnx->pending_writes--;
-		free(req);
+		logError("uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
+		free(sreq->buffer);
+		free(sreq);
 	}
 }
 
-/* Helper to trigger UDP write from local buffer to remote (client) */
-static void udp_trigger_write_to_remote(ConnectionInfo *cnx)
+/* UDP send to client - takes ownership of buffer */
+static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len)
 {
-	if (cnx->remote.sentPos >= cnx->local.recvPos) {
-		return;  /* Nothing to send */
-	}
-
-	/* Cast away const - we're not modifying ServerInfo, just using its handle for I/O */
 	ServerInfo *srv = (ServerInfo *)cnx->server;
 	if (!srv) {
-		return;  /* Server may have been cleared during config reload */
+		free(data);  /* Server gone, free the buffer */
+		return;
 	}
 
 	/* Check if server UDP handle is closing */
 	if (!srv->handle_initialized || uv_is_closing((uv_handle_t*)&srv->uv_handle.udp)) {
-		return;  /* Handle is closing, don't try to send */
-	}
-
-	int to_send = cnx->local.recvPos - cnx->remote.sentPos;
-	uv_buf_t wrbuf = uv_buf_init(cnx->local.buffer + cnx->remote.sentPos, to_send);
-
-	uv_udp_send_t *req = malloc(sizeof(uv_udp_send_t));
-	if (!req) {
-		logError("malloc failed for UDP send request\n");
+		free(data);  /* Can't send, free the buffer */
 		return;
 	}
 
-	req->data = cnx;
+	/* Create send request with buffer info */
+	UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
+	if (!sreq) {
+		logError("malloc failed for UdpSendReq\n");
+		free(data);
+		return;
+	}
 
-	int ret = uv_udp_send(req, &srv->uv_handle.udp, &wrbuf, 1,
+	sreq->cnx = cnx;
+	sreq->buffer = data;  /* Take ownership */
+	sreq->buffer_size = data_len;
+	sreq->is_to_backend = 0;
+	sreq->dest_addr = cnx->remoteAddress;
+
+	/* Set up buffer for sending */
+	uv_buf_t wrbuf = uv_buf_init(data, data_len);
+
+	int ret = uv_udp_send(&sreq->req, &srv->uv_handle.udp, &wrbuf, 1,
 	                      (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
 	if (ret != 0) {
-		logError("uv_udp_send (to remote) error: %s\n", uv_strerror(ret));
-		free(req);
+		logError("uv_udp_send (to client) error: %s\n", uv_strerror(ret));
+		free(sreq->buffer);
+		free(sreq);
 	}
 }
 
 /* UDP send completion callback */
 static void udp_send_cb(uv_udp_send_t *req, int status)
 {
-	ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+	UdpSendReq *sreq = (UdpSendReq*)req;
+	ConnectionInfo *cnx = sreq->cnx;
 
-	/* Check if connection was already freed (shouldn't happen, but defensive) */
-	if (!cnx) {
-		free(req);
-		return;
+	/* Update statistics */
+	if (sreq->is_to_backend) {
+		cnx->local.totalBytesOut += sreq->buffer_size;
+	} else {
+		cnx->remote.totalBytesOut += sreq->buffer_size;
 	}
 
-	/* Decrement pending writes counter */
-	cnx->pending_writes--;
+	/* Free the buffer */
+	free(sreq->buffer);
 
 	if (status < 0) {
 		logError("UDP send error: %s\n", uv_strerror(status));
 		/* For UDP, we don't close on send errors - just log */
-		free(req);
-		return;
 	}
 
-	/* Determine direction based on which handle was used */
-	/* If handle is cnx->local_uv_handle.udp, we're sending to backend (local) */
-	/* If handle is server's handle, we're sending to client (remote) */
-	int is_send_to_local = (req->handle == &cnx->local_uv_handle.udp);
-	
-	if (is_send_to_local) {
-		/* Sending from remote buffer to local (backend) */
-		/* Update local.sentPos to reflect data sent */
-		int bytes_sent = cnx->remote.recvPos - cnx->local.sentPos;
-		cnx->local.sentPos = cnx->remote.recvPos;
-		cnx->local.totalBytesOut += bytes_sent;
-		
-		/* Reset buffers if all sent */
-		if (cnx->local.sentPos == cnx->remote.recvPos) {
-			cnx->local.sentPos = cnx->remote.recvPos = 0;
-		}
-		
-		/* Check if more data is available to send */
-		if (cnx->local.sentPos < cnx->remote.recvPos && !cnx->coClosing) {
-			udp_trigger_write_to_local(cnx);
-		}
-	} else {
-		/* Sending from local buffer to remote (client) */
-		/* Update remote.sentPos to reflect data sent */
-		int bytes_sent = cnx->local.recvPos - cnx->remote.sentPos;
-		cnx->remote.sentPos = cnx->local.recvPos;
-		cnx->remote.totalBytesOut += bytes_sent;
-		
-		/* Reset buffers if all sent */
-		if (cnx->remote.sentPos == cnx->local.recvPos) {
-			cnx->remote.sentPos = cnx->local.recvPos = 0;
-		}
-		
-		/* Check if more data is available to send */
-		if (cnx->remote.sentPos < cnx->local.recvPos && !cnx->coClosing) {
-			udp_trigger_write_to_remote(cnx);
-		}
-	}
+	/* Free the send request */
+	free(sreq);
 
-	free(req);
-
-	/* Check if connection should be freed now (all handles closed and no pending writes) */
-	/* This will be handled by handle_close_cb when the last handle closes */
+	/* That's it! No position tracking, no buffer management */
 }
 
 /* UDP timeout callback */
@@ -1153,22 +1107,21 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
 
 	ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
 
-	/* Copy to buffer */
-	int to_copy = (int)nread;
-	if (cnx->local.recvPos + to_copy > RINETD_BUFFER_SIZE) {
-		to_copy = RINETD_BUFFER_SIZE - cnx->local.recvPos;
+	/* Update statistics */
+	cnx->local.totalBytesIn += nread;
+
+	/* Allocate a copy of the buffer for sending (buf->base will be freed by libuv) */
+	char *data_copy = (char*)malloc(nread);
+	if (!data_copy) {
+		logError("malloc failed for UDP data copy\n");
+		free(buf->base);
+		return;
 	}
-
-	if (to_copy > 0) {
-		memcpy(cnx->local.buffer + cnx->local.recvPos, buf->base, to_copy);
-		cnx->local.recvPos += to_copy;
-		cnx->local.totalBytesIn += to_copy;
-
-		/* Trigger write to remote client */
-		udp_trigger_write_to_remote(cnx);
-	}
-
+	memcpy(data_copy, buf->base, nread);
 	free(buf->base);
+
+	/* Send immediately to client - udp_send_to_client takes ownership of data_copy */
+	udp_send_to_client(cnx, data_copy, (int)nread);
 }
 
 /* UDP server receive callback */
@@ -1211,9 +1164,21 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 		cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
 		uv_timer_again(&cnx->timeout_timer);
 
-		/* Process data using existing handleUdpRead */
-		handleUdpRead(cnx, buf->base, (int)nread);
+		/* Update statistics */
+		cnx->remote.totalBytesIn += nread;
+
+		/* Allocate a copy of the buffer for sending */
+		char *data_copy = (char*)malloc(nread);
+		if (!data_copy) {
+			logError("malloc failed for UDP data copy\n");
+			free(buf->base);
+			return;
+		}
+		memcpy(data_copy, buf->base, nread);
 		free(buf->base);
+
+		/* Send immediately to backend - udp_send_to_backend takes ownership */
+		udp_send_to_backend(cnx, data_copy, (int)nread);
 		return;
 	}
 
@@ -1267,7 +1232,6 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
 	cnx->local.family = srv->toAddrInfo->ai_family;
 	cnx->local.protocol = IPPROTO_UDP;
-	cnx->local.recvPos = cnx->local.sentPos = 0;
 	cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
 	/* Bind to source if specified */
@@ -1295,29 +1259,25 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 		return;
 	}
 
-	/* Process initial data */
-	handleUdpRead(cnx, buf->base, (int)nread);
+	/* Update statistics for initial data */
+	cnx->remote.totalBytesIn += nread;
+
+	/* Allocate a copy of the buffer for sending */
+	char *data_copy = (char*)malloc(nread);
+	if (!data_copy) {
+		logError("malloc failed for UDP data copy\n");
+		free(buf->base);
+		handleClose(cnx, &cnx->local, &cnx->remote);
+		return;
+	}
+	memcpy(data_copy, buf->base, nread);
 	free(buf->base);
 
-	/* Trigger write to backend */
-	udp_trigger_write_to_local(cnx);
+	/* Send initial data to backend - udp_send_to_backend takes ownership */
+	udp_send_to_backend(cnx, data_copy, (int)nread);
 
 	logEvent(cnx, srv, logOpened);
 }
-
-static void handleUdpRead(ConnectionInfo *cnx, char const *buffer, int bytes)
-{
-	Socket *socket = &cnx->remote;
-	int got = bytes < RINETD_BUFFER_SIZE - socket->recvPos
-		? bytes : RINETD_BUFFER_SIZE - socket->recvPos;
-	if (got > 0) {
-		memcpy(socket->buffer + socket->recvPos, buffer, got);
-		socket->totalBytesIn += got;
-		socket->recvPos += got;
-	}
-}
-
-#endif /* UDP code disabled */
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
 {

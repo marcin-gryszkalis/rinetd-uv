@@ -63,7 +63,7 @@ struct _socket
 /* Forward declaration for write request */
 typedef struct _connection_info ConnectionInfo;
 
-/* Write request data - holds buffer and connection info */
+/* TCP Write request data - holds buffer and connection info */
 typedef struct _write_req WriteReq;
 struct _write_req
 {
@@ -72,6 +72,18 @@ struct _write_req
 	char *buffer;
 	int buffer_size;
 	Socket *socket;  /* Which socket this write is for (local or remote) */
+};
+
+/* UDP Send request data - holds buffer and addressing info */
+typedef struct _udp_send_req UdpSendReq;
+struct _udp_send_req
+{
+	uv_udp_send_t req;
+	ConnectionInfo *cnx;
+	char *buffer;
+	int buffer_size;
+	struct sockaddr_storage dest_addr;  /* Destination address for this send */
+	int is_to_backend;  /* 1 if sending to backend, 0 if sending to client */
 };
 struct _connection_info
 {
