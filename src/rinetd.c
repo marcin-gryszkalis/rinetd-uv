@@ -1464,10 +1464,6 @@ RETSIGTYPE hup(int s)
     config_reload_pending = 1;
     /* Clear old configuration - this starts async close of server handles */
     clearConfiguration();
-#if !HAVE_SIGACTION
-    /* And reinstall the signal handler */
-    signal(SIGHUP, hup);
-#endif
 }
 #endif /* _WIN32 */
 
