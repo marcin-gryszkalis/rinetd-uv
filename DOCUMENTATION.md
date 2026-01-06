@@ -236,7 +236,8 @@ deny 2001:618:*:e43f
 
 # TCP forwarding examples
 0.0.0.0 80 192.168.1.10 8080
-0.0.0.0 443 192.168.1.10 8443 [src=192.168.1.1]
+192.168.0.1 https server.example.com 8443 [src=192.168.1.1]
+:: http ipv6.google.com http
 
 # UDP forwarding example
 0.0.0.0 53/udp 8.8.8.8 53/udp [timeout=30]
