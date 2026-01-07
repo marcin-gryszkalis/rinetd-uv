@@ -11,7 +11,7 @@ This document describes how to build and install rinetd-uv from source.
   - autoconf (version 2.52 or later)
   - automake (version 1.18 or later recommended)
 - **pkg-config**: For detecting library dependencies
-- **libuv**: Event loop library (version 1.0 or later)
+- **libuv**: Event loop library (tested with version 1.51.0)
   - Development headers required (libuv-dev or libuv1-dev package)
 
 ### Optional Dependencies
