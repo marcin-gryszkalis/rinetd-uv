@@ -17,6 +17,11 @@
 #include "rinetd.h"
 #include "parse.h"
 
+#include <glob.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+
 #define YY_CTX_LOCAL 1
 #define YY_CTX_MEMBERS \
     FILE *fp; \
@@ -26,7 +31,13 @@
     int tmpProto, bindProto, connectProto; \
     int serverTimeout; \
     int keepalive; \
-    char *bindAddress, *connectAddress, *sourceAddress;
+    char *bindAddress, *connectAddress, *sourceAddress; \
+    /* Include tracking */ \
+    int includeDepth; \
+    char **includedFiles; \
+    int includedFilesCount; \
+    int includedFilesCapacity; \
+    char *currentFile;
 #define YY_INPUT(yyctx, buf, result, max_size) \
 { \
     int yyc = fgetc(yyctx->fp); \
@@ -46,11 +57,16 @@
 #pragma GCC diagnostic ignored "-Wunused-label"
 #endif
 
+/* Forward declarations for functions called from grammar actions */
+struct _yycontext; /* Forward declaration - yycontext typedef defined later */
+void parseConfigurationFile(char const *file, struct _yycontext *ctx);
+void parseInclude(char const *pattern, struct _yycontext *ctx);
+
 %}
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-address - bind-port - connect-address - connect-port (-? server-options)?
@@ -151,6 +167,11 @@ buffersize  =  "buffersize" - < number >
     }
 }
 
+include-directive  =  "include" - < filename >
+{
+    parseInclude(yytext, yy);
+}
+
 invalid_syntax  =  < (!eol .)+ > eol
 {
     logError("invalid syntax at line %d: %s\n",
@@ -184,25 +205,246 @@ eof      =  '\0'
 
 %%
 
-void parseConfiguration(char const *file)
+/* Utility functions for include directive support */
+
+/* Check if file already included (circular detection) */
+static int isFileIncluded(yycontext *ctx, char const *canonical_path)
+{
+    for (int i = 0; i < ctx->includedFilesCount; i++) {
+        if (strcmp(ctx->includedFiles[i], canonical_path) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Add file to included list */
+static void addIncludedFile(yycontext *ctx, char const *canonical_path)
+{
+    /* Grow array if needed */
+    if (ctx->includedFilesCount >= ctx->includedFilesCapacity) {
+        int new_capacity = ctx->includedFilesCapacity == 0 ? 16 : ctx->includedFilesCapacity * 2;
+        char **new_array = realloc(ctx->includedFiles, new_capacity * sizeof(char*));
+        if (!new_array) {
+            MEMORY_ERROR;
+        }
+        ctx->includedFiles = new_array;
+        ctx->includedFilesCapacity = new_capacity;
+    }
+
+    /* Add to list */
+    ctx->includedFiles[ctx->includedFilesCount++] = strdup(canonical_path);
+}
+
+/* Strip quotes from filename */
+static char *stripQuotes(char const *str)
+{
+    size_t len = strlen(str);
+    if (len >= 2 && str[0] == '"' && str[len-1] == '"') {
+        char *result = malloc(len - 1);
+        if (!result) MEMORY_ERROR;
+        memcpy(result, str + 1, len - 2);
+        result[len - 2] = '\0';
+        return result;
+    }
+    return strdup(str);
+}
+
+/* Resolve relative paths based on current file's directory */
+static char *resolveIncludePath(char const *pattern, char const *current_file)
+{
+    /* If absolute path, return as-is */
+    if (pattern[0] == '/') {
+        return strdup(pattern);
+    }
+
+    /* Extract directory from current_file */
+    char *dir = strdup(current_file);
+    char *last_slash = strrchr(dir, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+    } else {
+        /* Current file has no directory component, use current working directory */
+        free(dir);
+        return strdup(pattern);
+    }
+
+    /* Construct absolute path: dir/pattern */
+    size_t len = strlen(dir) + strlen(pattern) + 2;
+    char *result = malloc(len);
+    if (!result) MEMORY_ERROR;
+    snprintf(result, len, "%s/%s", dir, pattern);
+    free(dir);
+    return result;
+}
+
+/* Free included files list */
+static void freeIncludedFiles(yycontext *ctx)
+{
+    for (int i = 0; i < ctx->includedFilesCount; i++) {
+        free(ctx->includedFiles[i]);
+    }
+    free(ctx->includedFiles);
+    ctx->includedFiles = NULL;
+    ctx->includedFilesCount = 0;
+    ctx->includedFilesCapacity = 0;
+}
+
+/* Handle include directive - expand pattern and parse matched files */
+void parseInclude(char const *pattern, yycontext *ctx)
+{
+    /* 1. Check recursion depth */
+    if (ctx->includeDepth >= MAX_INCLUDE_DEPTH) {
+        logError("maximum include depth (%d) exceeded at %s:%d\n",
+                 MAX_INCLUDE_DEPTH, ctx->currentFile, ctx->currentLine);
+        PARSE_ERROR;
+    }
+
+    /* 2. Strip quotes from pattern if present */
+    char *unquoted_pattern = stripQuotes(pattern);
+
+    /* 3. Convert to absolute path if relative */
+    char *abs_pattern = resolveIncludePath(unquoted_pattern, ctx->currentFile);
+
+    /* 4. Expand glob pattern */
+    glob_t glob_result;
+    int glob_flags = GLOB_TILDE | GLOB_BRACE;
+    int ret = glob(abs_pattern, glob_flags, NULL, &glob_result);
+
+    if (ret == GLOB_NOMATCH) {
+        /* No files match - just log warning and continue */
+        logInfo("warning: include pattern matches no files: %s at %s:%d\n",
+                pattern, ctx->currentFile, ctx->currentLine);
+        free(abs_pattern);
+        free(unquoted_pattern);
+        return;
+    } else if (ret != 0) {
+        logError("error expanding include pattern: %s at %s:%d\n",
+                 pattern, ctx->currentFile, ctx->currentLine);
+        free(abs_pattern);
+        free(unquoted_pattern);
+        PARSE_ERROR;
+    }
+
+    /* 5. Process each matched file */
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        char *file = glob_result.gl_pathv[i];
+
+        /* Skip directories */
+        struct stat st;
+        if (stat(file, &st) != 0) {
+            logError("cannot stat include file: %s at %s:%d\n",
+                     file, ctx->currentFile, ctx->currentLine);
+            globfree(&glob_result);
+            free(abs_pattern);
+            free(unquoted_pattern);
+            PARSE_ERROR;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            continue;  /* Skip directories silently */
+        }
+
+        /* Check for circular includes */
+        char *canonical = realpath(file, NULL);
+        if (!canonical) {
+            logError("cannot resolve include file: %s at %s:%d\n",
+                     file, ctx->currentFile, ctx->currentLine);
+            globfree(&glob_result);
+            free(abs_pattern);
+            free(unquoted_pattern);
+            PARSE_ERROR;
+        }
+
+        if (isFileIncluded(ctx, canonical)) {
+            logError("circular include detected: %s at %s:%d\n",
+                     file, ctx->currentFile, ctx->currentLine);
+            free(canonical);
+            globfree(&glob_result);
+            free(abs_pattern);
+            free(unquoted_pattern);
+            PARSE_ERROR;
+        }
+
+        /* Add to included files list */
+        addIncludedFile(ctx, canonical);
+
+        /* Parse the included file */
+        parseConfigurationFile(file, ctx);
+
+        free(canonical);
+    }
+
+    globfree(&glob_result);
+    free(abs_pattern);
+    free(unquoted_pattern);
+}
+
+/* Internal function for parsing a single config file (supports recursion) */
+void parseConfigurationFile(char const *file, yycontext *ctx)
 {
     FILE *in = fopen(file, "r");
     if (!in) {
-        logError("could not open configuration file %s.\n", file);
+        logError("could not open configuration file %s at %s:%d\n",
+                 file, ctx->currentFile, ctx->currentLine);
         exit(1);
     }
 
+    /* Save current state */
+    FILE *saved_fp = ctx->fp;
+    int saved_line = ctx->currentLine;
+    char *saved_file = ctx->currentFile;
+
+    /* Set new state */
+    ctx->fp = in;
+    ctx->currentLine = 0;  /* Will be incremented by sol rule */
+    ctx->currentFile = strdup(file);
+    ctx->includeDepth++;
+
+    /* Parse the file */
+    if (!yyparse(ctx)) {
+        logError("invalid syntax in file %s, line %d.\n",
+                 ctx->currentFile, ctx->currentLine);
+        exit(1);
+    }
+
+    /* Restore state */
+    fclose(in);
+    free(ctx->currentFile);
+    ctx->currentFile = saved_file;
+    ctx->currentLine = saved_line;
+    ctx->fp = saved_fp;
+    ctx->includeDepth--;
+}
+
+/* Main entry point for configuration parsing */
+void parseConfiguration(char const *file)
+{
     yycontext ctx;
     memset(&ctx, 0, sizeof(yycontext));
-    ctx.fp = in;
     ctx.keepalive = -1;
-    if (!yyparse(&ctx)) {
-        logError("invalid syntax in file %s, line %d.\n", file, -1);
-        exit(1);
-    }
-    yyrelease(&ctx);
 
-    fclose(in);
+    /* Initialize include tracking */
+    ctx.includeDepth = 0;
+    ctx.includedFiles = NULL;
+    ctx.includedFilesCount = 0;
+    ctx.includedFilesCapacity = 0;
+    ctx.currentFile = strdup(file);
+
+    /* Add main config file to included list to prevent self-inclusion */
+    char *canonical = realpath(file, NULL);
+    if (canonical) {
+        addIncludedFile(&ctx, canonical);
+        free(canonical);
+    }
+
+    /* Parse main file */
+    parseConfigurationFile(file, &ctx);
+
+    /* Cleanup */
+    free(ctx.currentFile);
+    freeIncludedFiles(&ctx);
+    yyrelease(&ctx);
 
     /* Avoid warnings for these unused functions */
     (void)yySet; (void)yyPush; (void)yyPop; (void)yyAccept;

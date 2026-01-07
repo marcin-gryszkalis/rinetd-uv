@@ -181,6 +181,77 @@ Under Linux the process ID is saved in the file `/var/run/rinetd-uv.pid` by defa
 pidfile /var/run/myrinetd-uv.pid
 ```
 
+## INCLUDE DIRECTIVE
+
+Configuration files can include other configuration files using the `include` directive. This allows splitting large configurations into multiple files for better organization and maintainability.
+
+### Syntax
+
+```
+include pattern
+```
+
+The `pattern` can be:
+- **Single file**: `include servers.conf`
+- **Wildcard pattern**: `include conf.d/*.conf`
+- **Absolute path**: `include /etc/rinetd-uv/servers.conf`
+- **Relative path**: Resolved relative to the current config file's directory
+
+### Features
+
+- **Wildcard Support**: Use glob patterns like `*.conf` or `server-*.conf` to include multiple files
+- **Nested Includes**: Included files can include other files (up to 10 levels deep)
+- **Circular Detection**: Automatically prevents circular includes
+- **Depth Limit**: Maximum include depth is 10 levels to prevent infinite recursion
+- **Optional Includes**: If a pattern matches no files, a warning is logged but parsing continues
+- **Sorted Loading**: When using wildcards, files are loaded in alphabetical order
+
+### Examples
+
+**Basic include:**
+```
+# Include a single file
+include /etc/rinetd-uv.d/database-servers.conf
+```
+
+**Wildcard pattern:**
+```
+# Include all .conf files from a directory
+include /etc/rinetd-uv.d/*.conf
+```
+
+**Relative paths:**
+```
+# In /etc/rinetd-uv.conf:
+include conf.d/*.conf
+
+# This resolves to /etc/conf.d/*.conf
+```
+
+**Organized configuration structure:**
+```
+# Main config: /etc/rinetd-uv.conf
+logfile /var/log/rinetd-uv.log
+pidfile /var/run/rinetd-uv.pid
+
+# Global access control
+allow 10.0.0.*
+deny 192.168.1.100
+
+# Include server-specific configs
+include conf.d/web-servers.conf
+include conf.d/database-servers.conf
+include conf.d/dns-servers.conf
+```
+
+### Error Handling
+
+- **No matches**: If a pattern matches no files, a warning is logged and parsing continues
+- **Circular includes**: Detected and causes immediate error
+- **Maximum depth exceeded**: More than 10 levels of nesting causes an error
+- **File not found**: Individual file errors cause immediate failure
+- **Permission denied**: Causes immediate error
+
 ## ALLOW AND DENY RULES
 
 Configuration files can also contain allow and deny rules.
@@ -216,7 +287,7 @@ This allow rule matches all IP addresses in the 206.125.69 class C domain.
 
 ## EXAMPLE CONFIGURATION
 
-```
+```conf
 # rinetd-uv.conf - example configuration
 
 # Global options
@@ -239,6 +310,10 @@ allow 192.168.2.*
 deny 192.168.2.1?
 allow fe80:*
 deny 2001:618:*:e43f
+
+# You can split your configuration across multiple files
+include /etc/rinetd-uv.d/*.conf
+# include conf.d/servers.conf
 
 # Forwarding options:
 # Format: bindaddress bindport connectaddress connectport [options]

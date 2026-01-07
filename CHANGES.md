@@ -12,6 +12,10 @@
  * Updated documentation: single-source markdown with auto-generated man page and HTML
  * Backward compatible with original rinetd configuration files
  * Modern C99 codebase with improved error handling
+ * **Include directive support:**
+   - New `include` directive allows splitting configuration across multiple files
+   - Supports wildcard patterns (e.g., `include conf.d/*.conf`)
+   - Relative paths resolved from current config file's directory
  * **UDP improvements:**
    - Reduced default UDP timeout from 72s to 10s to prevent FD exhaustion
    - Added connection limit of 1000 UDP connections per forwarding rule
