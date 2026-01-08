@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-07" />
+  <meta name="dcterms.date" content="2026-01-08" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-07</p>
+<p class="date">2026-01-08</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -113,6 +113,8 @@ OPTIONS</a></li>
 <li><a href="#global-configuration-options"
 id="toc-global-configuration-options">GLOBAL CONFIGURATION
 OPTIONS</a></li>
+<li><a href="#include-directive" id="toc-include-directive">INCLUDE
+DIRECTIVE</a></li>
 <li><a href="#allow-and-deny-rules" id="toc-allow-and-deny-rules">ALLOW
 AND DENY RULES</a></li>
 <li><a href="#example-configuration"
@@ -296,6 +298,72 @@ following line to the configuration file:</p>
 <code>/var/run/rinetd-uv.pid</code> by default. An alternate filename
 can be provided:</p>
 <pre><code>pidfile /var/run/myrinetd-uv.pid</code></pre>
+<h2 id="include-directive">INCLUDE DIRECTIVE</h2>
+<p>Configuration files can include other configuration files using the
+<code>include</code> directive. This allows splitting large
+configurations into multiple files for better organization and
+maintainability.</p>
+<h3 id="syntax">Syntax</h3>
+<pre><code>include pattern</code></pre>
+<p>The <code>pattern</code> can be: - <strong>Single file</strong>:
+<code>include servers.conf</code> - <strong>Wildcard pattern</strong>:
+<code>include conf.d/*.conf</code> - <strong>Absolute path</strong>:
+<code>include /etc/rinetd-uv/servers.conf</code> - <strong>Relative
+path</strong>: Resolved relative to the current config file’s
+directory</p>
+<h3 id="features">Features</h3>
+<ul>
+<li><strong>Wildcard Support</strong>: Use glob patterns like
+<code>*.conf</code> or <code>server-*.conf</code> to include multiple
+files</li>
+<li><strong>Nested Includes</strong>: Included files can include other
+files (up to 10 levels deep)</li>
+<li><strong>Circular Detection</strong>: Automatically prevents circular
+includes</li>
+<li><strong>Depth Limit</strong>: Maximum include depth is 10 levels to
+prevent infinite recursion</li>
+<li><strong>Optional Includes</strong>: If a pattern matches no files, a
+warning is logged but parsing continues</li>
+<li><strong>Sorted Loading</strong>: When using wildcards, files are
+loaded in alphabetical order</li>
+</ul>
+<h3 id="examples">Examples</h3>
+<p><strong>Basic include:</strong></p>
+<pre><code># Include a single file
+include /etc/rinetd-uv.d/database-servers.conf</code></pre>
+<p><strong>Wildcard pattern:</strong></p>
+<pre><code># Include all .conf files from a directory
+include /etc/rinetd-uv.d/*.conf</code></pre>
+<p><strong>Relative paths:</strong></p>
+<pre><code># In /etc/rinetd-uv.conf:
+include conf.d/*.conf
+
+# This resolves to /etc/conf.d/*.conf</code></pre>
+<p><strong>Organized configuration structure:</strong></p>
+<pre><code># Main config: /etc/rinetd-uv.conf
+logfile /var/log/rinetd-uv.log
+pidfile /var/run/rinetd-uv.pid
+
+# Global access control
+allow 10.0.0.*
+deny 192.168.1.100
+
+# Include server-specific configs
+include conf.d/web-servers.conf
+include conf.d/database-servers.conf
+include conf.d/dns-servers.conf</code></pre>
+<h3 id="error-handling">Error Handling</h3>
+<ul>
+<li><strong>No matches</strong>: If a pattern matches no files, a
+warning is logged and parsing continues</li>
+<li><strong>Circular includes</strong>: Detected and causes immediate
+error</li>
+<li><strong>Maximum depth exceeded</strong>: More than 10 levels of
+nesting causes an error</li>
+<li><strong>File not found</strong>: Individual file errors cause
+immediate failure</li>
+<li><strong>Permission denied</strong>: Causes immediate error</li>
+</ul>
 <h2 id="allow-and-deny-rules">ALLOW AND DENY RULES</h2>
 <p>Configuration files can also contain allow and deny rules.</p>
 <p>Allow rules which appear <strong>before the first forwarding
@@ -362,6 +430,10 @@ deny 192.168.2.1?
 allow fe80:*
 deny 2001:618:*:e43f
 
+# You can split your configuration across multiple files
+include /etc/rinetd-uv.d/*.conf
+# include conf.d/servers.conf
+
 # Forwarding options:
 # Format: bindaddress bindport connectaddress connectport [options]
 # Options: [timeout=seconds,src=sourceaddress,keepalive=on/off]
@@ -383,11 +455,11 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb17"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
 <p>Or simply:</p>
-<div class="sourceCode" id="cb18"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple

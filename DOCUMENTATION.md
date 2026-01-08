@@ -287,7 +287,7 @@ This allow rule matches all IP addresses in the 206.125.69 class C domain.
 
 ## EXAMPLE CONFIGURATION
 
-```conf
+```
 # rinetd-uv.conf - example configuration
 
 # Global options
