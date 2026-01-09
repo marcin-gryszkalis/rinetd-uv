@@ -108,8 +108,9 @@ enum {
 };
 
 static RinetdOptions options = {
-    RINETD_CONFIG_FILE,
-    0,
+    .conf_file = RINETD_CONFIG_FILE,
+    .foreground = 0,
+    .debug = 0,
 };
 
 static int forked = 0;
@@ -261,6 +262,22 @@ void logError(char const *fmt, ...)
     va_end(ap);
 }
 
+void logWarning(char const *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+#if !_WIN32
+    if (forked)
+        vsyslog(LOG_WARNING, fmt, ap);
+    else
+#endif
+    {
+        fprintf(stderr, "rinetd-uv warning: ");
+        vfprintf(stderr, fmt, ap);
+    }
+    va_end(ap);
+}
+
 void logInfo(char const *fmt, ...)
 {
     va_list ap;
@@ -272,6 +289,25 @@ void logInfo(char const *fmt, ...)
 #endif
     {
         fprintf(stderr, "rinetd-uv: ");
+        vfprintf(stderr, fmt, ap);
+    }
+    va_end(ap);
+}
+
+void logDebug(char const *fmt, ...)
+{
+    if (!options.debug)
+        return;
+
+    va_list ap;
+    va_start(ap, fmt);
+#if !_WIN32
+    if (forked)
+        vsyslog(LOG_DEBUG, fmt, ap);
+    else
+#endif
+    {
+        fprintf(stderr, "rinetd-uv debug: ");
         vfprintf(stderr, fmt, ap);
     }
     va_end(ap);
@@ -497,7 +533,7 @@ static void signal_cb(uv_signal_t *handle, int signum)
 static void dns_refresh_timer_cb(uv_timer_t *timer)
 {
     ServerInfo *srv = (ServerInfo *)timer->data;
-    logInfo("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n",
+    logDebug("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n",
             srv->fromHost, getPort(srv->fromAddrInfo),
             srv->toHost, srv->dns_refresh_period);
     startAsyncDnsResolution(srv);
@@ -589,7 +625,7 @@ static void startServerListening(ServerInfo *srv)
                 uv_close((uv_handle_t*)&srv->dns_refresh_timer, NULL);
                 srv->dns_timer_initialized = 0;
             } else {
-                logInfo("DNS refresh enabled for %s -> %s (interval: %ds)\n",
+                logDebug("DNS refresh enabled for %s -> %s (interval: %ds)\n",
                         srv->fromHost, srv->toHost, srv->dns_refresh_period);
             }
         } else {
@@ -724,7 +760,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
                 shouldEnableDnsRefresh(srv)) {
-                logInfo("Backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
+                logDebug("Backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
                         srv->consecutive_failures, srv->toHost);
                 startAsyncDnsResolution(srv);
             }
@@ -1239,7 +1275,7 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
                 shouldEnableDnsRefresh(srv)) {
-                logInfo("UDP backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
+                logDebug("UDP backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
                         srv->consecutive_failures, srv->toHost);
                 startAsyncDnsResolution(srv);
             }
@@ -1939,13 +1975,14 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
         int option_index = 0;
         static struct option long_options[] = {
             {"conf-file",  1, 0, 'c'},
+            {"debug",      0, 0, 'd'},
             {"foreground", 0, 0, 'f'},
             {"help",       0, 0, 'h'},
             {"version",    0, 0, 'v'},
             {0, 0, 0, 0}
         };
 
-        int c = getopt_long(argc, argv, "c:fhv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "c:dfhv", long_options, &option_index);
         if (c == -1)
             break;
 
@@ -1957,6 +1994,9 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                     exit(1);
                 }
                 break;
+            case 'd':
+                options->debug = 1;
+                break;
             case 'f':
                 options->foreground = 1;
                 break;
@@ -1964,6 +2004,7 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                 printf("Usage: rinetd-uv [OPTION]\n"
                     "  -c, --conf-file FILE   read configuration "
                     "from FILE\n"
+                    "  -d, --debug            enable debug logging\n"
                     "  -f, --foreground       do not run in the "
                     "background\n"
                     "  -h, --help             display this help\n"

@@ -162,5 +162,6 @@ struct _rinetd_options
 {
     char const *conf_file;
     int foreground;
+    int debug;
 };
 

@@ -38,6 +38,9 @@ The configuration file is found in the file `/etc/rinetd-uv.conf`, unless anothe
 **-c** *configuration*
 :   Specify an alternate configuration file.
 
+**-d**
+:   Enable debug logging. Shows detailed information about DNS refresh operations, connection failures triggering re-resolution, and other internal operations.
+
 **-v**
 :   Display the version number and exit.
 

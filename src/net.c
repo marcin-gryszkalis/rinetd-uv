@@ -124,7 +124,7 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
                      new_addr, sizeof(new_addr));
         }
 
-        logInfo("DNS refresh: %s resolved to new address %s (was %s)\n",
+        logDebug("DNS refresh: %s resolved to new address %s (was %s)\n",
                 srv->toHost, new_addr, old_addr);
 
         freeaddrinfo(srv->toAddrInfo);
@@ -193,7 +193,7 @@ int shouldEnableDnsRefresh(ServerInfo *srv)
 int startAsyncDnsResolution(ServerInfo *srv)
 {
     if (srv->dns_req != NULL) {
-        logInfo("DNS refresh already in progress for %s\n", srv->toHost);
+        logDebug("DNS refresh already in progress for %s\n", srv->toHost);
         return 0;
     }
 

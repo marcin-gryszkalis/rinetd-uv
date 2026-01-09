@@ -330,7 +330,7 @@ void parseInclude(char const *pattern, yycontext *ctx)
 
     if (ret == GLOB_NOMATCH) {
         /* No files match - just log warning and continue */
-        logInfo("warning: include pattern matches no files: %s at %s:%d\n",
+        logWarning("include pattern matches no files: %s at %s:%d\n",
                 pattern, ctx->currentFile, ctx->currentLine);
         free(abs_pattern);
         free(unquoted_pattern);
