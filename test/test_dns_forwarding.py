@@ -29,7 +29,9 @@ Examples:
 
 Note: DNS responses typically have changing TTL values. Validation modes:
   - Basic mode: validates response format, code, type, and minimum answers
-  - Upstream mode (--validate-upstream): compares proxy response against direct upstream query
+  - Upstream mode (--validate-upstream): compares proxy response against cached upstream query
+    - First query fetches and caches the upstream response
+    - Subsequent queries use the cached response for comparison (much faster)
     - Validates response codes match
     - Validates same number of answers
     - Validates same record data (ignoring TTL differences and record order)
@@ -72,6 +74,11 @@ results_lock = threading.Lock()
 active_queries = {}
 active_queries_lock = threading.Lock()
 
+# Upstream response cache for --validate-upstream
+# Key: (domain, record_type), Value: (response, timestamp)
+upstream_cache = {}
+upstream_cache_lock = threading.Lock()
+
 
 def normalize_rrset(rrset):
     """Normalize an RRset for comparison (strip TTL, canonicalize data).
@@ -89,6 +96,42 @@ def normalize_rrset(rrset):
 
     # Return canonical tuple: (name, type, class, sorted_data)
     return (str(rrset.name), rrset.rdtype, rrset.rdclass, tuple(data_items))
+
+
+def get_cached_upstream_response(domain, record_type, upstream_host, upstream_port, timeout):
+    """Get upstream response from cache, or query upstream and cache the result.
+
+    Args:
+        domain: Domain name to query
+        record_type: DNS record type string (e.g., 'A', 'AAAA')
+        upstream_host: Upstream DNS server host
+        upstream_port: Upstream DNS server port
+        timeout: Query timeout in seconds
+
+    Returns:
+        Cached or freshly-fetched upstream DNS response
+
+    Raises:
+        Exception if upstream query fails
+    """
+    cache_key = (domain, record_type)
+
+    # Check cache first
+    with upstream_cache_lock:
+        if cache_key in upstream_cache:
+            return upstream_cache[cache_key]
+
+    # Not in cache - query upstream
+    query = dns.message.make_query(domain, record_type)
+    upstream_response = dns.query.udp(query, upstream_host, timeout=timeout, port=upstream_port)
+
+    # Store in cache
+    with upstream_cache_lock:
+        # Double-check in case another thread populated it while we were querying
+        if cache_key not in upstream_cache:
+            upstream_cache[cache_key] = upstream_response
+
+    return upstream_response
 
 
 def compare_dns_responses(proxy_response, upstream_response):
@@ -167,13 +210,14 @@ def test_dns_query(query_id, host, port, timeout, domain, record_type, min_answe
         with active_queries_lock:
             active_queries[query_id]['state'] = 'validating'
 
-        # If upstream validation is enabled, compare against direct upstream query
+        # If upstream validation is enabled, compare against cached upstream response
         if upstream_host is not None:
             with active_queries_lock:
-                active_queries[query_id]['state'] = 'querying_upstream'
+                active_queries[query_id]['state'] = 'getting_upstream_response'
 
-            # Query upstream directly
-            upstream_response = dns.query.udp(query, upstream_host, timeout=timeout, port=upstream_port)
+            # Get upstream response (cached or fresh)
+            upstream_response = get_cached_upstream_response(
+                domain, record_type, upstream_host, upstream_port, timeout)
 
             with active_queries_lock:
                 active_queries[query_id]['state'] = 'comparing_responses'
@@ -404,12 +448,13 @@ def run_continuous_test(args):
     print(f"{args.connections} parallel workers querying repeatedly")
     print()
 
-    global results, active_queries
+    global results, active_queries, upstream_cache
     # Reset results for continuous test
     results['success'] = 0
     results['failed'] = 0
     results['errors'] = []
     active_queries.clear()
+    upstream_cache.clear()
 
     start_time = time.time()
     end_time = start_time + args.duration
@@ -503,6 +548,9 @@ def run_continuous_test(args):
 
 def run_single_batch_test(args):
     """Run a single batch of parallel DNS queries."""
+    global upstream_cache
+    upstream_cache.clear()
+
     print(f"Starting {args.connections} parallel DNS queries...")
     start_time = time.time()
 
@@ -604,7 +652,7 @@ def main():
     print(f"Query: {args.domain} ({args.record_type})")
     if args.upstream:
         upstream_host, upstream_port = args.upstream
-        print(f"Validation: upstream comparison against {upstream_host}:{upstream_port}")
+        print(f"Validation: upstream comparison against {upstream_host}:{upstream_port} (cached)")
     else:
         print(f"Min answers: {args.min_answers}")
         if args.expected_rcode is not None:
