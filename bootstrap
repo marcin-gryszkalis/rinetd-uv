@@ -36,7 +36,7 @@ aclocalflags="`sed -ne 's/^[ \t]*ACLOCAL_AMFLAGS[ \t]*=//p' Makefile.am 2>/dev/n
 
 # Check for automake
 amvers="no"
-for v in "" "-1.15" "-1.14" "-1.13" "-1.12" "-1.11"; do
+for v in "" "-1.18" "-1.17" "-1.16" "-1.15" "-1.14" "-1.13" "-1.12" "-1.11"; do
   if automake${v} --version > /dev/null 2>&1; then
     amvers=${v}
     break
@@ -50,7 +50,7 @@ fi
 
 # Check for autoconf
 acvers="no"
-for v in "" "259" "253"; do
+for v in "" "272" "259" "253"; do
   if autoconf${v} --version >/dev/null 2>&1; then
     acvers="${v}"
     break
@@ -136,4 +136,3 @@ fi
 
 # Remove cruft that we no longer want
 rm -Rf autom4te.cache
-
