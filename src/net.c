@@ -28,8 +28,7 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
 
     int ret = getaddrinfo(address, port, &hints, ai);
     if (ret != 0) {
-        fprintf(stderr, "rinetd-uv: cannot resolve host \"%s\" port %s "
-                "(getaddrinfo() error: %s)\n",
+        logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n",
             address, port ? port : "<null>", gai_strerror(ret));
     }
 

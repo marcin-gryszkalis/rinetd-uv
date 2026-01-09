@@ -2013,13 +2013,13 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                 printf("Most options are controlled through the\n"
                     "configuration file. See the rinetd-uv(8)\n"
                     "manpage for more information.\n");
-                exit (0);
+                exit(0);
             case 'v':
                 printf ("rinetd-uv %s\n", PACKAGE_VERSION);
-                exit (0);
+                exit(0);
             case '?':
             default:
-                exit (1);
+                exit(1);
         }
     }
     return 0;
