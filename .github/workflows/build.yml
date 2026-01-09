@@ -37,26 +37,25 @@ jobs:
 
       - name: Log platform and compiler
         run: |
+          CC=${{ matrix.compiler }}  
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             os_name=$(grep "^NAME=" /etc/os-release | sed -E 's/^NAME="([^"]+)"/\1/' | tr -d '"')
             os_version=$(grep "^VERSION=" /etc/os-release | sed -E 's/^VERSION="([^"]+).*/\1/' | tr -d '"')
             echo "Platform: $os_name $os_version ($(uname -m))"
           elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            # Fix gcc on macOS (homebrew installs numbered commands like "gcc-15", while gcc is pointing to clang)
+            if [[ "$CC" == "gcc" ]]; then
+              CC=$(brew list gcc | grep "/bin/gcc-\d" | sort -V | tail -1 | xargs basename)
+            fi
             echo "Platform: macOS $(sw_vers -productVersion) ($(uname -m))"
           fi
-          echo "Compiler: $(${{ matrix.compiler }} --version | head -1)"
+          echo "Compiler: $($CC --version | head -1)"
+          echo "CC=$CC" >> $GITHUB_ENV
 
       - run: ./bootstrap
 
       - name: Configure build with ${{ matrix.compiler }}
         run: |
-          # Fix gcc on macOS (homebrew installs numbered commands like "gcc-13", while gcc is pointing to clang)
-          if [[ "${{ runner.os }}" == "macOS" && "${{ matrix.compiler }}" == "gcc" ]]; then
-            export CC=$(brew list gcc | grep "/bin/gcc-\d" | sort -V | tail -1 | xargs basename)
-          else
-            export CC=${{ matrix.compiler }}  
-          fi
-
           ./configure --prefix=$HOME/local
 
       - name: Compile
