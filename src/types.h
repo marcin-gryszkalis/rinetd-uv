@@ -37,12 +37,19 @@ struct _server_info {
     union {
         uv_tcp_t tcp;
         uv_udp_t udp;
+        uv_pipe_t pipe;  /* Unix domain socket */
     } uv_handle;
-    uv_handle_type handle_type;  /* UV_TCP or UV_UDP */
+    uv_handle_type handle_type;  /* UV_TCP, UV_UDP, or UV_NAMED_PIPE */
     int handle_initialized;      /* Track if uv_*_init() called */
 
     /* In network order, for network purposes */
     struct addrinfo *fromAddrInfo, *toAddrInfo, *sourceAddrInfo;
+
+    /* Unix domain socket paths (NULL if not Unix socket) */
+    char *fromUnixPath;     /* Bind path */
+    char *toUnixPath;       /* Connect path */
+    int fromIsAbstract;     /* 1 if abstract namespace (Linux-only) */
+    int toIsAbstract;       /* 1 if abstract namespace */
 
     /* In ASCII, for logging purposes */
     char *fromHost, *toHost;
@@ -116,16 +123,18 @@ struct _connection_info
     union {
         uv_tcp_t tcp;
         uv_udp_t udp;
+        uv_pipe_t pipe;  /* Unix domain socket */
     } local_uv_handle;
-    uv_handle_type local_handle_type;
+    uv_handle_type local_handle_type;  /* UV_TCP, UV_UDP, or UV_NAMED_PIPE */
     int local_handle_initialized;
     int local_handle_closing;  /* Set when uv_close() called, cleared in callback */
 
     union {
         uv_tcp_t tcp;
         uv_udp_t udp;
+        uv_pipe_t pipe;  /* Unix domain socket */
     } remote_uv_handle;
-    uv_handle_type remote_handle_type;
+    uv_handle_type remote_handle_type;  /* UV_TCP, UV_UDP, or UV_NAMED_PIPE */
     int remote_handle_initialized;
     int remote_handle_closing;  /* Set when uv_close() called, cleared in callback */
 

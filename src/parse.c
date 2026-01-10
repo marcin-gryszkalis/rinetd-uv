@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define YYRULECOUNT 47
+#define YYRULECOUNT 52
 #line 10 "parse.peg"
 
 #if HAVE_CONFIG_H
@@ -333,37 +333,42 @@ YY_LOCAL(void) yySet(yycontext *yy, char *text, int count)   { yy->__val[count]=
 
 #define	YYACCEPT	yyAccept(yy, yythunkpos0)
 
-YY_RULE(int) yy_eof(yycontext *yy); /* 47 */
-YY_RULE(int) yy_id(yycontext *yy); /* 46 */
-YY_RULE(int) yy_label(yycontext *yy); /* 45 */
-YY_RULE(int) yy_bare_ipv6(yycontext *yy); /* 44 */
-YY_RULE(int) yy_digit(yycontext *yy); /* 43 */
-YY_RULE(int) yy_hexdigit(yycontext *yy); /* 42 */
-YY_RULE(int) yy_hostname(yycontext *yy); /* 41 */
-YY_RULE(int) yy_ipv6(yycontext *yy); /* 40 */
-YY_RULE(int) yy_ipv4(yycontext *yy); /* 39 */
-YY_RULE(int) yy_name(yycontext *yy); /* 38 */
-YY_RULE(int) yy_filename(yycontext *yy); /* 37 */
-YY_RULE(int) yy_pattern(yycontext *yy); /* 36 */
-YY_RULE(int) yy_auth_key(yycontext *yy); /* 35 */
-YY_RULE(int) yy_service(yycontext *yy); /* 34 */
-YY_RULE(int) yy_proto(yycontext *yy); /* 33 */
-YY_RULE(int) yy_port(yycontext *yy); /* 32 */
-YY_RULE(int) yy_keepalive_value(yycontext *yy); /* 31 */
-YY_RULE(int) yy_number(yycontext *yy); /* 30 */
-YY_RULE(int) yy_option_dns_refresh(yycontext *yy); /* 29 */
-YY_RULE(int) yy_option_keepalive(yycontext *yy); /* 28 */
-YY_RULE(int) yy_option_source(yycontext *yy); /* 27 */
-YY_RULE(int) yy_option_timeout(yycontext *yy); /* 26 */
-YY_RULE(int) yy_option(yycontext *yy); /* 25 */
-YY_RULE(int) yy_option_list(yycontext *yy); /* 24 */
-YY_RULE(int) yy_full_port(yycontext *yy); /* 23 */
-YY_RULE(int) yy_address(yycontext *yy); /* 22 */
-YY_RULE(int) yy_server_options(yycontext *yy); /* 21 */
-YY_RULE(int) yy_connect_port(yycontext *yy); /* 20 */
-YY_RULE(int) yy_connect_address(yycontext *yy); /* 19 */
-YY_RULE(int) yy_bind_port(yycontext *yy); /* 18 */
-YY_RULE(int) yy_bind_address(yycontext *yy); /* 17 */
+YY_RULE(int) yy_eof(yycontext *yy); /* 52 */
+YY_RULE(int) yy_id(yycontext *yy); /* 51 */
+YY_RULE(int) yy_label(yycontext *yy); /* 50 */
+YY_RULE(int) yy_bare_ipv6(yycontext *yy); /* 49 */
+YY_RULE(int) yy_digit(yycontext *yy); /* 48 */
+YY_RULE(int) yy_hexdigit(yycontext *yy); /* 47 */
+YY_RULE(int) yy_hostname(yycontext *yy); /* 46 */
+YY_RULE(int) yy_ipv6(yycontext *yy); /* 45 */
+YY_RULE(int) yy_ipv4(yycontext *yy); /* 44 */
+YY_RULE(int) yy_name(yycontext *yy); /* 43 */
+YY_RULE(int) yy_filename(yycontext *yy); /* 42 */
+YY_RULE(int) yy_pattern(yycontext *yy); /* 41 */
+YY_RULE(int) yy_auth_key(yycontext *yy); /* 40 */
+YY_RULE(int) yy_service(yycontext *yy); /* 39 */
+YY_RULE(int) yy_proto(yycontext *yy); /* 38 */
+YY_RULE(int) yy_port(yycontext *yy); /* 37 */
+YY_RULE(int) yy_keepalive_value(yycontext *yy); /* 36 */
+YY_RULE(int) yy_number(yycontext *yy); /* 35 */
+YY_RULE(int) yy_option_dns_refresh(yycontext *yy); /* 34 */
+YY_RULE(int) yy_option_keepalive(yycontext *yy); /* 33 */
+YY_RULE(int) yy_option_source(yycontext *yy); /* 32 */
+YY_RULE(int) yy_option_timeout(yycontext *yy); /* 31 */
+YY_RULE(int) yy_option(yycontext *yy); /* 30 */
+YY_RULE(int) yy_option_list(yycontext *yy); /* 29 */
+YY_RULE(int) yy_full_port(yycontext *yy); /* 28 */
+YY_RULE(int) yy_address(yycontext *yy); /* 27 */
+YY_RULE(int) yy_unix_path(yycontext *yy); /* 26 */
+YY_RULE(int) yy_connect_port(yycontext *yy); /* 25 */
+YY_RULE(int) yy_connect_address(yycontext *yy); /* 24 */
+YY_RULE(int) yy_unix_connect(yycontext *yy); /* 23 */
+YY_RULE(int) yy_bind_port(yycontext *yy); /* 22 */
+YY_RULE(int) yy_bind_address(yycontext *yy); /* 21 */
+YY_RULE(int) yy_unix_bind(yycontext *yy); /* 20 */
+YY_RULE(int) yy_server_options(yycontext *yy); /* 19 */
+YY_RULE(int) yy_connect_spec(yycontext *yy); /* 18 */
+YY_RULE(int) yy_bind_spec(yycontext *yy); /* 17 */
 YY_RULE(int) yy_include_directive(yycontext *yy); /* 16 */
 YY_RULE(int) yy_dns_refresh_global(yycontext *yy); /* 15 */
 YY_RULE(int) yy_buffersize(yycontext *yy); /* 14 */
@@ -388,7 +393,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 219
+#line 236
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -402,7 +407,7 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 193
+#line 210
   
     logError("invalid syntax at line %d: %s\n",
             yy->currentLine, yytext);
@@ -420,7 +425,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 188
+#line 205
   
     parseInclude(yytext, yy);
 ;
@@ -436,7 +441,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 179
+#line 196
   
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
@@ -456,7 +461,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_buffersize\n"));
   {
-#line 169
+#line 186
   
     bufferSize = atoi(yytext);
     if (bufferSize < 1024 || bufferSize > 1048576) {
@@ -477,7 +482,7 @@ YY_ACTION(void) yy_1_logcommon(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logcommon\n"));
   {
-#line 164
+#line 181
   
     logFormatCommon = 1;
 ;
@@ -493,7 +498,7 @@ YY_ACTION(void) yy_1_pidfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pidfile\n"));
   {
-#line 156
+#line 173
   
     pidLogFileName = strdup(yytext);
     if (!pidLogFileName) {
@@ -512,7 +517,7 @@ YY_ACTION(void) yy_1_logfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logfile\n"));
   {
-#line 148
+#line 165
   
     logFileName = strdup(yytext);
     if (!logFileName) {
@@ -531,7 +536,7 @@ YY_ACTION(void) yy_1_auth_key(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_key\n"));
   {
-#line 145
+#line 162
    yy->isAuthAllow = (yytext[0] == 'a'); ;
   }
 #undef yythunkpos
@@ -545,7 +550,7 @@ YY_ACTION(void) yy_1_auth_rule(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_rule\n"));
   {
-#line 123
+#line 140
   
     allRules = (Rule *)
         realloc(allRules, sizeof(Rule) * (allRulesCount + 1));
@@ -579,7 +584,7 @@ YY_ACTION(void) yy_3_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_3_proto\n"));
   {
-#line 120
+#line 137
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -593,7 +598,7 @@ YY_ACTION(void) yy_2_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_2_proto\n"));
   {
-#line 119
+#line 136
    yy->tmpProto = IPPROTO_UDP; ;
   }
 #undef yythunkpos
@@ -607,7 +612,7 @@ YY_ACTION(void) yy_1_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_proto\n"));
   {
-#line 118
+#line 135
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -621,7 +626,7 @@ YY_ACTION(void) yy_1_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_port\n"));
   {
-#line 117
+#line 134
    yy->tmpPort = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -635,7 +640,7 @@ YY_ACTION(void) yy_1_option_dns_refresh(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_dns_refresh\n"));
   {
-#line 111
+#line 128
    yy->dns_refresh_period = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -649,7 +654,7 @@ YY_ACTION(void) yy_1_option_keepalive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_keepalive\n"));
   {
-#line 110
+#line 127
    yy->keepalive = (yytext[1] == 'n') ? 1 : 0; ;
   }
 #undef yythunkpos
@@ -663,7 +668,7 @@ YY_ACTION(void) yy_1_option_source(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_source\n"));
   {
-#line 109
+#line 126
    yy->sourceAddress = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -677,7 +682,7 @@ YY_ACTION(void) yy_1_option_timeout(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_timeout\n"));
   {
-#line 108
+#line 125
    yy->serverTimeout = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -691,7 +696,7 @@ YY_ACTION(void) yy_1_connect_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_port\n"));
   {
-#line 103
+#line 120
    yy->connectPort = yy->tmpPort; yy->connectProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -705,7 +710,7 @@ YY_ACTION(void) yy_1_bind_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_port\n"));
   {
-#line 102
+#line 119
    yy->bindPort = yy->tmpPort; yy->bindProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -719,7 +724,7 @@ YY_ACTION(void) yy_1_connect_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_address\n"));
   {
-#line 101
+#line 118
    yy->connectAddress = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -733,8 +738,44 @@ YY_ACTION(void) yy_1_bind_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_address\n"));
   {
-#line 100
+#line 117
    yy->bindAddress = strdup(yytext); ;
+  }
+#undef yythunkpos
+#undef yypos
+#undef yy
+}
+YY_ACTION(void) yy_1_unix_connect(yycontext *yy, char *yytext, int yyleng)
+{
+#define __ yy->__
+#define yypos yy->__pos
+#define yythunkpos yy->__thunkpos
+  yyprintf((stderr, "do yy_1_unix_connect\n"));
+  {
+#line 110
+  
+    yy->connectAddress = strdup(yytext);
+    yy->connectPort = strdup("0");
+    yy->connectProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
+;
+  }
+#undef yythunkpos
+#undef yypos
+#undef yy
+}
+YY_ACTION(void) yy_1_unix_bind(yycontext *yy, char *yytext, int yyleng)
+{
+#define __ yy->__
+#define yypos yy->__pos
+#define yythunkpos yy->__thunkpos
+  yyprintf((stderr, "do yy_1_unix_bind\n"));
+  {
+#line 105
+  
+    yy->bindAddress = strdup(yytext);
+    yy->bindPort = strdup("0");
+    yy->bindProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
+;
   }
 #undef yythunkpos
 #undef yypos
@@ -1243,65 +1284,39 @@ YY_RULE(int) yy_address(yycontext *yy)
   yyprintf((stderr, "  fail %s @ %s\n", "address", yy->__buf+yy->__pos));
   return 0;
 }
-YY_RULE(int) yy_server_options(yycontext *yy)
+YY_RULE(int) yy_unix_path(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "server_options"));  if (!yymatchChar(yy, '[')) goto l113;
-  {  int yypos114= yy->__pos, yythunkpos114= yy->__thunkpos;  if (!yy__(yy)) goto l114;  goto l115;
-  l114:;	  yy->__pos= yypos114; yy->__thunkpos= yythunkpos114;
+  yyprintf((stderr, "%s\n", "unix_path"));
+  {  int yypos114= yy->__pos, yythunkpos114= yy->__thunkpos;  if (!yymatchChar(yy, '@')) goto l115;  if (!yymatchClass(yy, (unsigned char *)"\377\331\377\377\376\377\377\377\377\377\377\327\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377")) goto l115;
+  l116:;	
+  {  int yypos117= yy->__pos, yythunkpos117= yy->__thunkpos;  if (!yymatchClass(yy, (unsigned char *)"\377\331\377\377\376\377\377\377\377\377\377\327\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377")) goto l117;  goto l116;
+  l117:;	  yy->__pos= yypos117; yy->__thunkpos= yythunkpos117;
+  }  goto l114;
+  l115:;	  yy->__pos= yypos114; yy->__thunkpos= yythunkpos114;  if (!yymatchChar(yy, '/')) goto l113;  if (!yymatchClass(yy, (unsigned char *)"\377\331\377\377\376\377\377\377\377\377\377\327\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377")) goto l113;
+  l118:;	
+  {  int yypos119= yy->__pos, yythunkpos119= yy->__thunkpos;  if (!yymatchClass(yy, (unsigned char *)"\377\331\377\377\376\377\377\377\377\377\377\327\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377\377")) goto l119;  goto l118;
+  l119:;	  yy->__pos= yypos119; yy->__thunkpos= yythunkpos119;
   }
-  l115:;	  if (!yy_option_list(yy)) goto l113;
-  {  int yypos116= yy->__pos, yythunkpos116= yy->__thunkpos;  if (!yy__(yy)) goto l116;  goto l117;
-  l116:;	  yy->__pos= yypos116; yy->__thunkpos= yythunkpos116;
   }
-  l117:;	  if (!yymatchChar(yy, ']')) goto l113;
-  yyprintf((stderr, "  ok   %s @ %s\n", "server_options", yy->__buf+yy->__pos));
+  l114:;	
+  yyprintf((stderr, "  ok   %s @ %s\n", "unix_path", yy->__buf+yy->__pos));
   return 1;
   l113:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "server_options", yy->__buf+yy->__pos));
+  yyprintf((stderr, "  fail %s @ %s\n", "unix_path", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_connect_port(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "connect_port"));  if (!yy_full_port(yy)) goto l118;  yyDo(yy, yy_1_connect_port, yy->__begin, yy->__end);
+  yyprintf((stderr, "%s\n", "connect_port"));  if (!yy_full_port(yy)) goto l120;  yyDo(yy, yy_1_connect_port, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "connect_port", yy->__buf+yy->__pos));
   return 1;
-  l118:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l120:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "connect_port", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_connect_address(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
   yyprintf((stderr, "%s\n", "connect_address"));  yyText(yy, yy->__begin, yy->__end);  {
-#define yytext yy->__text
-#define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l119;
-#undef yytext
-#undef yyleng
-  }  if (!yy_address(yy)) goto l119;  yyText(yy, yy->__begin, yy->__end);  {
-#define yytext yy->__text
-#define yyleng yy->__textlen
-if (!(YY_END)) goto l119;
-#undef yytext
-#undef yyleng
-  }  yyDo(yy, yy_1_connect_address, yy->__begin, yy->__end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "connect_address", yy->__buf+yy->__pos));
-  return 1;
-  l119:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "connect_address", yy->__buf+yy->__pos));
-  return 0;
-}
-YY_RULE(int) yy_bind_port(yycontext *yy)
-{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "bind_port"));  if (!yy_full_port(yy)) goto l120;  yyDo(yy, yy_1_bind_port, yy->__begin, yy->__end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "bind_port", yy->__buf+yy->__pos));
-  return 1;
-  l120:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "bind_port", yy->__buf+yy->__pos));
-  return 0;
-}
-YY_RULE(int) yy_bind_address(yycontext *yy)
-{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "bind_address"));  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
 if (!(YY_BEGIN)) goto l121;
@@ -1313,210 +1328,325 @@ if (!(YY_BEGIN)) goto l121;
 if (!(YY_END)) goto l121;
 #undef yytext
 #undef yyleng
-  }  yyDo(yy, yy_1_bind_address, yy->__begin, yy->__end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "bind_address", yy->__buf+yy->__pos));
+  }  yyDo(yy, yy_1_connect_address, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "connect_address", yy->__buf+yy->__pos));
   return 1;
   l121:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "bind_address", yy->__buf+yy->__pos));
+  yyprintf((stderr, "  fail %s @ %s\n", "connect_address", yy->__buf+yy->__pos));
   return 0;
 }
-YY_RULE(int) yy_include_directive(yycontext *yy)
+YY_RULE(int) yy_unix_connect(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "include_directive"));  if (!yymatchString(yy, "include")) goto l122;  if (!yy__(yy)) goto l122;  yyText(yy, yy->__begin, yy->__end);  {
+  yyprintf((stderr, "%s\n", "unix_connect"));  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
 if (!(YY_BEGIN)) goto l122;
 #undef yytext
 #undef yyleng
-  }  if (!yy_filename(yy)) goto l122;  yyText(yy, yy->__begin, yy->__end);  {
+  }  if (!yymatchString(yy, "unix:")) goto l122;  if (!yy_unix_path(yy)) goto l122;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
 if (!(YY_END)) goto l122;
 #undef yytext
 #undef yyleng
-  }  yyDo(yy, yy_1_include_directive, yy->__begin, yy->__end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "include_directive", yy->__buf+yy->__pos));
+  }  yyDo(yy, yy_1_unix_connect, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "unix_connect", yy->__buf+yy->__pos));
   return 1;
   l122:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "include_directive", yy->__buf+yy->__pos));
+  yyprintf((stderr, "  fail %s @ %s\n", "unix_connect", yy->__buf+yy->__pos));
   return 0;
 }
-YY_RULE(int) yy_dns_refresh_global(yycontext *yy)
+YY_RULE(int) yy_bind_port(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "dns_refresh_global"));  if (!yymatchString(yy, "dns-refresh")) goto l123;  if (!yy__(yy)) goto l123;  yyText(yy, yy->__begin, yy->__end);  {
-#define yytext yy->__text
-#define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l123;
-#undef yytext
-#undef yyleng
-  }  if (!yy_number(yy)) goto l123;  yyText(yy, yy->__begin, yy->__end);  {
-#define yytext yy->__text
-#define yyleng yy->__textlen
-if (!(YY_END)) goto l123;
-#undef yytext
-#undef yyleng
-  }  yyDo(yy, yy_1_dns_refresh_global, yy->__begin, yy->__end);
-  yyprintf((stderr, "  ok   %s @ %s\n", "dns_refresh_global", yy->__buf+yy->__pos));
+  yyprintf((stderr, "%s\n", "bind_port"));  if (!yy_full_port(yy)) goto l123;  yyDo(yy, yy_1_bind_port, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "bind_port", yy->__buf+yy->__pos));
   return 1;
   l123:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
-  yyprintf((stderr, "  fail %s @ %s\n", "dns_refresh_global", yy->__buf+yy->__pos));
+  yyprintf((stderr, "  fail %s @ %s\n", "bind_port", yy->__buf+yy->__pos));
   return 0;
 }
-YY_RULE(int) yy_buffersize(yycontext *yy)
+YY_RULE(int) yy_bind_address(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "buffersize"));  if (!yymatchString(yy, "buffersize")) goto l124;  if (!yy__(yy)) goto l124;  yyText(yy, yy->__begin, yy->__end);  {
+  yyprintf((stderr, "%s\n", "bind_address"));  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
 if (!(YY_BEGIN)) goto l124;
 #undef yytext
 #undef yyleng
-  }  if (!yy_number(yy)) goto l124;  yyText(yy, yy->__begin, yy->__end);  {
+  }  if (!yy_address(yy)) goto l124;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
 if (!(YY_END)) goto l124;
 #undef yytext
 #undef yyleng
+  }  yyDo(yy, yy_1_bind_address, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "bind_address", yy->__buf+yy->__pos));
+  return 1;
+  l124:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "bind_address", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_unix_bind(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "unix_bind"));  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_BEGIN)) goto l125;
+#undef yytext
+#undef yyleng
+  }  if (!yymatchString(yy, "unix:")) goto l125;  if (!yy_unix_path(yy)) goto l125;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_END)) goto l125;
+#undef yytext
+#undef yyleng
+  }  yyDo(yy, yy_1_unix_bind, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "unix_bind", yy->__buf+yy->__pos));
+  return 1;
+  l125:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "unix_bind", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_server_options(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "server_options"));  if (!yymatchChar(yy, '[')) goto l126;
+  {  int yypos127= yy->__pos, yythunkpos127= yy->__thunkpos;  if (!yy__(yy)) goto l127;  goto l128;
+  l127:;	  yy->__pos= yypos127; yy->__thunkpos= yythunkpos127;
+  }
+  l128:;	  if (!yy_option_list(yy)) goto l126;
+  {  int yypos129= yy->__pos, yythunkpos129= yy->__thunkpos;  if (!yy__(yy)) goto l129;  goto l130;
+  l129:;	  yy->__pos= yypos129; yy->__thunkpos= yythunkpos129;
+  }
+  l130:;	  if (!yymatchChar(yy, ']')) goto l126;
+  yyprintf((stderr, "  ok   %s @ %s\n", "server_options", yy->__buf+yy->__pos));
+  return 1;
+  l126:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "server_options", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_connect_spec(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "connect_spec"));
+  {  int yypos132= yy->__pos, yythunkpos132= yy->__thunkpos;  if (!yy_unix_connect(yy)) goto l133;  goto l132;
+  l133:;	  yy->__pos= yypos132; yy->__thunkpos= yythunkpos132;  if (!yy_connect_address(yy)) goto l131;  if (!yy__(yy)) goto l131;  if (!yy_connect_port(yy)) goto l131;
+  }
+  l132:;	
+  yyprintf((stderr, "  ok   %s @ %s\n", "connect_spec", yy->__buf+yy->__pos));
+  return 1;
+  l131:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "connect_spec", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_bind_spec(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "bind_spec"));
+  {  int yypos135= yy->__pos, yythunkpos135= yy->__thunkpos;  if (!yy_unix_bind(yy)) goto l136;  goto l135;
+  l136:;	  yy->__pos= yypos135; yy->__thunkpos= yythunkpos135;  if (!yy_bind_address(yy)) goto l134;  if (!yy__(yy)) goto l134;  if (!yy_bind_port(yy)) goto l134;
+  }
+  l135:;	
+  yyprintf((stderr, "  ok   %s @ %s\n", "bind_spec", yy->__buf+yy->__pos));
+  return 1;
+  l134:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "bind_spec", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_include_directive(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "include_directive"));  if (!yymatchString(yy, "include")) goto l137;  if (!yy__(yy)) goto l137;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_BEGIN)) goto l137;
+#undef yytext
+#undef yyleng
+  }  if (!yy_filename(yy)) goto l137;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_END)) goto l137;
+#undef yytext
+#undef yyleng
+  }  yyDo(yy, yy_1_include_directive, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "include_directive", yy->__buf+yy->__pos));
+  return 1;
+  l137:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "include_directive", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_dns_refresh_global(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "dns_refresh_global"));  if (!yymatchString(yy, "dns-refresh")) goto l138;  if (!yy__(yy)) goto l138;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_BEGIN)) goto l138;
+#undef yytext
+#undef yyleng
+  }  if (!yy_number(yy)) goto l138;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_END)) goto l138;
+#undef yytext
+#undef yyleng
+  }  yyDo(yy, yy_1_dns_refresh_global, yy->__begin, yy->__end);
+  yyprintf((stderr, "  ok   %s @ %s\n", "dns_refresh_global", yy->__buf+yy->__pos));
+  return 1;
+  l138:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  yyprintf((stderr, "  fail %s @ %s\n", "dns_refresh_global", yy->__buf+yy->__pos));
+  return 0;
+}
+YY_RULE(int) yy_buffersize(yycontext *yy)
+{  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
+  yyprintf((stderr, "%s\n", "buffersize"));  if (!yymatchString(yy, "buffersize")) goto l139;  if (!yy__(yy)) goto l139;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_BEGIN)) goto l139;
+#undef yytext
+#undef yyleng
+  }  if (!yy_number(yy)) goto l139;  yyText(yy, yy->__begin, yy->__end);  {
+#define yytext yy->__text
+#define yyleng yy->__textlen
+if (!(YY_END)) goto l139;
+#undef yytext
+#undef yyleng
   }  yyDo(yy, yy_1_buffersize, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "buffersize", yy->__buf+yy->__pos));
   return 1;
-  l124:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l139:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "buffersize", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_logcommon(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "logcommon"));  if (!yymatchString(yy, "logcommon")) goto l125;  yyDo(yy, yy_1_logcommon, yy->__begin, yy->__end);
+  yyprintf((stderr, "%s\n", "logcommon"));  if (!yymatchString(yy, "logcommon")) goto l140;  yyDo(yy, yy_1_logcommon, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "logcommon", yy->__buf+yy->__pos));
   return 1;
-  l125:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l140:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "logcommon", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_pidfile(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "pidfile"));  if (!yymatchString(yy, "pidfile")) goto l126;  if (!yy__(yy)) goto l126;  yyText(yy, yy->__begin, yy->__end);  {
+  yyprintf((stderr, "%s\n", "pidfile"));  if (!yymatchString(yy, "pidfile")) goto l141;  if (!yy__(yy)) goto l141;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l126;
+if (!(YY_BEGIN)) goto l141;
 #undef yytext
 #undef yyleng
-  }  if (!yy_filename(yy)) goto l126;  yyText(yy, yy->__begin, yy->__end);  {
+  }  if (!yy_filename(yy)) goto l141;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_END)) goto l126;
+if (!(YY_END)) goto l141;
 #undef yytext
 #undef yyleng
   }  yyDo(yy, yy_1_pidfile, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "pidfile", yy->__buf+yy->__pos));
   return 1;
-  l126:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l141:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "pidfile", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_logfile(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "logfile"));  if (!yymatchString(yy, "logfile")) goto l127;  if (!yy__(yy)) goto l127;  yyText(yy, yy->__begin, yy->__end);  {
+  yyprintf((stderr, "%s\n", "logfile"));  if (!yymatchString(yy, "logfile")) goto l142;  if (!yy__(yy)) goto l142;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l127;
+if (!(YY_BEGIN)) goto l142;
 #undef yytext
 #undef yyleng
-  }  if (!yy_filename(yy)) goto l127;  yyText(yy, yy->__begin, yy->__end);  {
+  }  if (!yy_filename(yy)) goto l142;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_END)) goto l127;
+if (!(YY_END)) goto l142;
 #undef yytext
 #undef yyleng
   }  yyDo(yy, yy_1_logfile, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "logfile", yy->__buf+yy->__pos));
   return 1;
-  l127:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l142:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "logfile", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_auth_rule(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "auth_rule"));  if (!yy_auth_key(yy)) goto l128;  if (!yy__(yy)) goto l128;  yyText(yy, yy->__begin, yy->__end);  {
+  yyprintf((stderr, "%s\n", "auth_rule"));  if (!yy_auth_key(yy)) goto l143;  if (!yy__(yy)) goto l143;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l128;
+if (!(YY_BEGIN)) goto l143;
 #undef yytext
 #undef yyleng
-  }  if (!yy_pattern(yy)) goto l128;  yyText(yy, yy->__begin, yy->__end);  {
+  }  if (!yy_pattern(yy)) goto l143;  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_END)) goto l128;
+if (!(YY_END)) goto l143;
 #undef yytext
 #undef yyleng
   }  yyDo(yy, yy_1_auth_rule, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "auth_rule", yy->__buf+yy->__pos));
   return 1;
-  l128:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l143:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "auth_rule", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_server_rule(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "server_rule"));  if (!yy_bind_address(yy)) goto l129;  if (!yy__(yy)) goto l129;  if (!yy_bind_port(yy)) goto l129;  if (!yy__(yy)) goto l129;  if (!yy_connect_address(yy)) goto l129;  if (!yy__(yy)) goto l129;  if (!yy_connect_port(yy)) goto l129;
-  {  int yypos130= yy->__pos, yythunkpos130= yy->__thunkpos;
-  {  int yypos132= yy->__pos, yythunkpos132= yy->__thunkpos;  if (!yy__(yy)) goto l132;  goto l133;
-  l132:;	  yy->__pos= yypos132; yy->__thunkpos= yythunkpos132;
+  yyprintf((stderr, "%s\n", "server_rule"));  if (!yy_bind_spec(yy)) goto l144;  if (!yy__(yy)) goto l144;  if (!yy_connect_spec(yy)) goto l144;
+  {  int yypos145= yy->__pos, yythunkpos145= yy->__thunkpos;
+  {  int yypos147= yy->__pos, yythunkpos147= yy->__thunkpos;  if (!yy__(yy)) goto l147;  goto l148;
+  l147:;	  yy->__pos= yypos147; yy->__thunkpos= yythunkpos147;
   }
-  l133:;	  if (!yy_server_options(yy)) goto l130;  goto l131;
-  l130:;	  yy->__pos= yypos130; yy->__thunkpos= yythunkpos130;
+  l148:;	  if (!yy_server_options(yy)) goto l145;  goto l146;
+  l145:;	  yy->__pos= yypos145; yy->__thunkpos= yythunkpos145;
   }
-  l131:;	  yyDo(yy, yy_1_server_rule, yy->__begin, yy->__end);
+  l146:;	  yyDo(yy, yy_1_server_rule, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "server_rule", yy->__buf+yy->__pos));
   return 1;
-  l129:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l144:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "server_rule", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_comment(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "comment"));  if (!yymatchChar(yy, '#')) goto l134;
-  l135:;	
-  {  int yypos136= yy->__pos, yythunkpos136= yy->__thunkpos;
-  {  int yypos137= yy->__pos, yythunkpos137= yy->__thunkpos;  if (!yy_eol(yy)) goto l137;  goto l136;
-  l137:;	  yy->__pos= yypos137; yy->__thunkpos= yythunkpos137;
-  }  if (!yymatchDot(yy)) goto l136;  goto l135;
-  l136:;	  yy->__pos= yypos136; yy->__thunkpos= yythunkpos136;
+  yyprintf((stderr, "%s\n", "comment"));  if (!yymatchChar(yy, '#')) goto l149;
+  l150:;	
+  {  int yypos151= yy->__pos, yythunkpos151= yy->__thunkpos;
+  {  int yypos152= yy->__pos, yythunkpos152= yy->__thunkpos;  if (!yy_eol(yy)) goto l152;  goto l151;
+  l152:;	  yy->__pos= yypos152; yy->__thunkpos= yythunkpos152;
+  }  if (!yymatchDot(yy)) goto l151;  goto l150;
+  l151:;	  yy->__pos= yypos151; yy->__thunkpos= yythunkpos151;
   }
   yyprintf((stderr, "  ok   %s @ %s\n", "comment", yy->__buf+yy->__pos));
   return 1;
-  l134:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l149:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "comment", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_command(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
   yyprintf((stderr, "%s\n", "command"));
-  {  int yypos139= yy->__pos, yythunkpos139= yy->__thunkpos;  if (!yy_server_rule(yy)) goto l140;  goto l139;
-  l140:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_auth_rule(yy)) goto l141;  goto l139;
-  l141:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_logfile(yy)) goto l142;  goto l139;
-  l142:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_pidfile(yy)) goto l143;  goto l139;
-  l143:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_logcommon(yy)) goto l144;  goto l139;
-  l144:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_buffersize(yy)) goto l145;  goto l139;
-  l145:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_dns_refresh_global(yy)) goto l146;  goto l139;
-  l146:;	  yy->__pos= yypos139; yy->__thunkpos= yythunkpos139;  if (!yy_include_directive(yy)) goto l138;
+  {  int yypos154= yy->__pos, yythunkpos154= yy->__thunkpos;  if (!yy_server_rule(yy)) goto l155;  goto l154;
+  l155:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_auth_rule(yy)) goto l156;  goto l154;
+  l156:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_logfile(yy)) goto l157;  goto l154;
+  l157:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_pidfile(yy)) goto l158;  goto l154;
+  l158:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_logcommon(yy)) goto l159;  goto l154;
+  l159:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_buffersize(yy)) goto l160;  goto l154;
+  l160:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_dns_refresh_global(yy)) goto l161;  goto l154;
+  l161:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;  if (!yy_include_directive(yy)) goto l153;
   }
-  l139:;	
+  l154:;	
   yyprintf((stderr, "  ok   %s @ %s\n", "command", yy->__buf+yy->__pos));
   return 1;
-  l138:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l153:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "command", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy__(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "_"));  if (!yymatchClass(yy, (unsigned char *)"\000\002\000\000\001\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l147;
-  l148:;	
-  {  int yypos149= yy->__pos, yythunkpos149= yy->__thunkpos;  if (!yymatchClass(yy, (unsigned char *)"\000\002\000\000\001\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l149;  goto l148;
-  l149:;	  yy->__pos= yypos149; yy->__thunkpos= yythunkpos149;
+  yyprintf((stderr, "%s\n", "_"));  if (!yymatchClass(yy, (unsigned char *)"\000\002\000\000\001\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l162;
+  l163:;	
+  {  int yypos164= yy->__pos, yythunkpos164= yy->__thunkpos;  if (!yymatchClass(yy, (unsigned char *)"\000\002\000\000\001\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000\000")) goto l164;  goto l163;
+  l164:;	  yy->__pos= yypos164; yy->__thunkpos= yythunkpos164;
   }
   yyprintf((stderr, "  ok   %s @ %s\n", "_", yy->__buf+yy->__pos));
   return 1;
-  l147:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l162:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "_", yy->__buf+yy->__pos));
   return 0;
 }
@@ -1525,71 +1655,71 @@ YY_RULE(int) yy_invalid_syntax(yycontext *yy)
   yyprintf((stderr, "%s\n", "invalid_syntax"));  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_BEGIN)) goto l150;
+if (!(YY_BEGIN)) goto l165;
 #undef yytext
 #undef yyleng
   }
-  {  int yypos153= yy->__pos, yythunkpos153= yy->__thunkpos;  if (!yy_eol(yy)) goto l153;  goto l150;
-  l153:;	  yy->__pos= yypos153; yy->__thunkpos= yythunkpos153;
-  }  if (!yymatchDot(yy)) goto l150;
-  l151:;	
-  {  int yypos152= yy->__pos, yythunkpos152= yy->__thunkpos;
-  {  int yypos154= yy->__pos, yythunkpos154= yy->__thunkpos;  if (!yy_eol(yy)) goto l154;  goto l152;
-  l154:;	  yy->__pos= yypos154; yy->__thunkpos= yythunkpos154;
-  }  if (!yymatchDot(yy)) goto l152;  goto l151;
-  l152:;	  yy->__pos= yypos152; yy->__thunkpos= yythunkpos152;
+  {  int yypos168= yy->__pos, yythunkpos168= yy->__thunkpos;  if (!yy_eol(yy)) goto l168;  goto l165;
+  l168:;	  yy->__pos= yypos168; yy->__thunkpos= yythunkpos168;
+  }  if (!yymatchDot(yy)) goto l165;
+  l166:;	
+  {  int yypos167= yy->__pos, yythunkpos167= yy->__thunkpos;
+  {  int yypos169= yy->__pos, yythunkpos169= yy->__thunkpos;  if (!yy_eol(yy)) goto l169;  goto l167;
+  l169:;	  yy->__pos= yypos169; yy->__thunkpos= yythunkpos169;
+  }  if (!yymatchDot(yy)) goto l167;  goto l166;
+  l167:;	  yy->__pos= yypos167; yy->__thunkpos= yythunkpos167;
   }  yyText(yy, yy->__begin, yy->__end);  {
 #define yytext yy->__text
 #define yyleng yy->__textlen
-if (!(YY_END)) goto l150;
+if (!(YY_END)) goto l165;
 #undef yytext
 #undef yyleng
-  }  if (!yy_eol(yy)) goto l150;  yyDo(yy, yy_1_invalid_syntax, yy->__begin, yy->__end);
+  }  if (!yy_eol(yy)) goto l165;  yyDo(yy, yy_1_invalid_syntax, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "invalid_syntax", yy->__buf+yy->__pos));
   return 1;
-  l150:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l165:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "invalid_syntax", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_eol(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
   yyprintf((stderr, "%s\n", "eol"));
-  {  int yypos156= yy->__pos, yythunkpos156= yy->__thunkpos;
-  {  int yypos158= yy->__pos, yythunkpos158= yy->__thunkpos;  if (!yymatchChar(yy, '\r')) goto l158;  goto l159;
-  l158:;	  yy->__pos= yypos158; yy->__thunkpos= yythunkpos158;
+  {  int yypos171= yy->__pos, yythunkpos171= yy->__thunkpos;
+  {  int yypos173= yy->__pos, yythunkpos173= yy->__thunkpos;  if (!yymatchChar(yy, '\r')) goto l173;  goto l174;
+  l173:;	  yy->__pos= yypos173; yy->__thunkpos= yythunkpos173;
   }
-  l159:;	  if (!yymatchChar(yy, '\n')) goto l157;  goto l156;
-  l157:;	  yy->__pos= yypos156; yy->__thunkpos= yythunkpos156;  if (!yy_eof(yy)) goto l155;
+  l174:;	  if (!yymatchChar(yy, '\n')) goto l172;  goto l171;
+  l172:;	  yy->__pos= yypos171; yy->__thunkpos= yythunkpos171;  if (!yy_eof(yy)) goto l170;
   }
-  l156:;	
+  l171:;	
   yyprintf((stderr, "  ok   %s @ %s\n", "eol", yy->__buf+yy->__pos));
   return 1;
-  l155:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l170:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "eol", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_line(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
   yyprintf((stderr, "%s\n", "line"));
-  {  int yypos161= yy->__pos, yythunkpos161= yy->__thunkpos;  if (!yy__(yy)) goto l161;  goto l162;
-  l161:;	  yy->__pos= yypos161; yy->__thunkpos= yythunkpos161;
+  {  int yypos176= yy->__pos, yythunkpos176= yy->__thunkpos;  if (!yy__(yy)) goto l176;  goto l177;
+  l176:;	  yy->__pos= yypos176; yy->__thunkpos= yythunkpos176;
   }
-  l162:;	
-  {  int yypos163= yy->__pos, yythunkpos163= yy->__thunkpos;  if (!yy_command(yy)) goto l163;
-  {  int yypos165= yy->__pos, yythunkpos165= yy->__thunkpos;  if (!yy__(yy)) goto l165;  goto l166;
-  l165:;	  yy->__pos= yypos165; yy->__thunkpos= yythunkpos165;
+  l177:;	
+  {  int yypos178= yy->__pos, yythunkpos178= yy->__thunkpos;  if (!yy_command(yy)) goto l178;
+  {  int yypos180= yy->__pos, yythunkpos180= yy->__thunkpos;  if (!yy__(yy)) goto l180;  goto l181;
+  l180:;	  yy->__pos= yypos180; yy->__thunkpos= yythunkpos180;
   }
-  l166:;	  goto l164;
-  l163:;	  yy->__pos= yypos163; yy->__thunkpos= yythunkpos163;
+  l181:;	  goto l179;
+  l178:;	  yy->__pos= yypos178; yy->__thunkpos= yythunkpos178;
   }
-  l164:;	
-  {  int yypos167= yy->__pos, yythunkpos167= yy->__thunkpos;  if (!yy_comment(yy)) goto l167;  goto l168;
-  l167:;	  yy->__pos= yypos167; yy->__thunkpos= yythunkpos167;
+  l179:;	
+  {  int yypos182= yy->__pos, yythunkpos182= yy->__thunkpos;  if (!yy_comment(yy)) goto l182;  goto l183;
+  l182:;	  yy->__pos= yypos182; yy->__thunkpos= yythunkpos182;
   }
-  l168:;	
+  l183:;	
   yyprintf((stderr, "  ok   %s @ %s\n", "line", yy->__buf+yy->__pos));
   return 1;
-  l160:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l175:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "line", yy->__buf+yy->__pos));
   return 0;
 }
@@ -1598,20 +1728,20 @@ YY_RULE(int) yy_sol(yycontext *yy)
   yyprintf((stderr, "%s\n", "sol"));  yyDo(yy, yy_1_sol, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "sol", yy->__buf+yy->__pos));
   return 1;
-  l169:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
+  l184:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;
   yyprintf((stderr, "  fail %s @ %s\n", "sol", yy->__buf+yy->__pos));
   return 0;
 }
 YY_RULE(int) yy_file(yycontext *yy)
 {
   yyprintf((stderr, "%s\n", "file"));
-  l171:;	
-  {  int yypos172= yy->__pos, yythunkpos172= yy->__thunkpos;  if (!yy_sol(yy)) goto l172;
-  {  int yypos173= yy->__pos, yythunkpos173= yy->__thunkpos;  if (!yy_line(yy)) goto l174;  if (!yy_eol(yy)) goto l174;  goto l173;
-  l174:;	  yy->__pos= yypos173; yy->__thunkpos= yythunkpos173;  if (!yy_invalid_syntax(yy)) goto l172;
+  l186:;	
+  {  int yypos187= yy->__pos, yythunkpos187= yy->__thunkpos;  if (!yy_sol(yy)) goto l187;
+  {  int yypos188= yy->__pos, yythunkpos188= yy->__thunkpos;  if (!yy_line(yy)) goto l189;  if (!yy_eol(yy)) goto l189;  goto l188;
+  l189:;	  yy->__pos= yypos188; yy->__thunkpos= yythunkpos188;  if (!yy_invalid_syntax(yy)) goto l187;
   }
-  l173:;	  goto l171;
-  l172:;	  yy->__pos= yypos172; yy->__thunkpos= yythunkpos172;
+  l188:;	  goto l186;
+  l187:;	  yy->__pos= yypos187; yy->__thunkpos= yythunkpos187;
   }
   yyprintf((stderr, "  ok   %s @ %s\n", "file", yy->__buf+yy->__pos));
   return 1;
@@ -1676,7 +1806,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 223 "parse.peg"
+#line 240 "parse.peg"
 
 
 /* Utility functions for include directive support */

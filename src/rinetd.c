@@ -327,6 +327,9 @@ static void clearConfiguration(void) {
             if (srv->handle_type == UV_TCP) {
                 /* TCP: close the handle (this stops accepting) */
                 uv_close((uv_handle_t*)&srv->uv_handle.tcp, server_handle_close_cb);
+            } else if (srv->handle_type == UV_NAMED_PIPE) {
+                /* Unix socket: close the pipe handle */
+                uv_close((uv_handle_t*)&srv->uv_handle.pipe, server_handle_close_cb);
             } else {  /* UV_UDP */
                 /* UDP: stop receiving before closing */
                 uv_udp_recv_stop(&srv->uv_handle.udp);
@@ -340,11 +343,12 @@ static void clearConfiguration(void) {
             /* Free resources immediately if handle wasn't initialized */
             free(srv->fromHost);
             free(srv->toHost);
-            freeaddrinfo(srv->fromAddrInfo);
-            freeaddrinfo(srv->toAddrInfo);
-            if (srv->sourceAddrInfo) {
-                freeaddrinfo(srv->sourceAddrInfo);
-            }
+            if (srv->fromAddrInfo) freeaddrinfo(srv->fromAddrInfo);
+            if (srv->toAddrInfo) freeaddrinfo(srv->toAddrInfo);
+            if (srv->sourceAddrInfo) freeaddrinfo(srv->sourceAddrInfo);
+            /* Free Unix socket paths */
+            free(srv->fromUnixPath);
+            free(srv->toUnixPath);
         }
     }
     /* If no handles to close, free seInfo immediately */
@@ -420,37 +424,89 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         .toHost_saved = strdup(connectAddress),
         .toPort_saved = strdup(connectPort),
         .toProtocol_saved = connectProtocol,
+        .fromUnixPath = NULL,
+        .toUnixPath = NULL,
+        .fromIsAbstract = 0,
+        .toIsAbstract = 0,
     };
 
-    /* Resolve bind address */
-    struct addrinfo *ai;
-    int ret = getAddrInfoWithProto(bindAddress, bindPort, bindProtocol, &ai);
-    if (ret != 0) {
-        exit(1);
-    }
-    si.fromAddrInfo = ai;
+    int fromIsUnix = isUnixSocketPath(bindAddress);
+    int toIsUnix = isUnixSocketPath(connectAddress);
 
-    /* Resolve destination address */
-    ret = getAddrInfoWithProto(connectAddress, connectPort, connectProtocol, &ai);
-    if (ret != 0) {
-        freeaddrinfo(si.fromAddrInfo);
-        exit(1);
-    }
-    si.toAddrInfo = ai;
+    /* Handle Unix domain socket bind address */
+    if (fromIsUnix) {
+        char *path = NULL;
+        int is_abstract = 0;
 
-    /* Resolve source address if applicable */
-    if (sourceAddress) {
-        ret = getAddrInfoWithProto(sourceAddress, NULL, connectProtocol, &ai);
+        if (parseUnixSocketPath(bindAddress, &path, &is_abstract) != 0) {
+            exit(1);
+        }
+        if (validateUnixSocketPath(path, is_abstract) != 0) {
+            free(path);
+            exit(1);
+        }
+
+        si.fromUnixPath = path;
+        si.fromIsAbstract = is_abstract;
+        si.fromAddrInfo = NULL;  /* No IP address for Unix sockets */
+        si.handle_type = UV_NAMED_PIPE;
+    } else {
+        /* Resolve bind address */
+        struct addrinfo *ai;
+        int ret = getAddrInfoWithProto(bindAddress, bindPort, bindProtocol, &ai);
         if (ret != 0) {
-            freeaddrinfo(si.fromAddrInfo);
-            freeaddrinfo(si.toAddrInfo);
+            exit(1);
+        }
+        si.fromAddrInfo = ai;
+        si.handle_type = (bindProtocol == IPPROTO_TCP) ? UV_TCP : UV_UDP;
+    }
+
+    /* Handle Unix domain socket connect address */
+    if (toIsUnix) {
+        char *path = NULL;
+        int is_abstract = 0;
+
+        if (parseUnixSocketPath(connectAddress, &path, &is_abstract) != 0) {
+            if (si.fromUnixPath) free(si.fromUnixPath);
+            if (si.fromAddrInfo) freeaddrinfo(si.fromAddrInfo);
+            exit(1);
+        }
+        if (validateUnixSocketPath(path, is_abstract) != 0) {
+            free(path);
+            if (si.fromUnixPath) free(si.fromUnixPath);
+            if (si.fromAddrInfo) freeaddrinfo(si.fromAddrInfo);
+            exit(1);
+        }
+
+        si.toUnixPath = path;
+        si.toIsAbstract = is_abstract;
+        si.toAddrInfo = NULL;  /* No IP address for Unix sockets */
+    } else {
+        /* Resolve destination address */
+        struct addrinfo *ai;
+        int ret = getAddrInfoWithProto(connectAddress, connectPort, connectProtocol, &ai);
+        if (ret != 0) {
+            if (si.fromUnixPath) free(si.fromUnixPath);
+            if (si.fromAddrInfo) freeaddrinfo(si.fromAddrInfo);
+            exit(1);
+        }
+        si.toAddrInfo = ai;
+    }
+
+    /* Resolve source address if applicable (only for non-Unix destinations) */
+    if (sourceAddress && !toIsUnix) {
+        struct addrinfo *ai;
+        int ret = getAddrInfoWithProto(sourceAddress, NULL, connectProtocol, &ai);
+        if (ret != 0) {
+            if (si.fromUnixPath) free(si.fromUnixPath);
+            if (si.fromAddrInfo) freeaddrinfo(si.fromAddrInfo);
+            if (si.toUnixPath) free(si.toUnixPath);
+            if (si.toAddrInfo) freeaddrinfo(si.toAddrInfo);
             exit(1);
         }
         si.sourceAddrInfo = ai;
     }
 
-    /* Set up libuv handle type (initialization happens in startServerListening) */
-    si.handle_type = (bindProtocol == IPPROTO_TCP) ? UV_TCP : UV_UDP;
     si.handle_initialized = 0;
 
     /* Allocate server info */
@@ -497,13 +553,15 @@ static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv
     }
 
     cnx->log_fromHost = strdup(srv->fromHost);
-    cnx->log_fromPort = getPort(srv->fromAddrInfo);
+    cnx->log_fromPort = srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0;
     cnx->log_toHost = strdup(srv->toHost);
-    cnx->log_toPort = getPort(srv->toAddrInfo);
+    cnx->log_toPort = srv->toAddrInfo ? getPort(srv->toAddrInfo) : 0;
 }
 
 /* libuv callback forward declarations */
 static void tcp_server_accept_cb(uv_stream_t *server, int status);
+static void unix_server_accept_cb(uv_stream_t *server, int status);
+static void unix_connect_cb(uv_connect_t *req, int status);
 
 static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                                const uv_buf_t *buf,
@@ -547,7 +605,59 @@ static void startServerListening(ServerInfo *srv)
 
     int ret;
 
-    if (srv->handle_type == UV_TCP) {
+    if (srv->handle_type == UV_NAMED_PIPE) {
+        /* Initialize Unix domain socket (pipe) handle */
+        ret = uv_pipe_init(main_loop, &srv->uv_handle.pipe, 0);
+        if (ret != 0) {
+            logError("uv_pipe_init() failed: %s\n", uv_strerror(ret));
+            exit(1);
+        }
+        srv->uv_handle.pipe.data = srv;
+
+        /* For filesystem sockets, remove any existing socket file */
+        if (!srv->fromIsAbstract && srv->fromUnixPath) {
+            unlink(srv->fromUnixPath);
+        }
+
+        /* Bind to Unix socket path */
+        if (srv->fromIsAbstract) {
+            /* Abstract socket: use uv_pipe_bind2 with UV_PIPE_NO_TRUNCATE */
+            /* Abstract socket name starts with @ which we need to convert to \0 */
+            char abstract_name[UNIX_PATH_MAX + 1];
+            size_t name_len = strlen(srv->fromUnixPath);
+            if (name_len > 0 && srv->fromUnixPath[0] == '@') {
+                abstract_name[0] = '\0';  /* Abstract namespace uses null byte */
+                memcpy(abstract_name + 1, srv->fromUnixPath + 1, name_len - 1);
+                ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len,
+                                    UV_PIPE_NO_TRUNCATE);
+            } else {
+                logError("Invalid abstract socket name: %s\n", srv->fromUnixPath);
+                exit(1);
+            }
+        } else {
+            ret = uv_pipe_bind(&srv->uv_handle.pipe, srv->fromUnixPath);
+        }
+
+        if (ret != 0) {
+            logError("uv_pipe_bind() failed for %s: %s\n",
+                srv->fromHost, uv_strerror(ret));
+            exit(1);
+        }
+
+        /* Start listening for connections */
+        ret = uv_listen((uv_stream_t*)&srv->uv_handle.pipe,
+                        RINETD_LISTEN_BACKLOG, unix_server_accept_cb);
+        if (ret != 0) {
+            logError("uv_listen() failed for Unix socket: %s\n", uv_strerror(ret));
+            exit(1);
+        }
+
+        /* Get the actual fd for logging/cleanup */
+        uv_os_fd_t fd;
+        uv_fileno((uv_handle_t*)&srv->uv_handle.pipe, &fd);
+        srv->fd = fd;
+    }
+    else if (srv->handle_type == UV_TCP) {
         /* Initialize TCP handle */
         ret = uv_tcp_init(main_loop, &srv->uv_handle.tcp);
         if (ret != 0) {
@@ -610,8 +720,8 @@ static void startServerListening(ServerInfo *srv)
 
     srv->handle_initialized = 1;
 
-    /* Initialize DNS refresh timer if enabled and destination is a hostname */
-    if (shouldEnableDnsRefresh(srv) && !srv->dns_timer_initialized) {
+    /* Initialize DNS refresh timer if enabled and destination is a hostname (not Unix socket) */
+    if (!srv->toUnixPath && shouldEnableDnsRefresh(srv) && !srv->dns_timer_initialized) {
         int ret = uv_timer_init(main_loop, &srv->dns_refresh_timer);
         if (ret == 0) {
             srv->dns_refresh_timer.data = srv;
@@ -721,19 +831,34 @@ static void server_handle_close_cb(uv_handle_t *handle)
     free(srv->toPort_saved);
     srv->toPort_saved = NULL;
 
+    /* For filesystem Unix sockets, unlink the socket file */
+    if (srv->fromUnixPath && !srv->fromIsAbstract) {
+        unlink(srv->fromUnixPath);
+    }
+
     /* Free server resources */
     free(srv->fromHost);
     srv->fromHost = NULL;
     free(srv->toHost);
     srv->toHost = NULL;
-    freeaddrinfo(srv->fromAddrInfo);
-    srv->fromAddrInfo = NULL;
-    freeaddrinfo(srv->toAddrInfo);
-    srv->toAddrInfo = NULL;
+    if (srv->fromAddrInfo) {
+        freeaddrinfo(srv->fromAddrInfo);
+        srv->fromAddrInfo = NULL;
+    }
+    if (srv->toAddrInfo) {
+        freeaddrinfo(srv->toAddrInfo);
+        srv->toAddrInfo = NULL;
+    }
     if (srv->sourceAddrInfo) {
         freeaddrinfo(srv->sourceAddrInfo);
         srv->sourceAddrInfo = NULL;
     }
+
+    /* Free Unix socket paths */
+    free(srv->fromUnixPath);
+    srv->fromUnixPath = NULL;
+    free(srv->toUnixPath);
+    srv->toUnixPath = NULL;
 
     /* Check if all server handles and DNS timers are closed */
     check_all_servers_closed();
@@ -878,8 +1003,9 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
 
     cnx->local.fd = INVALID_SOCKET;
-    cnx->local.family = srv->toAddrInfo->ai_family;
-    cnx->local.protocol = IPPROTO_TCP;
+    /* Set local family based on backend type - Unix or TCP */
+    cnx->local.family = srv->toUnixPath ? AF_UNIX : srv->toAddrInfo->ai_family;
+    cnx->local.protocol = srv->toUnixPath ? 0 : IPPROTO_TCP;
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
     cnx->coClosing = 0;
@@ -897,50 +1023,298 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         return;
     }
 
-    /* Initialize local handle (backend connection) */
-    uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
-    cnx->local_handle_type = UV_TCP;
-    cnx->local_handle_initialized = 1;  /* Set immediately after uv_tcp_init */
-    cnx->local_uv_handle.tcp.data = cnx;
+    /* Connect to backend - either TCP or Unix socket */
+    if (srv->toUnixPath) {
+        /* Backend is Unix socket */
+        uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        cnx->local_handle_type = UV_NAMED_PIPE;
+        cnx->local_handle_initialized = 1;
+        cnx->local_uv_handle.pipe.data = cnx;
 
-    /* Bind to source address if specified */
-    if (srv->sourceAddrInfo) {
-        ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
-                          srv->sourceAddrInfo->ai_addr, 0);
+        uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
+        if (!connect_req) {
+            logError("malloc failed for Unix connect request\n");
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            return;
+        }
+        connect_req->data = cnx;
+
+        /* Connect to Unix socket backend */
+        if (srv->toIsAbstract) {
+            char abstract_name[UNIX_PATH_MAX + 1];
+            size_t name_len = strlen(srv->toUnixPath);
+            if (name_len > 0 && srv->toUnixPath[0] == '@') {
+                abstract_name[0] = '\0';
+                memcpy(abstract_name + 1, srv->toUnixPath + 1, name_len - 1);
+                uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
+                                 abstract_name, name_len,
+                                 UV_PIPE_NO_TRUNCATE, unix_connect_cb);
+            } else {
+                logError("Invalid abstract socket name: %s\n", srv->toUnixPath);
+                free(connect_req);
+                cnx->local_handle_closing = 1;
+                cnx->remote_handle_closing = 1;
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+                return;
+            }
+        } else {
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
+                            srv->toUnixPath, unix_connect_cb);
+        }
+    } else {
+        /* Backend is TCP */
+        uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        cnx->local_handle_type = UV_TCP;
+        cnx->local_handle_initialized = 1;
+        cnx->local_uv_handle.tcp.data = cnx;
+
+        /* Bind to source address if specified */
+        if (srv->sourceAddrInfo) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
+                              srv->sourceAddrInfo->ai_addr, 0);
+            if (ret != 0) {
+                logError("bind (source) error: %s\n", uv_strerror(ret));
+                /* Continue anyway - binding is optional */
+            }
+        }
+
+        /* Connect to backend (async) */
+        uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
+        if (!connect_req) {
+            logError("malloc failed for connect request\n");
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            return;
+        }
+        connect_req->data = cnx;
+
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
+                             srv->toAddrInfo->ai_addr, tcp_connect_cb);
         if (ret != 0) {
-            logError("bind (source) error: %s\n", uv_strerror(ret));
-            /* Continue anyway - binding is optional */
+            logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
+            free(connect_req);
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            return;
         }
     }
 
-    /* Connect to backend (async) */
-    uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
-    if (!connect_req) {
-        logError("malloc failed for connect request\n");
-        /* Close both handles - local was initialized but never connected */
-        cnx->local_handle_closing = 1;  /* Set BEFORE uv_close() */
-        cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
-        uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
-        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
-        return;
-    }
-    connect_req->data = cnx;
-
-    ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
-                         srv->toAddrInfo->ai_addr, tcp_connect_cb);
-    if (ret != 0) {
-        logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
-        free(connect_req);
-        /* Close both handles - local was initialized but never connected */
-        cnx->local_handle_closing = 1;  /* Set BEFORE uv_close() */
-        cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
-        uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
-        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
-        return;
-    }
-
     /* DON'T start reading from remote yet - wait for backend connection to complete */
-    /* This will be done in tcp_connect_cb */
+    /* This will be done in tcp_connect_cb or unix_connect_cb */
+}
+
+/* Unix backend connection callback */
+static void unix_connect_cb(uv_connect_t *req, int status)
+{
+    ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+    free(req);
+
+    if (status < 0) {
+        logError("Unix connect error: %s\n", uv_strerror(status));
+        logEvent(cnx, cnx->server, logLocalConnectFailed);
+
+        /* Close local handle that was initialized but failed to connect */
+        cnx->local_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+        /* Close remote handle */
+        if (cnx->remote_handle_initialized) {
+            cnx->remote_handle_closing = 1;
+            if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            } else {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            }
+        }
+        return;
+    }
+
+    /* Extract fd for Socket struct */
+    uv_os_fd_t fd;
+    uv_fileno((uv_handle_t*)&cnx->local_uv_handle.pipe, &fd);
+    cnx->local.fd = fd;
+
+    /* Start reading from local (backend) - pipe is a stream, tcp_read_cb works */
+    int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.pipe,
+                            alloc_buffer_cb, tcp_read_cb);
+    if (ret != 0) {
+        logError("uv_read_start (local unix) error: %s\n", uv_strerror(ret));
+        handleClose(cnx, &cnx->local, &cnx->remote);
+        return;
+    }
+
+    /* NOW start reading from remote (client) - backend is connected */
+    uv_stream_t *remote_stream;
+    if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+        remote_stream = (uv_stream_t*)&cnx->remote_uv_handle.pipe;
+    } else {
+        remote_stream = (uv_stream_t*)&cnx->remote_uv_handle.tcp;
+    }
+
+    ret = uv_read_start(remote_stream, alloc_buffer_cb, tcp_read_cb);
+    if (ret != 0) {
+        logError("uv_read_start (remote) error: %s\n", uv_strerror(ret));
+        uv_read_stop((uv_stream_t*)&cnx->local_uv_handle.pipe);
+        handleClose(cnx, &cnx->local, &cnx->remote);
+        return;
+    }
+
+    logEvent(cnx, cnx->server, logOpened);
+
+    /* Reset failure counter on successful connection */
+    if (cnx->server) {
+        ((ServerInfo *)cnx->server)->consecutive_failures = 0;
+    }
+}
+
+/* Unix server accept callback */
+static void unix_server_accept_cb(uv_stream_t *server, int status)
+{
+    if (status < 0) {
+        logError("Unix accept error: %s\n", uv_strerror(status));
+        return;
+    }
+
+    ServerInfo *srv = (ServerInfo*)server->data;
+    ConnectionInfo *cnx = allocateConnection();
+    if (!cnx) {
+        return;
+    }
+
+    /* Initialize remote handle (client connection) - it's a Unix pipe */
+    uv_pipe_init(main_loop, &cnx->remote_uv_handle.pipe, 0);
+    cnx->remote_handle_type = UV_NAMED_PIPE;
+    cnx->remote_handle_initialized = 1;
+    cnx->remote_uv_handle.pipe.data = cnx;
+
+    /* Accept the connection */
+    int ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.pipe);
+    if (ret != 0) {
+        logError("uv_accept (Unix) error: %s\n", uv_strerror(ret));
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+        return;
+    }
+
+    /* Extract fd for Socket struct */
+    uv_os_fd_t remote_fd;
+    uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.pipe, &remote_fd);
+    cnx->remote.fd = remote_fd;
+
+    /* Initialize connection state */
+    cnx->remote.family = AF_UNIX;
+    cnx->remote.protocol = 0;  /* Unix socket doesn't use IPPROTO */
+    cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
+
+    /* Unix sockets don't have IP addresses - clear remote address */
+    memset(&cnx->remoteAddress, 0, sizeof(cnx->remoteAddress));
+    cnx->remoteAddress.ss_family = AF_UNIX;
+
+    cnx->local.fd = INVALID_SOCKET;
+    cnx->local.protocol = 0;  /* Will be set based on backend type */
+    cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
+
+    cnx->coClosing = 0;
+    cnx->coLog = logUnknownError;
+    cnx->server = srv;
+    cacheServerInfoForLogging(cnx, srv);
+    cnx->timer_initialized = 0;
+
+    /* No IP-based access control for Unix sockets - filesystem permissions apply */
+    /* Skip checkConnectionAllowed() */
+
+    /* Connect to backend - either TCP or Unix */
+    if (srv->toUnixPath) {
+        /* Backend is Unix socket */
+        uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        cnx->local_handle_type = UV_NAMED_PIPE;
+        cnx->local_handle_initialized = 1;
+        cnx->local_uv_handle.pipe.data = cnx;
+        cnx->local.family = AF_UNIX;
+
+        uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
+        if (!connect_req) {
+            logError("malloc failed for Unix connect request\n");
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            return;
+        }
+        connect_req->data = cnx;
+
+        /* Connect to Unix socket backend */
+        if (srv->toIsAbstract) {
+            /* Abstract socket */
+            char abstract_name[UNIX_PATH_MAX + 1];
+            size_t name_len = strlen(srv->toUnixPath);
+            if (name_len > 0 && srv->toUnixPath[0] == '@') {
+                abstract_name[0] = '\0';
+                memcpy(abstract_name + 1, srv->toUnixPath + 1, name_len - 1);
+                uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
+                                 abstract_name, name_len,
+                                 UV_PIPE_NO_TRUNCATE, unix_connect_cb);
+            } else {
+                logError("Invalid abstract socket name: %s\n", srv->toUnixPath);
+                free(connect_req);
+                cnx->local_handle_closing = 1;
+                cnx->remote_handle_closing = 1;
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+                return;
+            }
+        } else {
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
+                            srv->toUnixPath, unix_connect_cb);
+        }
+    } else {
+        /* Backend is TCP */
+        uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        cnx->local_handle_type = UV_TCP;
+        cnx->local_handle_initialized = 1;
+        cnx->local_uv_handle.tcp.data = cnx;
+        cnx->local.family = srv->toAddrInfo->ai_family;
+        cnx->local.protocol = IPPROTO_TCP;
+
+        /* Bind to source address if specified */
+        if (srv->sourceAddrInfo) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
+                              srv->sourceAddrInfo->ai_addr, 0);
+            if (ret != 0) {
+                logError("bind (source) error: %s\n", uv_strerror(ret));
+            }
+        }
+
+        uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
+        if (!connect_req) {
+            logError("malloc failed for TCP connect request\n");
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            return;
+        }
+        connect_req->data = cnx;
+
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
+                             srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        if (ret != 0) {
+            logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
+            free(connect_req);
+            cnx->local_handle_closing = 1;
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            return;
+        }
+    }
 }
 
 /* Buffer allocation callback for UDP server sockets */
@@ -1695,6 +2069,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
         if (socket == &cnx->local && cnx->local_handle_initialized) {
             if (cnx->local_handle_type == UV_TCP) {
                 handle = (uv_handle_t*)&cnx->local_uv_handle.tcp;
+            } else if (cnx->local_handle_type == UV_NAMED_PIPE) {
+                handle = (uv_handle_t*)&cnx->local_uv_handle.pipe;
             } else {
                 handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
             }
@@ -1702,6 +2078,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
         } else if (socket == &cnx->remote && cnx->remote_handle_initialized) {
             if (cnx->remote_handle_type == UV_TCP) {
                 handle = (uv_handle_t*)&cnx->remote_uv_handle.tcp;
+            } else if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+                handle = (uv_handle_t*)&cnx->remote_uv_handle.pipe;
             } else {
                 handle = (uv_handle_t*)&cnx->remote_uv_handle.udp;
             }
@@ -1710,7 +2088,7 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 
         if (handle && closing_flag && !(*closing_flag) && !uv_is_closing(handle)) {
             /* Stop reading/recv before closing (libuv best practice) */
-            if (socket->protocol == IPPROTO_TCP) {
+            if (socket->protocol == IPPROTO_TCP || socket->family == AF_UNIX) {
                 uv_read_stop((uv_stream_t*)handle);
             } else if (socket->protocol == IPPROTO_UDP) {
                 uv_udp_recv_stop((uv_udp_t*)handle);
@@ -1737,6 +2115,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
         if (other_socket == &cnx->local && cnx->local_handle_initialized) {
             if (cnx->local_handle_type == UV_TCP) {
                 other_handle = (uv_handle_t*)&cnx->local_uv_handle.tcp;
+            } else if (cnx->local_handle_type == UV_NAMED_PIPE) {
+                other_handle = (uv_handle_t*)&cnx->local_uv_handle.pipe;
             } else {
                 other_handle = (uv_handle_t*)&cnx->local_uv_handle.udp;
             }
@@ -1744,6 +2124,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
         } else if (other_socket == &cnx->remote && cnx->remote_handle_initialized) {
             if (cnx->remote_handle_type == UV_TCP) {
                 other_handle = (uv_handle_t*)&cnx->remote_uv_handle.tcp;
+            } else if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+                other_handle = (uv_handle_t*)&cnx->remote_uv_handle.pipe;
             } else {
                 other_handle = (uv_handle_t*)&cnx->remote_uv_handle.udp;
             }
@@ -1752,7 +2134,7 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 
         if (other_handle && other_closing_flag && !(*other_closing_flag) && !uv_is_closing(other_handle)) {
             /* Stop reading/recv before closing (libuv best practice) */
-            if (other_socket->protocol == IPPROTO_TCP) {
+            if (other_socket->protocol == IPPROTO_TCP || other_socket->family == AF_UNIX) {
                 uv_read_stop((uv_stream_t*)other_handle);
             } else if (other_socket->protocol == IPPROTO_UDP) {
                 uv_udp_recv_stop((uv_udp_t*)other_handle);
@@ -1898,8 +2280,13 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
 
     int64_t bytesOut = 0, bytesIn = 0;
     if (cnx != NULL) {
-        getnameinfo((struct sockaddr *)&cnx->remoteAddress, sizeof(cnx->remoteAddress),
-            addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
+        /* Handle Unix socket clients - they don't have IP addresses */
+        if (cnx->remoteAddress.ss_family == AF_UNIX) {
+            snprintf(addressText, sizeof(addressText), "unix-client");
+        } else {
+            getnameinfo((struct sockaddr *)&cnx->remoteAddress, sizeof(cnx->remoteAddress),
+                addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
+        }
         bytesOut = cnx->remote.totalBytesOut;
         bytesIn = cnx->remote.totalBytesIn;
     }
@@ -1915,9 +2302,9 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
     } else if (srv != NULL) {
         /* Fallback to srv if cached info not available */
         fromHost = srv->fromHost;
-        fromPort = getPort(srv->fromAddrInfo);
+        fromPort = srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0;
         toHost = srv->toHost;
-        toPort = getPort(srv->toAddrInfo);
+        toPort = srv->toAddrInfo ? getPort(srv->toAddrInfo) : 0;
     }
 
     if (result==logNotAllowed || result==logDenied)

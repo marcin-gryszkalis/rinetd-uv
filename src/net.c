@@ -222,3 +222,90 @@ int startAsyncDnsResolution(ServerInfo *srv)
     }
     return 0;
 }
+
+/* Check if address is a Unix domain socket path (starts with "unix:") */
+int isUnixSocketPath(const char *address)
+{
+    if (!address) return 0;
+    return strncmp(address, UNIX_SOCKET_PREFIX, strlen(UNIX_SOCKET_PREFIX)) == 0;
+}
+
+/* Parse Unix socket address into path and abstract flag
+ * Returns: 0 on success, -1 on error
+ * Sets *path to newly allocated string (caller must free)
+ * Sets *is_abstract to 1 for abstract sockets (unix:@name), 0 for filesystem */
+int parseUnixSocketPath(const char *address, char **path, int *is_abstract)
+{
+    if (!address || !path || !is_abstract) return -1;
+
+    /* Check for unix: prefix */
+    if (!isUnixSocketPath(address)) {
+        logError("parseUnixSocketPath: address does not start with '%s'\n",
+                 UNIX_SOCKET_PREFIX);
+        return -1;
+    }
+
+    const char *p = address + strlen(UNIX_SOCKET_PREFIX);
+
+    /* Check for abstract socket (starts with @) */
+    if (*p == '@') {
+        *is_abstract = 1;
+        p++;  /* Skip @ for the path */
+        if (*p == '\0') {
+            logError("parseUnixSocketPath: abstract socket name is empty\n");
+            return -1;
+        }
+    } else {
+        *is_abstract = 0;
+        /* Filesystem sockets must start with / */
+        if (*p != '/') {
+            logError("parseUnixSocketPath: filesystem socket path must be absolute\n");
+            return -1;
+        }
+    }
+
+    *path = strdup(*is_abstract ? (p - 1) : p);  /* For abstract, include @ in path */
+    if (!*path) {
+        logError("parseUnixSocketPath: strdup failed\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Validate Unix socket path
+ * Returns: 0 on success, -1 on error */
+int validateUnixSocketPath(const char *path, int is_abstract)
+{
+    if (!path) return -1;
+
+    size_t len = strlen(path);
+
+    /* Check length (sun_path is 108 bytes including null terminator) */
+    if (len > UNIX_PATH_MAX) {
+        logError("Unix socket path too long (%zu > %d): %s\n",
+                 len, UNIX_PATH_MAX, path);
+        return -1;
+    }
+
+    if (len == 0) {
+        logError("Unix socket path is empty\n");
+        return -1;
+    }
+
+    /* For filesystem sockets, check for directory traversal */
+    if (!is_abstract) {
+        /* Reject paths containing /../ */
+        if (strstr(path, "/../") != NULL) {
+            logError("Unix socket path contains directory traversal: %s\n", path);
+            return -1;
+        }
+        /* Reject paths ending with /.. */
+        if (len >= 3 && strcmp(path + len - 3, "/..") == 0) {
+            logError("Unix socket path ends with directory traversal: %s\n", path);
+            return -1;
+        }
+    }
+
+    return 0;
+}

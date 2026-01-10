@@ -70,7 +70,7 @@ line     =  -? (command -?)? comment?
 command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | include-directive)
 comment  =  "#" (!eol .)*
 
-server-rule  =  bind-address - bind-port - connect-address - connect-port (-? server-options)?
+server-rule  =  bind-spec - connect-spec (-? server-options)?
 {
     /* keepalive: -1 = not set (default to on), 0 = off, 1 = on */
     int keepalive = (yy->keepalive == -1) ? 1 : yy->keepalive;
@@ -96,6 +96,23 @@ server-rule  =  bind-address - bind-port - connect-address - connect-port (-? se
     yy->keepalive = -1;
     yy->dns_refresh_period = -1;
 }
+
+# Bind specification: either unix:/path (no port needed) or address port
+bind-spec        =  unix-bind | (bind-address - bind-port)
+connect-spec     =  unix-connect | (connect-address - connect-port)
+
+# Unix socket addresses - no port required, protocol is always stream
+unix-bind        =  < 'unix:' unix-path > {
+    yy->bindAddress = strdup(yytext);
+    yy->bindPort = strdup("0");
+    yy->bindProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
+}
+unix-connect     =  < 'unix:' unix-path > {
+    yy->connectAddress = strdup(yytext);
+    yy->connectPort = strdup("0");
+    yy->connectProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
+}
+unix-path        =  '@' [^ \t\r\n\[\]]+ | '/' [^ \t\r\n\[\]]+
 
 bind-address     =  < address > { yy->bindAddress = strdup(yytext); }
 connect-address  =  < address > { yy->connectAddress = strdup(yytext); }

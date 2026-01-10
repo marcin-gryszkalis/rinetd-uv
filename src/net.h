@@ -96,3 +96,11 @@ int compareAddrinfo(struct addrinfo *a, struct addrinfo *b);
 void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res);
 int shouldEnableDnsRefresh(ServerInfo *srv);
 int startAsyncDnsResolution(ServerInfo *srv);
+
+/* Unix domain socket functions */
+#define UNIX_SOCKET_PREFIX "unix:"
+#define UNIX_PATH_MAX 107  /* Max path length (108 with null terminator) */
+
+int isUnixSocketPath(const char *address);
+int parseUnixSocketPath(const char *address, char **path, int *is_abstract);
+int validateUnixSocketPath(const char *path, int is_abstract);
