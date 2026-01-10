@@ -36,7 +36,6 @@
 #include <fcntl.h>
 #include <time.h>
 #include <ctype.h>
-#include <syslog.h>
 
 #include "match.h"
 #include "net.h"
@@ -165,12 +164,12 @@ int main(int argc, char *argv[])
     readArgs(argc, argv, &options);
 
     if (!options.foreground) {
-#if HAVE_DAEMON && !DEBUG
+#if HAVE_DAEMON
         if (daemon(0, 0) != 0) {
             exit(0);
         }
         forked = 1;
-#elif HAVE_FORK && !DEBUG
+#elif HAVE_FORK
         if (fork() != 0) {
             exit(0);
         }
