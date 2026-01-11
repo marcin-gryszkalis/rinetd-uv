@@ -293,19 +293,5 @@ int validateUnixSocketPath(const char *path, int is_abstract)
         return -1;
     }
 
-    /* For filesystem sockets, check for directory traversal */
-    if (!is_abstract) {
-        /* Reject paths containing /../ */
-        if (strstr(path, "/../") != NULL) {
-            logError("Unix socket path contains directory traversal: %s\n", path);
-            return -1;
-        }
-        /* Reject paths ending with /.. */
-        if (len >= 3 && strcmp(path + len - 3, "/..") == 0) {
-            logError("Unix socket path ends with directory traversal: %s\n", path);
-            return -1;
-        }
-    }
-
     return 0;
 }
