@@ -408,7 +408,7 @@ static void readConfiguration(char const *file) {
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
                int serverTimeout, char *sourceAddress,
-               int keepalive, int dns_refresh_period)
+               int keepalive, int dns_refresh_period, int socketMode)
 {
     ServerInfo si = {
         .fromHost = strdup(bindAddress),
@@ -428,6 +428,7 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         .toUnixPath = NULL,
         .fromIsAbstract = 0,
         .toIsAbstract = 0,
+        .socketMode = (mode_t)socketMode,
     };
 
     int fromIsUnix = isUnixSocketPath(bindAddress);
@@ -491,6 +492,17 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
             exit(1);
         }
         si.toAddrInfo = ai;
+    }
+
+    /* Validate mode option usage */
+    if (si.socketMode != 0) {
+        if (!fromIsUnix) {
+            logWarning("mode option ignored: bind address is not a Unix socket\n");
+            si.socketMode = 0;
+        } else if (si.fromIsAbstract) {
+            logWarning("mode option ignored: abstract sockets have no filesystem permissions\n");
+            si.socketMode = 0;
+        }
     }
 
     /* Resolve source address if applicable (only for non-Unix destinations) */
@@ -639,16 +651,28 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Bind to Unix socket path */
+        /* Set umask before bind to avoid race condition with chmod */
+        mode_t old_umask = 0;
+        if (srv->socketMode != 0) {
+            old_umask = umask(~srv->socketMode & 0777);
+        }
+
         if (srv->fromIsAbstract) {
             char abstract_name[UNIX_PATH_MAX + 2];
             size_t name_len = prepareAbstractSocketName(srv->fromUnixPath, abstract_name);
             if (name_len == 0) {
+                if (srv->socketMode != 0) umask(old_umask);
                 exit(1);
             }
             ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len,
                                 UV_PIPE_NO_TRUNCATE);
         } else {
             ret = uv_pipe_bind(&srv->uv_handle.pipe, srv->fromUnixPath);
+        }
+
+        /* Restore umask immediately after bind */
+        if (srv->socketMode != 0) {
+            umask(old_umask);
         }
 
         if (ret != 0) {

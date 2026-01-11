@@ -36,6 +36,7 @@
    - Forward between TCP and Unix sockets in any combination
    - Syntax: `unix:/path/to/socket` for filesystem sockets
    - Abstract namespace sockets (Linux): `unix:@name`
+   - Socket file permissions via `[mode=0660]` option
    - Socket cleanup on shutdown (filesystem sockets)
    - Support for windows named pipes could be added (as libuv has such capability)
  * **INCOMPATIBILITY** Renamed configuration option: `pidlogfile` → `pidfile`

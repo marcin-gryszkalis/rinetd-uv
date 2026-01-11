@@ -217,6 +217,9 @@ unix:/tmp/proxy.sock unix:/var/run/backend.sock
 # Abstract namespace socket (Linux only)
 # Abstract sockets don't create filesystem entries
 0.0.0.0 9999/tcp unix:@myservice
+
+# Unix socket with explicit permissions (owner and group read/write only)
+unix:/var/run/restricted.sock 192.168.1.100 8080/tcp [mode=0660]
 ```
 
 ### Access Control
@@ -228,8 +231,8 @@ unix:/tmp/proxy.sock unix:/var/run/backend.sock
 
 ### Security Considerations
 
-1. **Filesystem permissions**: The socket file inherits permissions from the directory where it's created
-2. **Abstract sockets**: Accessible by any process in the same network namespace - use with caution
+1. **Filesystem permissions**: By default, the socket file permissions are determined by the process umask. Use `[mode=0660]` to set explicit permissions.
+2. **Abstract sockets**: Accessible by any process in the same network namespace - use with caution. The `mode` option has no effect on abstract sockets.
 3. **Socket cleanup**: Filesystem sockets are automatically removed on shutdown and before bind
 
 ### Limitations
@@ -453,8 +456,9 @@ include /etc/rinetd-uv.d/*.conf
 
 # Forwarding options:
 # Format: bindaddress bindport connectaddress connectport [options]
-# Options: [timeout=seconds,src=sourceaddress,keepalive=on/off,dns-refresh=seconds]
+# Options: [timeout=seconds,src=sourceaddress,keepalive=on/off,dns-refresh=seconds,mode=octal]
 # Note: TCP keepalive is enabled by default
+# Note: mode option sets Unix socket file permissions (e.g. mode=0660)
 
 # TCP forwarding examples
 0.0.0.0 80/tcp 192.168.1.10 8080/tcp
@@ -468,8 +472,8 @@ include /etc/rinetd-uv.d/*.conf
 # Unix domain socket forwarding examples
 # TCP to Unix socket - Docker socket proxy
 0.0.0.0 2375/tcp unix:/var/run/docker.sock
-# Unix to TCP forwarding
-unix:/var/run/myapp.sock 192.168.1.100 8080/tcp
+# Unix to TCP forwarding with restricted permissions
+unix:/var/run/myapp.sock 192.168.1.100 8080/tcp [mode=0660]
 
 # Per-rule Access Control (applies to previous forwarding rule)
 0.0.0.0 22 192.168.1.20 22

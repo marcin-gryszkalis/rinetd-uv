@@ -341,7 +341,10 @@ unix:/tmp/proxy.sock unix:/var/run/backend.sock
 
 # Abstract namespace socket (Linux only)
 # Abstract sockets don&#39;t create filesystem entries
-0.0.0.0 9999/tcp unix:@myservice</code></pre>
+0.0.0.0 9999/tcp unix:@myservice
+
+# Unix socket with explicit permissions (owner and group read/write only)
+unix:/var/run/restricted.sock 192.168.1.100 8080/tcp [mode=0660]</code></pre>
 <h3 id="access-control">Access Control</h3>
 <ul>
 <li>For <strong>filesystem sockets</strong>, access is controlled by
@@ -355,10 +358,12 @@ same network namespace can connect</li>
 </ul>
 <h3 id="security-considerations">Security Considerations</h3>
 <ol type="1">
-<li><strong>Filesystem permissions</strong>: The socket file inherits
-permissions from the directory where it’s created</li>
+<li><strong>Filesystem permissions</strong>: By default, the socket file
+permissions are determined by the process umask. Use
+<code>[mode=0660]</code> to set explicit permissions.</li>
 <li><strong>Abstract sockets</strong>: Accessible by any process in the
-same network namespace - use with caution</li>
+same network namespace - use with caution. The <code>mode</code> option
+has no effect on abstract sockets.</li>
 <li><strong>Socket cleanup</strong>: Filesystem sockets are
 automatically removed on shutdown and before bind</li>
 </ol>
@@ -573,8 +578,9 @@ include /etc/rinetd-uv.d/*.conf
 
 # Forwarding options:
 # Format: bindaddress bindport connectaddress connectport [options]
-# Options: [timeout=seconds,src=sourceaddress,keepalive=on/off,dns-refresh=seconds]
+# Options: [timeout=seconds,src=sourceaddress,keepalive=on/off,dns-refresh=seconds,mode=octal]
 # Note: TCP keepalive is enabled by default
+# Note: mode option sets Unix socket file permissions (e.g. mode=0660)
 
 # TCP forwarding examples
 0.0.0.0 80/tcp 192.168.1.10 8080/tcp
@@ -588,8 +594,8 @@ include /etc/rinetd-uv.d/*.conf
 # Unix domain socket forwarding examples
 # TCP to Unix socket - Docker socket proxy
 0.0.0.0 2375/tcp unix:/var/run/docker.sock
-# Unix to TCP forwarding
-unix:/var/run/myapp.sock 192.168.1.100 8080/tcp
+# Unix to TCP forwarding with restricted permissions
+unix:/var/run/myapp.sock 192.168.1.100 8080/tcp [mode=0660]
 
 # Per-rule Access Control (applies to previous forwarding rule)
 0.0.0.0 22 192.168.1.20 22

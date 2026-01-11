@@ -55,4 +55,4 @@ void logDebug(char const *fmt, ...);
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
                int serverTimeout, char *sourceAddress,
-               int keepalive, int dns_refresh_period);
+               int keepalive, int dns_refresh_period, int socketMode);

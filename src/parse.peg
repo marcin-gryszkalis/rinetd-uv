@@ -32,6 +32,7 @@
     int serverTimeout; \
     int keepalive; \
     int dns_refresh_period; \
+    int socketMode; \
     char *bindAddress, *connectAddress, *sourceAddress; \
     /* Include tracking */ \
     int includeDepth; \
@@ -84,7 +85,7 @@ server-rule  =  bind-spec - connect-spec (-? server-options)?
         yy->connectAddress, yy->connectPort, yy->connectProto,
         yy->serverTimeout > 0 ? yy->serverTimeout : RINETD_DEFAULT_UDP_TIMEOUT,
         yy->sourceAddress,
-        keepalive, dns_refresh);
+        keepalive, dns_refresh, yy->socketMode);
     free(yy->bindAddress);
     free(yy->connectAddress);
     free(yy->sourceAddress);
@@ -95,6 +96,7 @@ server-rule  =  bind-spec - connect-spec (-? server-options)?
     yy->serverTimeout = 0;
     yy->keepalive = -1;
     yy->dns_refresh_period = -1;
+    yy->socketMode = 0;
 }
 
 # Bind specification: either unix:/path (no port needed) or address port
@@ -121,11 +123,12 @@ connect-port     =  full-port { yy->connectPort = yy->tmpPort; yy->connectProto 
 server-options   =  "[" -? option-list -? "]"
 
 option-list       =  option (-? ',' -? option-list)?
-option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh)
+option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-mode)
 option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = atoi(yytext); }
 option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup(yytext); }
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
 option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = atoi(yytext); }
+option-mode       =  "mode"       -? "=" -? < octal_number > { yy->socketMode = (int)strtol(yytext, NULL, 8); }
 
 keepalive_value   =  "on" | "off"
 
@@ -217,6 +220,7 @@ service  =  name
 address  =  ipv4 | ipv6 | hostname
 pattern  =  (hexdigit | '[' | ']' | ':' | '.' | [*?] )+
 number   =  digit+
+octal_number  =  '0' [0-7]*
 
 ipv4      =  number '.' number '.' number '.' number | '0'
 ipv6      = '[' bare_ipv6 ']' | bare_ipv6

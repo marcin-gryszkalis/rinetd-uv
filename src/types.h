@@ -50,6 +50,7 @@ struct _server_info {
     char *toUnixPath;       /* Connect path */
     int fromIsAbstract;     /* 1 if abstract namespace (Linux-only) */
     int toIsAbstract;       /* 1 if abstract namespace */
+    mode_t socketMode;      /* File mode for Unix socket (0 = use default) */
 
     /* In ASCII, for logging purposes */
     char *fromHost, *toHost;
