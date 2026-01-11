@@ -181,6 +181,65 @@ dns-refresh 600
 0.0.0.0 9000/tcp static.example.com 9000 [dns-refresh=0]
 ```
 
+## UNIX DOMAIN SOCKETS
+
+rinetd-uv supports Unix domain sockets (also known as Unix sockets or local sockets),
+allowing forwarding between TCP and Unix sockets in any combination:
+
+- **TCP to Unix socket** - Expose a Unix socket service over TCP (e.g. Docker socket proxy)
+- **Unix socket to TCP** - Accept connections on a Unix socket and forward to TCP backend
+- **Unix to Unix** - Forward between Unix sockets
+
+### Syntax
+
+Unix socket addresses use the `unix:` prefix followed by the socket path:
+
+```
+unix:/path/to/socket    # Filesystem socket (absolute path required)
+unix:@name              # Abstract namespace socket (Linux only)
+```
+
+**Note:** No port number is required for Unix socket addresses.
+
+### Examples
+
+```
+# TCP to Unix - Docker socket proxy
+# Clients connect to TCP port 2375, forwarded to Docker Unix socket
+0.0.0.0 2375/tcp unix:/var/run/docker.sock
+
+# Unix to TCP - Accept on Unix socket, forward to HTTP server
+unix:/var/run/frontend.sock 192.168.1.100 8080/tcp
+
+# Unix to Unix - Forward between Unix sockets
+unix:/tmp/proxy.sock unix:/var/run/backend.sock
+
+# Abstract namespace socket (Linux only)
+# Abstract sockets don't create filesystem entries
+0.0.0.0 9999/tcp unix:@myservice
+```
+
+### Access Control
+
+- For **filesystem sockets**, access is controlled by filesystem permissions on the socket file
+- For **TCP endpoints**, the standard `allow` and `deny` rules apply
+- IP-based access control does not apply to incoming Unix socket connections (access rules in such case will be ignored)
+- For **abstract sockets** (Linux), any process in the same network namespace can connect
+
+### Security Considerations
+
+1. **Filesystem permissions**: The socket file inherits permissions from the directory where it's created
+2. **Abstract sockets**: Accessible by any process in the same network namespace - use with caution
+3. **Socket cleanup**: Filesystem sockets are automatically removed on shutdown and before bind
+
+### Limitations
+
+- Maximum socket path length varies by system (Linux: 107, BSD: 103, some other systems: 91)
+- Unix sockets only support stream mode (SOCK_STREAM); datagram mode (SOCK_DGRAM) or SCTP (SOCK_SEQPACKET) is not supported
+- UDP forwarding cannot use Unix sockets
+- Abstract namespace sockets are Linux-specific and not portable
+- Windows named pipes support is not tested although underlying libuv declares they are covered, report a bug in case you need it.
+
 ## GLOBAL CONFIGURATION OPTIONS
 
 ### Buffer Size
@@ -406,6 +465,12 @@ include /etc/rinetd-uv.d/*.conf
 # UDP forwarding example
 0.0.0.0 53/udp 8.8.8.8 53/udp [timeout=30]
 
+# Unix domain socket forwarding examples
+# TCP to Unix socket - Docker socket proxy
+0.0.0.0 2375/tcp unix:/var/run/docker.sock
+# Unix to TCP forwarding
+unix:/var/run/myapp.sock 192.168.1.100 8080/tcp
+
 # Per-rule Access Control (applies to previous forwarding rule)
 0.0.0.0 22 192.168.1.20 22
 allow 10.0.0.*
@@ -449,6 +514,8 @@ docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 808
 The server redirected to is not able to identify the host the client really came from. This cannot be corrected; however, the log produced by **rinetd-uv** provides a way to obtain this information.
 
 Two rules with the same source ip/port and different destination ip/port are not allowed (you'll get "Address already in use" or similar error). Note that `0.0.0.0` (IPv4) and `::` (IPv6) effectively mean the same (both would bind to "any" address).
+
+**rinetd-uv** does not implement backpressure (flow control) between the client and backend connections. If one endpoint sends data faster than the other endpoint can receive it, the data waiting to be forwarded will queue up in memory. In extreme cases (e.g., a fast sender paired with a very slow or stalled receiver), this can lead to unbounded memory growth. This is generally not a problem for well-behaved clients and backends, but could be exploited in adversarial scenarios where an attacker deliberately sends data rapidly while receiving slowly.
 
 ### Incompatibilities
 

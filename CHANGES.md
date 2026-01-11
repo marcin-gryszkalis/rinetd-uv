@@ -32,6 +32,12 @@
    - Failure-triggered refresh: re-resolves after 3 consecutive connection failures
    - Configuration: `dns-refresh 600` (global) or `[dns-refresh=300]` (per-rule)
    - Set to 0 to disable for specific rules: `[dns-refresh=0]`
+ * **Unix domain socket support:**
+   - Forward between TCP and Unix sockets in any combination
+   - Syntax: `unix:/path/to/socket` for filesystem sockets
+   - Abstract namespace sockets (Linux): `unix:@name`
+   - Socket cleanup on shutdown (filesystem sockets)
+   - Support for windows named pipes could be added (as libuv has such capability)
  * **INCOMPATIBILITY** Renamed configuration option: `pidlogfile` → `pidfile`
  * **INCOMPATIBILITY** Changed date format in log file
 

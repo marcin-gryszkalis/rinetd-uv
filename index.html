@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-09" />
+  <meta name="dcterms.date" content="2026-01-11" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-09</p>
+<p class="date">2026-01-11</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -110,6 +110,8 @@ internet redirection server</a>
 RULES</a></li>
 <li><a href="#forwarding-options" id="toc-forwarding-options">FORWARDING
 OPTIONS</a></li>
+<li><a href="#unix-domain-sockets" id="toc-unix-domain-sockets">UNIX
+DOMAIN SOCKETS</a></li>
 <li><a href="#global-configuration-options"
 id="toc-global-configuration-options">GLOBAL CONFIGURATION
 OPTIONS</a></li>
@@ -308,6 +310,69 @@ dns-refresh 600
 
 # Disable for this specific rule
 0.0.0.0 9000/tcp static.example.com 9000 [dns-refresh=0]</code></pre>
+<h2 id="unix-domain-sockets">UNIX DOMAIN SOCKETS</h2>
+<p>rinetd-uv supports Unix domain sockets (also known as Unix sockets or
+local sockets), allowing forwarding between TCP and Unix sockets in any
+combination:</p>
+<ul>
+<li><strong>TCP to Unix socket</strong> - Expose a Unix socket service
+over TCP (e.g. Docker socket proxy)</li>
+<li><strong>Unix socket to TCP</strong> - Accept connections on a Unix
+socket and forward to TCP backend</li>
+<li><strong>Unix to Unix</strong> - Forward between Unix sockets</li>
+</ul>
+<h3 id="syntax">Syntax</h3>
+<p>Unix socket addresses use the <code>unix:</code> prefix followed by
+the socket path:</p>
+<pre><code>unix:/path/to/socket    # Filesystem socket (absolute path required)
+unix:@name              # Abstract namespace socket (Linux only)</code></pre>
+<p><strong>Note:</strong> No port number is required for Unix socket
+addresses.</p>
+<h3 id="examples">Examples</h3>
+<pre><code># TCP to Unix - Docker socket proxy
+# Clients connect to TCP port 2375, forwarded to Docker Unix socket
+0.0.0.0 2375/tcp unix:/var/run/docker.sock
+
+# Unix to TCP - Accept on Unix socket, forward to HTTP server
+unix:/var/run/frontend.sock 192.168.1.100 8080/tcp
+
+# Unix to Unix - Forward between Unix sockets
+unix:/tmp/proxy.sock unix:/var/run/backend.sock
+
+# Abstract namespace socket (Linux only)
+# Abstract sockets don&#39;t create filesystem entries
+0.0.0.0 9999/tcp unix:@myservice</code></pre>
+<h3 id="access-control">Access Control</h3>
+<ul>
+<li>For <strong>filesystem sockets</strong>, access is controlled by
+filesystem permissions on the socket file</li>
+<li>For <strong>TCP endpoints</strong>, the standard <code>allow</code>
+and <code>deny</code> rules apply</li>
+<li>IP-based access control does not apply to incoming Unix socket
+connections (access rules in such case will be ignored)</li>
+<li>For <strong>abstract sockets</strong> (Linux), any process in the
+same network namespace can connect</li>
+</ul>
+<h3 id="security-considerations">Security Considerations</h3>
+<ol type="1">
+<li><strong>Filesystem permissions</strong>: The socket file inherits
+permissions from the directory where it’s created</li>
+<li><strong>Abstract sockets</strong>: Accessible by any process in the
+same network namespace - use with caution</li>
+<li><strong>Socket cleanup</strong>: Filesystem sockets are
+automatically removed on shutdown and before bind</li>
+</ol>
+<h3 id="limitations">Limitations</h3>
+<ul>
+<li>Maximum socket path length varies by system (Linux: 107, BSD: 103,
+some other systems: 91)</li>
+<li>Unix sockets only support stream mode (SOCK_STREAM); datagram mode
+(SOCK_DGRAM) or SCTP (SOCK_SEQPACKET) is not supported</li>
+<li>UDP forwarding cannot use Unix sockets</li>
+<li>Abstract namespace sockets are Linux-specific and not portable</li>
+<li>Windows named pipes support is not tested although underlying libuv
+declares they are covered, report a bug in case you need it.</li>
+</ul>
 <h2 id="global-configuration-options">GLOBAL CONFIGURATION OPTIONS</h2>
 <h3 id="buffer-size">Buffer Size</h3>
 <p>The buffer size used for I/O operations can be configured globally.
@@ -370,7 +435,7 @@ can be provided:</p>
 <code>include</code> directive. This allows splitting large
 configurations into multiple files for better organization and
 maintainability.</p>
-<h3 id="syntax">Syntax</h3>
+<h3 id="syntax-1">Syntax</h3>
 <pre><code>include pattern</code></pre>
 <p>The <code>pattern</code> can be: - <strong>Single file</strong>:
 <code>include servers.conf</code> - <strong>Wildcard pattern</strong>:
@@ -394,7 +459,7 @@ warning is logged but parsing continues</li>
 <li><strong>Sorted Loading</strong>: When using wildcards, files are
 loaded in alphabetical order</li>
 </ul>
-<h3 id="examples">Examples</h3>
+<h3 id="examples-1">Examples</h3>
 <p><strong>Basic include:</strong></p>
 <pre><code># Include a single file
 include /etc/rinetd-uv.d/database-servers.conf</code></pre>
@@ -520,6 +585,12 @@ include /etc/rinetd-uv.d/*.conf
 # UDP forwarding example
 0.0.0.0 53/udp 8.8.8.8 53/udp [timeout=30]
 
+# Unix domain socket forwarding examples
+# TCP to Unix socket - Docker socket proxy
+0.0.0.0 2375/tcp unix:/var/run/docker.sock
+# Unix to TCP forwarding
+unix:/var/run/myapp.sock 192.168.1.100 8080/tcp
+
 # Per-rule Access Control (applies to previous forwarding rule)
 0.0.0.0 22 192.168.1.20 22
 allow 10.0.0.*
@@ -528,22 +599,22 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb27"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb29"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
 <p>Or simply:</p>
-<div class="sourceCode" id="cb28"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+<div class="sourceCode" id="cb30"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="run-with-docker">RUN WITH DOCKER</h2>
 <p>There’s simple <code>Dockerfile</code> provided to create working
 docker image with <strong>rinetd-uv</strong> built from sources (HEAD).
 Image is based on Debian Linux. Thanks to using <code>-slim</code> base
 image and 2-stage build final image size shouldn’t exceed 100MB.</p>
 <p>Build the image:</p>
-<div class="sourceCode" id="cb29"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span></code></pre></div>
 <p>Example run:</p>
-<div class="sourceCode" id="cb30"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
+<div class="sourceCode" id="cb32"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple
@@ -556,6 +627,15 @@ information.</p>
 ip/port are not allowed (you’ll get “Address already in use” or similar
 error). Note that <code>0.0.0.0</code> (IPv4) and <code>::</code> (IPv6)
 effectively mean the same (both would bind to “any” address).</p>
+<p><strong>rinetd-uv</strong> does not implement backpressure (flow
+control) between the client and backend connections. If one endpoint
+sends data faster than the other endpoint can receive it, the data
+waiting to be forwarded will queue up in memory. In extreme cases (e.g.,
+a fast sender paired with a very slow or stalled receiver), this can
+lead to unbounded memory growth. This is generally not a problem for
+well-behaved clients and backends, but could be exploited in adversarial
+scenarios where an attacker deliberately sends data rapidly while
+receiving slowly.</p>
 <h3 id="incompatibilities">Incompatibilities</h3>
 <p><strong>rinetd-uv</strong> was meant as drop-in replacement for
 <strong>rinetd</strong>, although there are some differences</p>
