@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #define YYRULECOUNT 54
-#line 10 "src/parse.peg"
+#line 10 "parse.peg"
 
 #if HAVE_CONFIG_H
 #   include <config.h>
@@ -61,6 +61,7 @@
 struct _yycontext; /* Forward declaration - yycontext typedef defined later */
 void parseConfigurationFile(char const *file, struct _yycontext *ctx);
 void parseInclude(char const *pattern, struct _yycontext *ctx);
+static char *stripQuotes(char const *str);
 
 
 #ifndef YY_MALLOC
@@ -396,7 +397,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 240
+#line 241
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -410,7 +411,7 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 213
+#line 214
   
     logError("invalid syntax at line %d: %s\n",
             yy->currentLine, yytext);
@@ -428,7 +429,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 208
+#line 209
   
     parseInclude(yytext, yy);
 ;
@@ -444,7 +445,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 199
+#line 200
   
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
@@ -464,7 +465,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_buffersize\n"));
   {
-#line 189
+#line 190
   
     bufferSize = atoi(yytext);
     if (bufferSize < 1024 || bufferSize > 1048576) {
@@ -485,7 +486,7 @@ YY_ACTION(void) yy_1_logcommon(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logcommon\n"));
   {
-#line 184
+#line 185
   
     logFormatCommon = 1;
 ;
@@ -501,9 +502,9 @@ YY_ACTION(void) yy_1_pidfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pidfile\n"));
   {
-#line 176
+#line 177
   
-    pidLogFileName = strdup(yytext);
+    pidLogFileName = stripQuotes(yytext);
     if (!pidLogFileName) {
         MEMORY_ERROR;
     }
@@ -520,9 +521,9 @@ YY_ACTION(void) yy_1_logfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logfile\n"));
   {
-#line 168
+#line 169
   
-    logFileName = strdup(yytext);
+    logFileName = stripQuotes(yytext);
     if (!logFileName) {
         MEMORY_ERROR;
     }
@@ -539,7 +540,7 @@ YY_ACTION(void) yy_1_auth_key(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_key\n"));
   {
-#line 165
+#line 166
    yy->isAuthAllow = (yytext[0] == 'a'); ;
   }
 #undef yythunkpos
@@ -553,7 +554,7 @@ YY_ACTION(void) yy_1_auth_rule(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_rule\n"));
   {
-#line 143
+#line 144
   
     allRules = (Rule *)
         realloc(allRules, sizeof(Rule) * (allRulesCount + 1));
@@ -587,7 +588,7 @@ YY_ACTION(void) yy_3_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_3_proto\n"));
   {
-#line 140
+#line 141
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -601,7 +602,7 @@ YY_ACTION(void) yy_2_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_2_proto\n"));
   {
-#line 139
+#line 140
    yy->tmpProto = IPPROTO_UDP; ;
   }
 #undef yythunkpos
@@ -615,7 +616,7 @@ YY_ACTION(void) yy_1_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_proto\n"));
   {
-#line 138
+#line 139
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -629,7 +630,7 @@ YY_ACTION(void) yy_1_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_port\n"));
   {
-#line 137
+#line 138
    yy->tmpPort = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -643,7 +644,7 @@ YY_ACTION(void) yy_1_option_mode(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_mode\n"));
   {
-#line 131
+#line 132
    yy->socketMode = (int)strtol(yytext, NULL, 8); ;
   }
 #undef yythunkpos
@@ -657,7 +658,7 @@ YY_ACTION(void) yy_1_option_dns_refresh(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_dns_refresh\n"));
   {
-#line 130
+#line 131
    yy->dns_refresh_period = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -671,7 +672,7 @@ YY_ACTION(void) yy_1_option_keepalive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_keepalive\n"));
   {
-#line 129
+#line 130
    yy->keepalive = (yytext[1] == 'n') ? 1 : 0; ;
   }
 #undef yythunkpos
@@ -685,7 +686,7 @@ YY_ACTION(void) yy_1_option_source(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_source\n"));
   {
-#line 128
+#line 129
    yy->sourceAddress = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -699,7 +700,7 @@ YY_ACTION(void) yy_1_option_timeout(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_timeout\n"));
   {
-#line 127
+#line 128
    yy->serverTimeout = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -713,7 +714,7 @@ YY_ACTION(void) yy_1_connect_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_port\n"));
   {
-#line 122
+#line 123
    yy->connectPort = yy->tmpPort; yy->connectProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -727,7 +728,7 @@ YY_ACTION(void) yy_1_bind_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_port\n"));
   {
-#line 121
+#line 122
    yy->bindPort = yy->tmpPort; yy->bindProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -741,7 +742,7 @@ YY_ACTION(void) yy_1_connect_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_address\n"));
   {
-#line 120
+#line 121
    yy->connectAddress = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -755,7 +756,7 @@ YY_ACTION(void) yy_1_bind_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_address\n"));
   {
-#line 119
+#line 120
    yy->bindAddress = strdup(yytext); ;
   }
 #undef yythunkpos
@@ -769,7 +770,7 @@ YY_ACTION(void) yy_1_unix_connect(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_unix_connect\n"));
   {
-#line 112
+#line 113
   
     yy->connectAddress = strdup(yytext);
     yy->connectPort = strdup("0");
@@ -787,7 +788,7 @@ YY_ACTION(void) yy_1_unix_bind(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_unix_bind\n"));
   {
-#line 107
+#line 108
   
     yy->bindAddress = strdup(yytext);
     yy->bindPort = strdup("0");
@@ -805,7 +806,7 @@ YY_ACTION(void) yy_1_server_rule(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_server_rule\n"));
   {
-#line 75
+#line 76
   
     /* keepalive: -1 = not set (default to on), 0 = off, 1 = on */
     int keepalive = (yy->keepalive == -1) ? 1 : yy->keepalive;
@@ -1867,7 +1868,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 244 "src/parse.peg"
+#line 245 "parse.peg"
 
 
 /* Utility functions for include directive support */
