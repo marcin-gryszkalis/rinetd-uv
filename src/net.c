@@ -277,6 +277,7 @@ int parseUnixSocketPath(const char *address, char **path, int *is_abstract)
  * Returns: 0 on success, -1 on error */
 int validateUnixSocketPath(const char *path, int is_abstract)
 {
+    (void)is_abstract;  /* Reserved for future use */
     if (!path) return -1;
 
     size_t len = strlen(path);

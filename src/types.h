@@ -91,9 +91,6 @@ struct _socket
     uint64_t totalBytesIn, totalBytesOut;
 };
 
-/* Forward declaration for write request */
-typedef struct _connection_info ConnectionInfo;
-
 /* TCP Write request data - holds buffer and connection info */
 typedef struct _write_req WriteReq;
 struct _write_req
