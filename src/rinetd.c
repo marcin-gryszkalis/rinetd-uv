@@ -596,6 +596,25 @@ static void dns_refresh_timer_cb(uv_timer_t *timer)
     startAsyncDnsResolution(srv);
 }
 
+/* Prepare abstract socket name by replacing '@' prefix with '\0'
+ * Returns: prepared name length, or 0 on error
+ * The name_buf must be at least UNIX_PATH_MAX + 2 bytes */
+static size_t prepareAbstractSocketName(const char *path, char *name_buf)
+{
+    if (!path || !name_buf) return 0;
+
+    size_t path_len = strlen(path);
+    if (path_len == 0 || path[0] != '@') {
+        logError("Invalid abstract socket name: %s\n", path);
+        return 0;
+    }
+
+    /* Abstract namespace uses null byte instead of '@' */
+    name_buf[0] = '\0';
+    memcpy(name_buf + 1, path + 1, path_len - 1);
+    return path_len;
+}
+
 /* Initialize and start libuv event handling for a server */
 static void startServerListening(ServerInfo *srv)
 {
@@ -621,19 +640,13 @@ static void startServerListening(ServerInfo *srv)
 
         /* Bind to Unix socket path */
         if (srv->fromIsAbstract) {
-            /* Abstract socket: use uv_pipe_bind2 with UV_PIPE_NO_TRUNCATE */
-            /* Abstract socket name starts with @ which we need to convert to \0 */
-            char abstract_name[UNIX_PATH_MAX + 1];
-            size_t name_len = strlen(srv->fromUnixPath);
-            if (name_len > 0 && srv->fromUnixPath[0] == '@') {
-                abstract_name[0] = '\0';  /* Abstract namespace uses null byte */
-                memcpy(abstract_name + 1, srv->fromUnixPath + 1, name_len - 1);
-                ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len,
-                                    UV_PIPE_NO_TRUNCATE);
-            } else {
-                logError("Invalid abstract socket name: %s\n", srv->fromUnixPath);
+            char abstract_name[UNIX_PATH_MAX + 2];
+            size_t name_len = prepareAbstractSocketName(srv->fromUnixPath, abstract_name);
+            if (name_len == 0) {
                 exit(1);
             }
+            ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len,
+                                UV_PIPE_NO_TRUNCATE);
         } else {
             ret = uv_pipe_bind(&srv->uv_handle.pipe, srv->fromUnixPath);
         }
@@ -1044,16 +1057,9 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
         /* Connect to Unix socket backend */
         if (srv->toIsAbstract) {
-            char abstract_name[UNIX_PATH_MAX + 1];
-            size_t name_len = strlen(srv->toUnixPath);
-            if (name_len > 0 && srv->toUnixPath[0] == '@') {
-                abstract_name[0] = '\0';
-                memcpy(abstract_name + 1, srv->toUnixPath + 1, name_len - 1);
-                uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
-                                 abstract_name, name_len,
-                                 UV_PIPE_NO_TRUNCATE, unix_connect_cb);
-            } else {
-                logError("Invalid abstract socket name: %s\n", srv->toUnixPath);
+            char abstract_name[UNIX_PATH_MAX + 2];
+            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            if (name_len == 0) {
                 free(connect_req);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
@@ -1061,6 +1067,9 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
                 uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
                 return;
             }
+            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
+                             abstract_name, name_len,
+                             UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
             uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
                             srv->toUnixPath, unix_connect_cb);
@@ -1254,15 +1263,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         if (srv->toIsAbstract) {
             /* Abstract socket */
             char abstract_name[UNIX_PATH_MAX + 1];
-            size_t name_len = strlen(srv->toUnixPath);
-            if (name_len > 0 && srv->toUnixPath[0] == '@') {
-                abstract_name[0] = '\0';
-                memcpy(abstract_name + 1, srv->toUnixPath + 1, name_len - 1);
-                uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
-                                 abstract_name, name_len,
-                                 UV_PIPE_NO_TRUNCATE, unix_connect_cb);
-            } else {
-                logError("Invalid abstract socket name: %s\n", srv->toUnixPath);
+            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            if (name_len == 0) {
                 free(connect_req);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
@@ -1270,6 +1272,9 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
                 uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
                 return;
             }
+            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
+                             abstract_name, name_len,
+                             UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
             uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
                             srv->toUnixPath, unix_connect_cb);
