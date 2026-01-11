@@ -19,6 +19,7 @@
 #   include <sys/types.h>
 #   include <sys/socket.h>
 #   include <sys/ioctl.h>
+#   include <sys/un.h>
 #   include <netdb.h>
 #   include <netinet/in.h>
 #   include <arpa/inet.h>
@@ -99,7 +100,8 @@ int startAsyncDnsResolution(ServerInfo *srv);
 
 /* Unix domain socket functions */
 #define UNIX_SOCKET_PREFIX "unix:"
-#define UNIX_PATH_MAX 107  /* Max path length (108 with null terminator) */
+/* Portable max path length: sun_path size varies (Linux: 108, BSD: 104, old HP-UX: 92) */
+#define UNIX_PATH_MAX (sizeof(((struct sockaddr_un *)0)->sun_path) - 1)
 
 int isUnixSocketPath(const char *address);
 int parseUnixSocketPath(const char *address, char **path, int *is_abstract);
