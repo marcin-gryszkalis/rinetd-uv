@@ -553,8 +553,12 @@ static ConnectionInfo *allocateConnection(void)
     cnx->remote.fd = INVALID_SOCKET;
     cnx->coLog = logUnknownError;
 
-    /* Add to linked list */
+    /* Add to doubly-linked list (head insertion) */
+    cnx->prev = NULL;
     cnx->next = connectionListHead;
+    if (connectionListHead) {
+        connectionListHead->prev = cnx;
+    }
     connectionListHead = cnx;
 
     activeConnections++;
@@ -1544,14 +1548,14 @@ static void handle_close_cb(uv_handle_t *handle)
         !cnx->timer_initialized && !cnx->timer_closing) {
         /* All handles are closed - safe to free the connection */
 
-        /* Remove from linked list first */
-        ConnectionInfo **ptr = &connectionListHead;
-        while (*ptr) {
-            if (*ptr == cnx) {
-                *ptr = cnx->next;
-                break;
-            }
-            ptr = &(*ptr)->next;
+        /* Remove from doubly-linked list */
+        if (cnx->prev) {
+            cnx->prev->next = cnx->next;
+        } else {
+            connectionListHead = cnx->next;
+        }
+        if (cnx->next) {
+            cnx->next->prev = cnx->prev;
         }
 
         activeConnections--;

@@ -153,7 +153,8 @@ struct _connection_info
     char *log_toHost;
     uint16_t log_toPort;
 
-    /* Linked list for tracking active connections */
+    /* Doubly-linked list for tracking active connections */
+    struct _connection_info *prev;
     struct _connection_info *next;
 
     /* UDP-specific fields for hash table and LRU */
