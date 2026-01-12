@@ -74,7 +74,7 @@ static uv_signal_t sighup_handle, sigint_handle, sigterm_handle, sigpipe_handle;
 char *logFileName = NULL;
 char *pidLogFileName = NULL;
 int logFormatCommon = 0;
-FILE *logFile = NULL;
+uv_file logFd = -1;
 int bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
 int globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
 
@@ -145,6 +145,7 @@ static void startServerListening(ServerInfo *srv);
 static void server_handle_close_cb(uv_handle_t *handle);
 static void dns_timer_close_cb(uv_handle_t *handle);
 static void check_all_servers_closed(void);
+static void log_write_cb(uv_fs_t *req);
 
 
 int main(int argc, char *argv[])
@@ -390,17 +391,21 @@ static void readConfiguration(char const *file) {
     parseConfiguration(file);
 
     /* Open the log file */
-    if (logFile) {
-        fclose(logFile);
-        logFile = NULL;
+    if (logFd != -1) {
+        uv_fs_t req;
+        uv_fs_close(NULL, &req, logFd, NULL);
+        uv_fs_req_cleanup(&req);
+        logFd = -1;
     }
     if (logFileName) {
-        logFile = fopen(logFileName, "a+");
-        if (logFile) {
-            setvbuf(logFile, NULL, _IONBF, 0);
-        } else {
-            logError("could not open %s to append (%m).\n",
-                logFileName);
+        uv_fs_t req;
+        logFd = uv_fs_open(NULL, &req, logFileName, O_WRONLY | O_CREAT | O_APPEND,
+                           0644, NULL);
+        uv_fs_req_cleanup(&req);
+        if (logFd < 0) {
+            logError("could not open %s to append: %s\n", logFileName,
+                     uv_strerror((int)logFd));
+            logFd = -1;
         }
     }
 }
@@ -2260,8 +2265,11 @@ RETSIGTYPE quit(int s)
     (void)s;
 
     /* Obey the request, but first flush the log */
-    if (logFile) {
-        fclose(logFile);
+    if (logFd != -1) {
+        uv_fs_t req;
+        uv_fs_close(NULL, &req, logFd, NULL);
+        uv_fs_req_cleanup(&req);
+        logFd = -1;
     }
 
     logInfo("forced quit\n");
@@ -2336,11 +2344,15 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
         toPort = srv->toAddrInfo ? getPort(srv->toAddrInfo) : 0;
     }
 
-    if (result==logNotAllowed || result==logDenied)
-        logInfo("%s %s\n"
-            , addressText
-            , logMessages[result]);
-    if (logFile) {
+    if (result == logNotAllowed || result == logDenied)
+        logInfo("%s %s\n", addressText, logMessages[result]);
+    if (logFd != -1) {
+        char *log_buffer = malloc(2048); /* Should be enough for log line */
+        if (!log_buffer) {
+            return;
+        }
+
+        int len;
         if (logFormatCommon) {
             /* Fake a common log format log file in a way that
                 most web analyzers can do something interesting with.
@@ -2354,34 +2366,58 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
                 after several placeholders meant to fill the
                 positions frequently occupied by user agent,
                 referrer, and server name information. */
-            fprintf(logFile, "%s - - "
-                "[%s %c%.2d%.2d] "
-                "\"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" "
-                "200 %llu - - - %llu\n",
-                addressText,
-                tstr,
-                sign,
-                timz / 60,
-                timz % 60,
-                fromHost, (int)fromPort,
-                toHost, (int)toPort,
-                logMessages[result],
-                (unsigned long long int)bytesOut,
-                (unsigned long long int)bytesIn);
+            len = snprintf(log_buffer, 2048,
+                           "%s - - "
+                           "[%s %c%.2d%.2d] "
+                           "\"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" "
+                           "200 %llu - - - %llu\n",
+                           addressText, tstr, sign, timz / 60, timz % 60, fromHost,
+                           (int)fromPort, toHost, (int)toPort, logMessages[result],
+                           (unsigned long long int)bytesOut,
+                           (unsigned long long int)bytesIn);
         } else {
             /* Write an rinetd-specific log entry with a
                 less goofy format. */
-            fprintf(logFile, "%s\t%s\t%s\t%d\t%s\t%d\t%llu"
-                    "\t%llu\t%s\n",
-                tstr,
-                addressText,
-                fromHost, (int)fromPort,
-                toHost, (int)toPort,
-                (unsigned long long int)bytesIn,
-                (unsigned long long int)bytesOut,
-                logMessages[result]);
+            len = snprintf(log_buffer, 2048,
+                           "%s\t%s\t%s\t%d\t%s\t%d\t%llu"
+                           "\t%llu\t%s\n",
+                           tstr, addressText, fromHost, (int)fromPort, toHost,
+                           (int)toPort, (unsigned long long int)bytesIn,
+                           (unsigned long long int)bytesOut, logMessages[result]);
+        }
+
+        if (len > 0) {
+            uv_fs_t *req = malloc(sizeof(uv_fs_t));
+            if (req) {
+                req->data = log_buffer;
+                uv_buf_t buf = uv_buf_init(log_buffer, len);
+                int ret = uv_fs_write(main_loop, req, logFd, &buf, 1, -1, log_write_cb);
+                if (ret < 0) {
+                    logError("uv_fs_write failed: %s\n", uv_strerror(ret));
+                    free(log_buffer);
+                    free(req);
+                }
+            } else {
+                free(log_buffer);
+            }
+        } else {
+            free(log_buffer);
         }
     }
+}
+
+static void log_write_cb(uv_fs_t *req) {
+    if (req->result < 0) {
+        logError("Async log write failed: %s\n", uv_strerror((int)req->result));
+    }
+
+    /* Free the buffer stored in req->data */
+    if (req->data) {
+        free(req->data);
+    }
+
+    uv_fs_req_cleanup(req);
+    free(req);
 }
 
 static int readArgs (int argc, char **argv, RinetdOptions *options)

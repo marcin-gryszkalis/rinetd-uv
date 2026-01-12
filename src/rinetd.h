@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "types.h"
 #include <stdint.h>
 #include <uv.h>
 
@@ -37,7 +38,7 @@ extern int seTotal;
 extern char *logFileName;
 extern char *pidLogFileName;
 extern int logFormatCommon;
-extern FILE *logFile;
+extern uv_file logFd;
 extern int bufferSize;
 extern int globalDnsRefreshPeriod;
 
@@ -54,5 +55,5 @@ void logDebug(char const *fmt, ...);
 /* Functions */
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
-               int serverTimeout, char *sourceAddress,
-               int keepalive, int dns_refresh_period, int socketMode);
+               int serverTimeout, char *sourceAddress, int keepalive,
+               int dns_refresh_period, int socketMode);
