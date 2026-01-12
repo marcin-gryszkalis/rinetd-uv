@@ -21,6 +21,7 @@ static int const RINETD_DEFAULT_UDP_TIMEOUT = 10;
 static int const RINETD_DEFAULT_DNS_REFRESH_PERIOD = 600;
 static int const RINETD_MAX_UDP_CONNECTIONS = 5000;
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
+static int const RINETD_LOG_BUFFER_SIZE = 2048;
 
 #define RINETD_CONFIG_FILE "/etc/rinetd-uv.conf"
 #define RINETD_PID_FILE "/var/run/rinetd-uv.pid"

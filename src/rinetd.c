@@ -2347,7 +2347,7 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
     if (result == logNotAllowed || result == logDenied)
         logInfo("%s %s\n", addressText, logMessages[result]);
     if (logFd != -1) {
-        char *log_buffer = malloc(2048); /* Should be enough for log line */
+        char *log_buffer = malloc(RINETD_LOG_BUFFER_SIZE);
         if (!log_buffer) {
             return;
         }
@@ -2366,7 +2366,7 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
                 after several placeholders meant to fill the
                 positions frequently occupied by user agent,
                 referrer, and server name information. */
-            len = snprintf(log_buffer, 2048,
+            len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
                            "%s - - "
                            "[%s %c%.2d%.2d] "
                            "\"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" "
@@ -2378,7 +2378,7 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
         } else {
             /* Write an rinetd-specific log entry with a
                 less goofy format. */
-            len = snprintf(log_buffer, 2048,
+            len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
                            "%s\t%s\t%s\t%d\t%s\t%d\t%llu"
                            "\t%llu\t%s\n",
                            tstr, addressText, fromHost, (int)fromPort, toHost,
