@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-11" />
+  <meta name="dcterms.date" content="2026-01-13" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-11</p>
+<p class="date">2026-01-13</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -646,10 +646,10 @@ receiving slowly.</p>
 <p><strong>rinetd-uv</strong> was meant as drop-in replacement for
 <strong>rinetd</strong>, although there are some differences</p>
 <ul>
-<li>logging format and behavior changed slightly: date is in the iso
-format (yyyy-mm-dd hh:mm:ss), for every connection 2 lines are logged -
-one with ‘open’ result and one with ‘done-’ result (which contain valid
-values for transferred data sizes)</li>
+<li>logging format and behavior changed slightly: date is in the iso8601
+format (yyyy-mm-ddThh:mm:ss+tz:tz), for every connection 2 lines are
+logged - one with ‘open’ result and one with ‘done-’ result (which
+contain valid values for transferred data sizes)</li>
 <li><code>pidlogfile</code> option was renamed to
 <code>pidfile</code></li>
 <li>original rinetd mentioned possibility to proxy traffic between

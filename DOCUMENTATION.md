@@ -525,7 +525,7 @@ Two rules with the same source ip/port and different destination ip/port are not
 
 **rinetd-uv** was meant as drop-in replacement for **rinetd**, although there are some differences
 
-- logging format and behavior changed slightly: date is in the iso format (yyyy-mm-dd hh:mm:ss), for every connection 2 lines are logged - one with 'open' result and one with 'done-' result (which contain valid values for transferred data sizes)
+- logging format and behavior changed slightly: date is in the iso8601 format (yyyy-mm-ddThh:mm:ss+tz:tz), for every connection 2 lines are logged - one with 'open' result and one with 'done-' result (which contain valid values for transferred data sizes)
 - `pidlogfile` option was renamed to `pidfile`
 - original rinetd mentioned possibility to proxy traffic between differen protocols (UDP <-> TCP), in **rinetd-uv** it's not possible due to fundamental protocol incompatibilities. See `TCP-UDP_MIXED_MODE.md` for technical details.
 
