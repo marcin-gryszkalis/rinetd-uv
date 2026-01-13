@@ -2317,7 +2317,7 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
     if (timz < 0) {
         timz = -timz;
     }
-    strftime(tstr, sizeof(tstr), "%Y-%m-%d %H:%M:%S ", t);
+    strftime(tstr, sizeof(tstr), "%Y-%m-%dT%H:%M:%S", t);
 
     int64_t bytesOut = 0, bytesIn = 0;
     if (cnx != NULL) {
@@ -2383,9 +2383,10 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
             /* Write an rinetd-specific log entry with a
                 less goofy format. */
             len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
-                           "%s\t%s\t%s\t%d\t%s\t%d\t%llu"
+                           "%s%c%02d:%02d\t%s\t%s\t%d\t%s\t%d\t%llu"
                            "\t%llu\t%s\n",
-                           tstr, addressText, fromHost, (int)fromPort, toHost,
+                           tstr, sign, timz / 60, timz % 60,
+                           addressText, fromHost, (int)fromPort, toHost,
                            (int)toPort, (unsigned long long int)bytesIn,
                            (unsigned long long int)bytesOut, logMessages[result]);
         }
