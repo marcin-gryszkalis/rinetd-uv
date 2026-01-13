@@ -314,7 +314,8 @@ void logDebug(char const *fmt, ...)
     va_end(ap);
 }
 
-static void clearConfiguration(void) {
+static void clearConfiguration(void)
+{
     /* Remove server references from all active connections */
     for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next) {
         cnx->server = NULL;
@@ -386,8 +387,8 @@ static void clearConfiguration(void) {
     pidLogFileName = NULL;
 }
 
-static void readConfiguration(char const *file) {
-
+static void readConfiguration(char const *file)
+{
     /* Parse the configuration file. */
     parseConfiguration(file);
 
@@ -2422,7 +2423,8 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
     }
 }
 
-static void log_write_cb(uv_fs_t *req) {
+static void log_write_cb(uv_fs_t *req)
+{
     if (req->result < 0) {
         logError("Async log write failed: %s\n", uv_strerror((int)req->result));
     }

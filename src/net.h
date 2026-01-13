@@ -72,7 +72,8 @@
     /* Windows sockets compatibility defines */
 #   define INVALID_SOCKET (-1)
 #   define SOCKET_ERROR (-1)
-static inline int closesocket(int s) {
+static inline int closesocket(int s)
+{
     return close(s);
 }
 #   define WSAEWOULDBLOCK EWOULDBLOCK
@@ -80,7 +81,8 @@ static inline int closesocket(int s) {
 #   define WSAEINPROGRESS EINPROGRESS
 #   define WSAEINTR EINTR
 #   define SOCKET int
-static inline int GetLastError(void) {
+static inline int GetLastError(void)
+{
     return errno;
 }
 #endif /* _WIN32 */

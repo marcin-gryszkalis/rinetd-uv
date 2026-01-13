@@ -35,7 +35,8 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
     return ret;
 }
 
-int sameSocketAddress(struct sockaddr_storage *a, struct sockaddr_storage *b) {
+int sameSocketAddress(struct sockaddr_storage *a, struct sockaddr_storage *b)
+{
     if (a->ss_family != b->ss_family)
         return 0;
 
@@ -56,7 +57,8 @@ int sameSocketAddress(struct sockaddr_storage *a, struct sockaddr_storage *b) {
     return 0;
 }
 
-uint16_t getPort(struct addrinfo* ai) {
+uint16_t getPort(struct addrinfo* ai)
+{
     switch (ai->ai_family) {
         case AF_INET:
             return ntohs(((struct sockaddr_in*)ai->ai_addr)->sin_port);
