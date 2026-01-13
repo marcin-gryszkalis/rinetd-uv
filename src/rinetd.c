@@ -155,8 +155,7 @@ int main(int argc, char *argv[])
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(1, 1), &wsaData);
     if (result != 0) {
-        logError("Your computer was not connected to the Internet at the time that "
-            "this program was launched, or you do not have a 32-bit connection to the Internet.\n");
+        logError("Your computer was not connected to the Internet at the time that this program was launched, or you do not have a 32-bit connection to the Internet.\n");
         exit(1);
     }
 #else
@@ -2346,24 +2345,14 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
                 positions frequently occupied by user agent,
                 referrer, and server name information. */
             len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
-                           "%s - - "
-                           "[%s%c%.2d%.2d] "
-                           "\"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" "
-                           "200 %llu - - - %llu\n",
-                           addressText, tstr, sign, timz / 60, timz % 60, fromHost,
-                           (int)fromPort, toHost, (int)toPort, logMessages[result],
-                           (unsigned long long int)bytesOut,
-                           (unsigned long long int)bytesIn);
+                           "%s - - [%s%c%.2d%.2d] \"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" 200 %llu - - - %llu\n",
+                           addressText, tstr, sign, timz / 60, timz % 60, fromHost, (int)fromPort, toHost, (int)toPort, logMessages[result], (unsigned long long int)bytesOut, (unsigned long long int)bytesIn);
         } else {
             /* Write an rinetd-specific log entry with a
                 less goofy format. */
             len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
-                           "%s%c%02d:%02d\t%s\t%s\t%d\t%s\t%d\t%llu"
-                           "\t%llu\t%s\n",
-                           tstr, sign, timz / 60, timz % 60,
-                           addressText, fromHost, (int)fromPort, toHost,
-                           (int)toPort, (unsigned long long int)bytesIn,
-                           (unsigned long long int)bytesOut, logMessages[result]);
+                           "%s%c%02d:%02d\t%s\t%s\t%d\t%s\t%d\t%llu\t%llu\t%s\n",
+                           tstr, sign, timz / 60, timz % 60, addressText, fromHost, (int)fromPort, toHost, (int)toPort, (unsigned long long int)bytesIn, (unsigned long long int)bytesOut, logMessages[result]);
         }
 
         if (len > 0) {
@@ -2432,17 +2421,13 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                 break;
             case 'h':
                 printf("Usage: rinetd-uv [OPTION]\n"
-                    "  -c, --conf-file FILE   read configuration "
-                    "from FILE\n"
+                    "  -c, --conf-file FILE   read configuration from FILE\n"
                     "  -d, --debug            enable debug logging\n"
-                    "  -f, --foreground       do not run in the "
-                    "background\n"
+                    "  -f, --foreground       do not run in the background\n"
                     "  -h, --help             display this help\n"
-                    "  -v, --version          display version "
-                    "number\n\n");
-                printf("Most options are controlled through the\n"
-                    "configuration file. See the rinetd-uv(8)\n"
-                    "manpage for more information.\n");
+                    "  -v, --version          display version number\n\n"
+                    "Most options are controlled through the configuration file.\n"
+                    "See the rinetd-uv(8) manpage for more information.\n");
                 exit(0);
             case 'v':
                 printf ("rinetd-uv %s\n", PACKAGE_VERSION);
