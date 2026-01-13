@@ -118,6 +118,7 @@ static int config_reload_pending = 0;
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket);
 static ConnectionInfo *allocateConnection(void);
 static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv);
+static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv);
 static int checkConnectionAllowed(ConnectionInfo const *cnx);
 
 /* UDP hash table and LRU functions */
@@ -1021,6 +1022,22 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         return;
     }
 
+    /* Get remote address immediately after accept */
+    struct sockaddr_storage addr;
+    int addrlen = sizeof(addr);
+    uv_tcp_getpeername(&cnx->remote_uv_handle.tcp,
+                       (struct sockaddr*)&addr, &addrlen);
+    cnx->remoteAddress = addr;
+    cnx->server = srv;  /* Needed for checkConnectionAllowed */
+
+    int logCode = checkConnectionAllowed(cnx);
+    if (logCode != logAllowed) {
+        cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+        logEvent(cnx, srv, logCode);
+        return;
+    }
+
     /* Enable TCP keepalive on client connection if configured */
     if (srv->keepalive) {
         /* Use 60 second delay before first keepalive probe */
@@ -1030,13 +1047,6 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             /* Continue anyway - keepalive is optional */
         }
     }
-
-    /* Get remote address */
-    struct sockaddr_storage addr;
-    int addrlen = sizeof(addr);
-    uv_tcp_getpeername(&cnx->remote_uv_handle.tcp,
-                       (struct sockaddr*)&addr, &addrlen);
-    cnx->remoteAddress = addr;
 
     /* Extract fd for Socket struct */
     uv_os_fd_t remote_fd;
@@ -1056,18 +1066,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     cnx->coClosing = 0;
     cnx->coLog = logUnknownError;
-    cnx->server = srv;
     cacheServerInfoForLogging(cnx, srv);
     cnx->timer_initialized = 0;
-
-    /* Check access rules */
-    int logCode = checkConnectionAllowed(cnx);
-    if (logCode != logAllowed) {
-        cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
-        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
-        logEvent(cnx, srv, logCode);
-        return;
-    }
 
     /* Connect to backend - either TCP or Unix socket */
     if (srv->toUnixPath) {
@@ -2184,12 +2184,10 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
     }
 }
 
-static int checkConnectionAllowed(ConnectionInfo const *cnx)
+static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv)
 {
-    ServerInfo const *srv = cnx->server;
-
     char addressText[NI_MAXHOST];
-    getnameinfo((struct sockaddr *)&cnx->remoteAddress, sizeof(cnx->remoteAddress),
+    getnameinfo((struct sockaddr *)addr, sizeof(*addr),
         addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
 
     /* 1. Check global allow rules. If there are no
@@ -2244,6 +2242,11 @@ static int checkConnectionAllowed(ConnectionInfo const *cnx)
     }
 
     return logAllowed;
+}
+
+static int checkConnectionAllowed(ConnectionInfo const *cnx)
+{
+    return checkConnectionAllowedAddr(&cnx->remoteAddress, cnx->server);
 }
 
 #if !_WIN32
