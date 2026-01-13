@@ -28,8 +28,7 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
 
     int ret = getaddrinfo(address, port, &hints, ai);
     if (ret != 0) {
-        logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n",
-            address, port ? port : "<null>", gai_strerror(ret));
+        logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n", address, port ? port : "<null>", gai_strerror(ret));
     }
 
     return ret;
@@ -109,24 +108,19 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
 
         /* Format old address */
         if (srv->toAddrInfo->ai_family == AF_INET) {
-            inet_ntop(AF_INET, &((struct sockaddr_in *)srv->toAddrInfo->ai_addr)->sin_addr,
-                     old_addr, sizeof(old_addr));
+            inet_ntop(AF_INET, &((struct sockaddr_in *)srv->toAddrInfo->ai_addr)->sin_addr, old_addr, sizeof(old_addr));
         } else {
-            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)srv->toAddrInfo->ai_addr)->sin6_addr,
-                     old_addr, sizeof(old_addr));
+            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)srv->toAddrInfo->ai_addr)->sin6_addr, old_addr, sizeof(old_addr));
         }
 
         /* Format new address */
         if (res->ai_family == AF_INET) {
-            inet_ntop(AF_INET, &((struct sockaddr_in *)res->ai_addr)->sin_addr,
-                     new_addr, sizeof(new_addr));
+            inet_ntop(AF_INET, &((struct sockaddr_in *)res->ai_addr)->sin_addr, new_addr, sizeof(new_addr));
         } else {
-            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr,
-                     new_addr, sizeof(new_addr));
+            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr, new_addr, sizeof(new_addr));
         }
 
-        logDebug("DNS refresh: %s resolved to new address %s (was %s)\n",
-                srv->toHost, new_addr, old_addr);
+        logDebug("DNS refresh: %s resolved to new address %s (was %s)\n", srv->toHost, new_addr, old_addr);
 
         freeaddrinfo(srv->toAddrInfo);
         srv->toAddrInfo = res;
@@ -214,8 +208,7 @@ int startAsyncDnsResolution(ServerInfo *srv)
         .ai_flags = AI_PASSIVE,
     };
 
-    int ret = uv_getaddrinfo(main_loop, req, dns_refresh_cb,
-                             srv->toHost_saved, srv->toPort_saved, &hints);
+    int ret = uv_getaddrinfo(main_loop, req, dns_refresh_cb, srv->toHost_saved, srv->toPort_saved, &hints);
     if (ret != 0) {
         logError("uv_getaddrinfo failed for %s: %s\n", srv->toHost, uv_strerror(ret));
         free(req);
@@ -242,8 +235,7 @@ int parseUnixSocketPath(const char *address, char **path, int *is_abstract)
 
     /* Check for unix: prefix */
     if (!isUnixSocketPath(address)) {
-        logError("parseUnixSocketPath: address does not start with '%s'\n",
-                 UNIX_SOCKET_PREFIX);
+        logError("parseUnixSocketPath: address does not start with '%s'\n", UNIX_SOCKET_PREFIX);
         return -1;
     }
 
@@ -286,8 +278,7 @@ int validateUnixSocketPath(const char *path, int is_abstract)
 
     /* Check length (sun_path is 108 bytes including null terminator) */
     if (len > UNIX_PATH_MAX) {
-        logError("Unix socket path too long (%zu > %d): %s\n",
-                 len, UNIX_PATH_MAX, path);
+        logError("Unix socket path too long (%zu > %d): %s\n", len, UNIX_PATH_MAX, path);
         return -1;
     }
 

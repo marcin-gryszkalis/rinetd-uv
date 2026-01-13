@@ -397,7 +397,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 237
+#line 235
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -411,10 +411,9 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 210
+#line 209
   
-    logError("invalid syntax at line %d: %s\n",
-            yy->currentLine, yytext);
+    logError("invalid syntax at line %d: %s\n", yy->currentLine, yytext);
     PARSE_ERROR; /* FIXME */
 ;
   }
@@ -429,7 +428,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 205
+#line 204
   
     parseInclude(yytext, yy);
 ;
@@ -445,7 +444,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 196
+#line 195
   
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
@@ -469,8 +468,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
   
     bufferSize = atoi(yytext);
     if (bufferSize < 1024 || bufferSize > 1048576) {
-        logError("invalid buffer size %d at line %d (must be 1024-1048576)\n",
-                 bufferSize, yy->currentLine);
+        logError("invalid buffer size %d at line %d (must be 1024-1048576)\n", bufferSize, yy->currentLine);
         PARSE_ERROR;
     }
 ;
@@ -1864,7 +1862,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 241 "parse.peg"
+#line 239 "parse.peg"
 
 
 /* Utility functions for include directive support */
@@ -1954,8 +1952,7 @@ void parseInclude(char const *pattern, yycontext *ctx)
 {
     /* 1. Check recursion depth */
     if (ctx->includeDepth >= MAX_INCLUDE_DEPTH) {
-        logError("maximum include depth (%d) exceeded at %s:%d\n",
-                 MAX_INCLUDE_DEPTH, ctx->currentFile, ctx->currentLine);
+        logError("maximum include depth (%d) exceeded at %s:%d\n", MAX_INCLUDE_DEPTH, ctx->currentFile, ctx->currentLine);
         PARSE_ERROR;
     }
 
@@ -1972,14 +1969,12 @@ void parseInclude(char const *pattern, yycontext *ctx)
 
     if (ret == GLOB_NOMATCH) {
         /* No files match - just log warning and continue */
-        logWarning("include pattern matches no files: %s at %s:%d\n",
-                pattern, ctx->currentFile, ctx->currentLine);
+        logWarning("include pattern matches no files: %s at %s:%d\n", pattern, ctx->currentFile, ctx->currentLine);
         free(abs_pattern);
         free(unquoted_pattern);
         return;
     } else if (ret != 0) {
-        logError("error expanding include pattern: %s at %s:%d\n",
-                 pattern, ctx->currentFile, ctx->currentLine);
+        logError("error expanding include pattern: %s at %s:%d\n", pattern, ctx->currentFile, ctx->currentLine);
         free(abs_pattern);
         free(unquoted_pattern);
         PARSE_ERROR;
@@ -1992,8 +1987,7 @@ void parseInclude(char const *pattern, yycontext *ctx)
         /* Skip directories */
         struct stat st;
         if (stat(file, &st) != 0) {
-            logError("cannot stat include file: %s at %s:%d\n",
-                     file, ctx->currentFile, ctx->currentLine);
+            logError("cannot stat include file: %s at %s:%d\n", file, ctx->currentFile, ctx->currentLine);
             globfree(&glob_result);
             free(abs_pattern);
             free(unquoted_pattern);
@@ -2006,8 +2000,7 @@ void parseInclude(char const *pattern, yycontext *ctx)
         /* Check for circular includes */
         char *canonical = realpath(file, NULL);
         if (!canonical) {
-            logError("cannot resolve include file: %s at %s:%d\n",
-                     file, ctx->currentFile, ctx->currentLine);
+            logError("cannot resolve include file: %s at %s:%d\n", file, ctx->currentFile, ctx->currentLine);
             globfree(&glob_result);
             free(abs_pattern);
             free(unquoted_pattern);
@@ -2015,8 +2008,7 @@ void parseInclude(char const *pattern, yycontext *ctx)
         }
 
         if (isFileIncluded(ctx, canonical)) {
-            logError("circular include detected: %s at %s:%d\n",
-                     file, ctx->currentFile, ctx->currentLine);
+            logError("circular include detected: %s at %s:%d\n", file, ctx->currentFile, ctx->currentLine);
             free(canonical);
             globfree(&glob_result);
             free(abs_pattern);
@@ -2043,8 +2035,7 @@ void parseConfigurationFile(char const *file, yycontext *ctx)
 {
     FILE *in = fopen(file, "r");
     if (!in) {
-        logError("could not open configuration file %s at %s:%d\n",
-                 file, ctx->currentFile, ctx->currentLine);
+        logError("could not open configuration file %s at %s:%d\n", file, ctx->currentFile, ctx->currentLine);
         exit(1);
     }
 

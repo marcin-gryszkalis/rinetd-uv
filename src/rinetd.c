@@ -394,12 +394,10 @@ static void readConfiguration(char const *file)
     }
     if (logFileName) {
         uv_fs_t req;
-        logFd = uv_fs_open(NULL, &req, logFileName, O_WRONLY | O_CREAT | O_APPEND,
-                           0644, NULL);
+        logFd = uv_fs_open(NULL, &req, logFileName, O_WRONLY | O_CREAT | O_APPEND, 0644, NULL);
         uv_fs_req_cleanup(&req);
         if (logFd < 0) {
-            logError("could not open %s to append: %s\n", logFileName,
-                     uv_strerror((int)logFd));
+            logError("could not open %s to append: %s\n", logFileName, uv_strerror((int)logFd));
             logFd = -1;
         }
     }
@@ -579,10 +577,8 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                                const uv_buf_t *buf,
                                const struct sockaddr *addr,
                                unsigned flags);
-static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
-                                       uv_buf_t *buf);
-static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
-                            uv_buf_t *buf);
+static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
+static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 
 /* libuv signal handler callback */
 static void signal_cb(uv_signal_t *handle, int signum)
@@ -672,8 +668,7 @@ static void startServerListening(ServerInfo *srv)
             umask(old_umask);
 
         if (ret != 0) {
-            logError("uv_pipe_bind() failed for %s: %s\n",
-                srv->fromHost, uv_strerror(ret));
+            logError("uv_pipe_bind() failed for %s: %s\n", srv->fromHost, uv_strerror(ret));
             exit(1);
         }
 
@@ -702,8 +697,7 @@ static void startServerListening(ServerInfo *srv)
         /* Bind to address (libuv sets SO_REUSEADDR automatically) */
         ret = uv_tcp_bind(&srv->uv_handle.tcp, srv->fromAddrInfo->ai_addr, 0);
         if (ret != 0) {
-            logError("uv_tcp_bind() failed for %s:%d: %s\n",
-                srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
+            logError("uv_tcp_bind() failed for %s:%d: %s\n", srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
             exit(1);
         }
 
@@ -732,8 +726,7 @@ static void startServerListening(ServerInfo *srv)
         /* Bind to address with SO_REUSEADDR */
         ret = uv_udp_bind(&srv->uv_handle.udp, srv->fromAddrInfo->ai_addr, UV_UDP_REUSEADDR);
         if (ret != 0) {
-            logError("uv_udp_bind() failed for %s:%d: %s\n",
-                srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
+            logError("uv_udp_bind() failed for %s:%d: %s\n", srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
             exit(1);
         }
 
