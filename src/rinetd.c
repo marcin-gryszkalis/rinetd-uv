@@ -172,17 +172,15 @@ int main(int argc, char *argv[])
         }
         forked = 1;
 #elif HAVE_FORK
-        if (fork() != 0) {
+        if (fork() != 0)
             exit(0);
-        }
         forked = 1;
 #endif
     }
 
     readConfiguration(options.conf_file);
-    if (pidLogFileName || !options.foreground) {
+    if (pidLogFileName || !options.foreground)
         registerPID(pidLogFileName ? pidLogFileName : RINETD_PID_FILE);
-    }
 
     /* Initialize libuv event loop */
     main_loop = uv_default_loop();
@@ -213,9 +211,8 @@ int main(int argc, char *argv[])
     init_udp_hash_table();
 
     /* Start libuv event handling for all servers */
-    for (int i = 0; i < seTotal; ++i) {
+    for (int i = 0; i < seTotal; ++i)
         startServerListening(&seInfo[i]);
-    }
 
     logInfo("starting redirections...\n");
 
@@ -317,9 +314,8 @@ void logDebug(char const *fmt, ...)
 static void clearConfiguration(void)
 {
     /* Remove server references from all active connections */
-    for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next) {
+    for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next)
         cnx->server = NULL;
-    }
     /* Close existing server libuv handles and sockets. */
     int any_handles_to_close = 0;
     for (int i = 0; i < seTotal; ++i) {
@@ -365,17 +361,15 @@ static void clearConfiguration(void)
             config_reload_pending = 0;
             readConfiguration(options.conf_file);
             /* Start new servers listening */
-            for (int i = 0; i < seTotal; ++i) {
+            for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
-            }
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
     /* Otherwise, seInfo will be freed in server_handle_close_cb after all handles close */
     /* Forget existing rules. */
-    for (int i = 0; i < allRulesCount; ++i) {
+    for (int i = 0; i < allRulesCount; ++i)
         free(allRules[i].pattern);
-    }
     /* Free memory associated with previous set. */
     free(allRules);
     allRules = NULL;
@@ -446,9 +440,8 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         char *path = NULL;
         int is_abstract = 0;
 
-        if (parseUnixSocketPath(bindAddress, &path, &is_abstract) != 0) {
+        if (parseUnixSocketPath(bindAddress, &path, &is_abstract) != 0)
             exit(1);
-        }
         if (validateUnixSocketPath(path, is_abstract) != 0) {
             free(path);
             exit(1);
@@ -462,9 +455,8 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         /* Resolve bind address */
         struct addrinfo *ai;
         int ret = getAddrInfoWithProto(bindAddress, bindPort, bindProtocol, &ai);
-        if (ret != 0) {
+        if (ret != 0)
             exit(1);
-        }
         si.fromAddrInfo = ai;
         si.handle_type = (bindProtocol == IPPROTO_TCP) ? UV_TCP : UV_UDP;
     }
@@ -558,9 +550,8 @@ static ConnectionInfo *allocateConnection(void)
     /* Add to doubly-linked list (head insertion) */
     cnx->prev = NULL;
     cnx->next = connectionListHead;
-    if (connectionListHead) {
+    if (connectionListHead)
         connectionListHead->prev = cnx;
-    }
     connectionListHead = cnx;
 
     activeConnections++;
@@ -571,9 +562,8 @@ static ConnectionInfo *allocateConnection(void)
 /* Cache server info for logging - survives server reload/removal */
 static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv)
 {
-    if (!cnx || !srv) {
+    if (!cnx || !srv)
         return;
-    }
 
     cnx->log_fromHost = strdup(srv->fromHost);
     cnx->log_fromPort = srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0;
@@ -641,9 +631,8 @@ static size_t prepareAbstractSocketName(const char *path, char *name_buf)
 /* Initialize and start libuv event handling for a server */
 static void startServerListening(ServerInfo *srv)
 {
-    if (srv->handle_initialized) {
+    if (srv->handle_initialized)
         return;  /* Already initialized */
-    }
 
     int ret;
 
@@ -657,16 +646,14 @@ static void startServerListening(ServerInfo *srv)
         srv->uv_handle.pipe.data = srv;
 
         /* For filesystem sockets, remove any existing socket file */
-        if (!srv->fromIsAbstract && srv->fromUnixPath) {
+        if (!srv->fromIsAbstract && srv->fromUnixPath)
             unlink(srv->fromUnixPath);
-        }
 
         /* Bind to Unix socket path */
         /* Set umask before bind to avoid race condition with chmod */
         mode_t old_umask = 0;
-        if (srv->socketMode != 0) {
+        if (srv->socketMode != 0)
             old_umask = umask(~srv->socketMode & 0777);
-        }
 
         if (srv->fromIsAbstract) {
             char abstract_name[UNIX_PATH_MAX + 2];
@@ -682,9 +669,8 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Restore umask immediately after bind */
-        if (srv->socketMode != 0) {
+        if (srv->socketMode != 0)
             umask(old_umask);
-        }
 
         if (ret != 0) {
             logError("uv_pipe_bind() failed for %s: %s\n",
@@ -794,9 +780,8 @@ static void startServerListening(ServerInfo *srv)
 /* Check if all server handles and DNS timers are closed - if so, free seInfo and reload */
 static void check_all_servers_closed(void)
 {
-    if (!seInfo) {
+    if (!seInfo)
         return;  /* Already freed */
-    }
 
     int all_closed = 1;
     for (int i = 0; i < seTotal; ++i) {
@@ -822,9 +807,8 @@ static void check_all_servers_closed(void)
             config_reload_pending = 0;
             readConfiguration(options.conf_file);
             /* Start new servers listening */
-            for (int i = 0; i < seTotal; ++i) {
+            for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
-            }
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
@@ -833,9 +817,8 @@ static void check_all_servers_closed(void)
 /* DNS timer close callback - called when DNS timer is fully closed */
 static void dns_timer_close_cb(uv_handle_t *handle)
 {
-    if (!handle || !handle->data) {
+    if (!handle || !handle->data)
         return;
-    }
 
     ServerInfo *srv = (ServerInfo*)handle->data;
     srv->dns_timer_initialized = 0;
@@ -848,9 +831,8 @@ static void dns_timer_close_cb(uv_handle_t *handle)
 /* Server handle close callback - frees server resources */
 static void server_handle_close_cb(uv_handle_t *handle)
 {
-    if (!handle || !handle->data) {
+    if (!handle || !handle->data)
         return;
-    }
 
     ServerInfo *srv = (ServerInfo*)handle->data;
 
@@ -880,9 +862,8 @@ static void server_handle_close_cb(uv_handle_t *handle)
     srv->toPort_saved = NULL;
 
     /* For filesystem Unix sockets, unlink the socket file */
-    if (srv->fromUnixPath && !srv->fromIsAbstract) {
+    if (srv->fromUnixPath && !srv->fromIsAbstract)
         unlink(srv->fromUnixPath);
-    }
 
     /* Free server resources */
     free(srv->fromHost);
@@ -989,9 +970,8 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     logEvent(cnx, cnx->server, logOpened);
 
     /* Reset failure counter on successful connection */
-    if (cnx->server) {
+    if (cnx->server)
         ((ServerInfo *)cnx->server)->consecutive_failures = 0;
-    }
 }
 
 /* TCP server accept callback */
@@ -1004,9 +984,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     ServerInfo *srv = (ServerInfo*)server->data;
     ConnectionInfo *cnx = allocateConnection();
-    if (!cnx) {
+    if (!cnx)
         return;
-    }
 
     /* Initialize remote handle (client connection) */
     uv_tcp_init(main_loop, &cnx->remote_uv_handle.tcp);
@@ -1212,9 +1191,8 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     logEvent(cnx, cnx->server, logOpened);
 
     /* Reset failure counter on successful connection */
-    if (cnx->server) {
+    if (cnx->server)
         ((ServerInfo *)cnx->server)->consecutive_failures = 0;
-    }
 }
 
 /* Unix server accept callback */
@@ -1227,9 +1205,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 
     ServerInfo *srv = (ServerInfo*)server->data;
     ConnectionInfo *cnx = allocateConnection();
-    if (!cnx) {
+    if (!cnx)
         return;
-    }
 
     /* Initialize remote handle (client connection) - it's a Unix pipe */
     uv_pipe_init(main_loop, &cnx->remote_uv_handle.pipe, 0);
@@ -1326,9 +1303,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         if (srv->sourceAddrInfo) {
             ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
                               srv->sourceAddrInfo->ai_addr, 0);
-            if (ret != 0) {
+            if (ret != 0)
                 logError("bind (source) error: %s\n", uv_strerror(ret));
-            }
         }
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
@@ -1423,21 +1399,18 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 
     if (nread < 0) {
         /* Error or EOF - free buffer and close */
-        if (buf->base) {
+        if (buf->base)
             free(buf->base);
-        }
-        if (nread != UV_EOF) {
+        if (nread != UV_EOF)
             logError("read error: %s\n", uv_strerror((int)nread));
-        }
         handleClose(cnx, socket, other_socket);
         return;
     }
 
     if (nread == 0) {
         /* EAGAIN - free buffer and try again later */
-        if (buf->base) {
+        if (buf->base)
             free(buf->base);
-        }
         return;
     }
 
@@ -1523,9 +1496,8 @@ static void tcp_write_cb(uv_write_t *req, int status)
 static void handle_close_cb(uv_handle_t *handle)
 {
     /* Called after handle fully closed */
-    if (!handle || !handle->data) {
+    if (!handle || !handle->data)
         return;
-    }
 
     ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
 
@@ -1555,9 +1527,8 @@ static void handle_close_cb(uv_handle_t *handle)
         } else {
             connectionListHead = cnx->next;
         }
-        if (cnx->next) {
+        if (cnx->next)
             cnx->next->prev = cnx->prev;
-        }
 
         activeConnections--;
 
@@ -1813,9 +1784,8 @@ static void hash_remove_udp_connection(ConnectionInfo *conn)
 
     /* Find and remove from bucket chain */
     ConnectionInfo **pp = &udp_hash_table->buckets[hash];
-    while (*pp && *pp != conn) {
+    while (*pp && *pp != conn)
         pp = &(*pp)->hash_next;
-    }
     if (*pp) {
         *pp = conn->hash_next;
         conn->hash_next = NULL;
@@ -1885,9 +1855,8 @@ static void close_oldest_udp_connection(ServerInfo *srv)
     /* O(1) - just get tail of LRU list */
     ConnectionInfo *oldest = srv->udp_lru_tail;
 
-    if (oldest && !oldest->coClosing) {
+    if (oldest && !oldest->coClosing)
         handleClose(oldest, &oldest->remote, &oldest->local);
-    }
 }
 
 /* UDP timeout callback */
@@ -2000,9 +1969,8 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         } else {
             connectionListHead = cnx->next;
         }
-        if (cnx->next) {
+        if (cnx->next)
             cnx->next->prev = cnx->prev;
-        }
         activeConnections--;
         free(cnx);
         return;
@@ -2102,9 +2070,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
             lru_remove(srv, cnx);
 
             /* Decrement counter */
-            if (srv->udp_connection_count > 0) {
+            if (srv->udp_connection_count > 0)
                 srv->udp_connection_count--;
-            }
         }
     }
 
@@ -2213,9 +2180,8 @@ static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, Serve
             }
         }
     }
-    if (!good) {
+    if (!good)
         return logNotAllowed;
-    }
     /* 2. Check global deny rules. If it matches
         any of the global deny rules, kick it out. */
     for (int j = 0; j < globalRulesCount; ++j) {
@@ -2238,9 +2204,8 @@ static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, Serve
             }
         }
     }
-    if (!good) {
+    if (!good)
         return logNotAllowed;
-    }
     /* 4. Check deny rules specific to this forwarding rule. If
         it matches any of the deny rules, kick it out. */
     for (int j = 0; j < srv->rulesCount; ++j) {
@@ -2264,9 +2229,8 @@ RETSIGTYPE hup(int s)
     (void)s;
 
     /* Ignore if reload is already in progress */
-    if (config_reload_pending) {
+    if (config_reload_pending)
         return;
-    }
 
     logInfo("received SIGHUP, reloading configuration...\n");
     /* Set flag - readConfiguration() will be called after all handles close */
@@ -2326,9 +2290,8 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
     char addressText[NI_MAXHOST] = { '?' };
     struct tm *t = get_gmtoff(&timz);
     char sign = (timz < 0 ? '-' : '+');
-    if (timz < 0) {
+    if (timz < 0)
         timz = -timz;
-    }
     strftime(tstr, sizeof(tstr), "%Y-%m-%dT%H:%M:%S", t);
 
     int64_t bytesOut = 0, bytesIn = 0;
@@ -2425,14 +2388,12 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
 
 static void log_write_cb(uv_fs_t *req)
 {
-    if (req->result < 0) {
+    if (req->result < 0)
         logError("Async log write failed: %s\n", uv_strerror((int)req->result));
-    }
 
     /* Free the buffer stored in req->data */
-    if (req->data) {
+    if (req->data)
         free(req->data);
-    }
 
     uv_fs_req_cleanup(req);
     free(req);

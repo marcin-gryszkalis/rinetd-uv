@@ -397,7 +397,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 241
+#line 237
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -411,7 +411,7 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 214
+#line 210
   
     logError("invalid syntax at line %d: %s\n",
             yy->currentLine, yytext);
@@ -429,7 +429,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 209
+#line 205
   
     parseInclude(yytext, yy);
 ;
@@ -445,7 +445,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 200
+#line 196
   
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
@@ -465,7 +465,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_buffersize\n"));
   {
-#line 190
+#line 186
   
     bufferSize = atoi(yytext);
     if (bufferSize < 1024 || bufferSize > 1048576) {
@@ -486,7 +486,7 @@ YY_ACTION(void) yy_1_logcommon(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logcommon\n"));
   {
-#line 185
+#line 181
   
     logFormatCommon = 1;
 ;
@@ -502,12 +502,11 @@ YY_ACTION(void) yy_1_pidfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pidfile\n"));
   {
-#line 177
+#line 174
   
     pidLogFileName = stripQuotes(yytext);
-    if (!pidLogFileName) {
+    if (!pidLogFileName)
         MEMORY_ERROR;
-    }
 ;
   }
 #undef yythunkpos
@@ -521,12 +520,11 @@ YY_ACTION(void) yy_1_logfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logfile\n"));
   {
-#line 169
+#line 167
   
     logFileName = stripQuotes(yytext);
-    if (!logFileName) {
+    if (!logFileName)
         MEMORY_ERROR;
-    }
 ;
   }
 #undef yythunkpos
@@ -540,7 +538,7 @@ YY_ACTION(void) yy_1_auth_key(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_key\n"));
   {
-#line 166
+#line 164
    yy->isAuthAllow = (yytext[0] == 'a'); ;
   }
 #undef yythunkpos
@@ -558,13 +556,11 @@ YY_ACTION(void) yy_1_auth_rule(yycontext *yy, char *yytext, int yyleng)
   
     allRules = (Rule *)
         realloc(allRules, sizeof(Rule) * (allRulesCount + 1));
-    if (!allRules) {
+    if (!allRules)
         MEMORY_ERROR;
-    }
     allRules[allRulesCount].pattern = strdup(yytext);
-    if (!allRules[allRulesCount].pattern) {
+    if (!allRules[allRulesCount].pattern)
         MEMORY_ERROR;
-    }
     allRules[allRulesCount].type = yy->isAuthAllow ? allowRule : denyRule;
     if (seTotal > 0) {
         if (seInfo[seTotal - 1].rulesStart == 0 && seInfo[seTotal - 1].rulesCount == 0) {
@@ -1868,7 +1864,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 245 "parse.peg"
+#line 241 "parse.peg"
 
 
 /* Utility functions for include directive support */
@@ -1891,9 +1887,8 @@ static void addIncludedFile(yycontext *ctx, char const *canonical_path)
     if (ctx->includedFilesCount >= ctx->includedFilesCapacity) {
         int new_capacity = ctx->includedFilesCapacity == 0 ? 16 : ctx->includedFilesCapacity * 2;
         char **new_array = realloc(ctx->includedFiles, new_capacity * sizeof(char*));
-        if (!new_array) {
+        if (!new_array)
             MEMORY_ERROR;
-        }
         ctx->includedFiles = new_array;
         ctx->includedFilesCapacity = new_capacity;
     }
@@ -1920,9 +1915,8 @@ static char *stripQuotes(char const *str)
 static char *resolveIncludePath(char const *pattern, char const *current_file)
 {
     /* If absolute path, return as-is */
-    if (pattern[0] == '/') {
+    if (pattern[0] == '/')
         return strdup(pattern);
-    }
 
     /* Extract directory from current_file */
     char *dir = strdup(current_file);
@@ -1947,9 +1941,8 @@ static char *resolveIncludePath(char const *pattern, char const *current_file)
 /* Free included files list */
 static void freeIncludedFiles(yycontext *ctx)
 {
-    for (int i = 0; i < ctx->includedFilesCount; i++) {
+    for (int i = 0; i < ctx->includedFilesCount; i++)
         free(ctx->includedFiles[i]);
-    }
     free(ctx->includedFiles);
     ctx->includedFiles = NULL;
     ctx->includedFilesCount = 0;
@@ -2007,9 +2000,8 @@ void parseInclude(char const *pattern, yycontext *ctx)
             PARSE_ERROR;
         }
 
-        if (S_ISDIR(st.st_mode)) {
+        if (S_ISDIR(st.st_mode))
             continue;  /* Skip directories silently */
-        }
 
         /* Check for circular includes */
         char *canonical = realpath(file, NULL);

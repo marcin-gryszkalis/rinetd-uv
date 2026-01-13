@@ -144,13 +144,11 @@ auth-rule  =  auth-key - < pattern >
 {
     allRules = (Rule *)
         realloc(allRules, sizeof(Rule) * (allRulesCount + 1));
-    if (!allRules) {
+    if (!allRules)
         MEMORY_ERROR;
-    }
     allRules[allRulesCount].pattern = strdup(yytext);
-    if (!allRules[allRulesCount].pattern) {
+    if (!allRules[allRulesCount].pattern)
         MEMORY_ERROR;
-    }
     allRules[allRulesCount].type = yy->isAuthAllow ? allowRule : denyRule;
     if (seTotal > 0) {
         if (seInfo[seTotal - 1].rulesStart == 0 && seInfo[seTotal - 1].rulesCount == 0) {
@@ -168,17 +166,15 @@ auth-key = < ("allow" | "deny") >         { yy->isAuthAllow = (yytext[0] == 'a')
 logfile  =  "logfile" - < filename >
 {
     logFileName = stripQuotes(yytext);
-    if (!logFileName) {
+    if (!logFileName)
         MEMORY_ERROR;
-    }
 }
 
 pidfile  =  "pidfile" - < filename >
 {
     pidLogFileName = stripQuotes(yytext);
-    if (!pidLogFileName) {
+    if (!pidLogFileName)
         MEMORY_ERROR;
-    }
 }
 
 logcommon  =  "logcommon"
@@ -264,9 +260,8 @@ static void addIncludedFile(yycontext *ctx, char const *canonical_path)
     if (ctx->includedFilesCount >= ctx->includedFilesCapacity) {
         int new_capacity = ctx->includedFilesCapacity == 0 ? 16 : ctx->includedFilesCapacity * 2;
         char **new_array = realloc(ctx->includedFiles, new_capacity * sizeof(char*));
-        if (!new_array) {
+        if (!new_array)
             MEMORY_ERROR;
-        }
         ctx->includedFiles = new_array;
         ctx->includedFilesCapacity = new_capacity;
     }
@@ -293,9 +288,8 @@ static char *stripQuotes(char const *str)
 static char *resolveIncludePath(char const *pattern, char const *current_file)
 {
     /* If absolute path, return as-is */
-    if (pattern[0] == '/') {
+    if (pattern[0] == '/')
         return strdup(pattern);
-    }
 
     /* Extract directory from current_file */
     char *dir = strdup(current_file);
@@ -320,9 +314,8 @@ static char *resolveIncludePath(char const *pattern, char const *current_file)
 /* Free included files list */
 static void freeIncludedFiles(yycontext *ctx)
 {
-    for (int i = 0; i < ctx->includedFilesCount; i++) {
+    for (int i = 0; i < ctx->includedFilesCount; i++)
         free(ctx->includedFiles[i]);
-    }
     free(ctx->includedFiles);
     ctx->includedFiles = NULL;
     ctx->includedFilesCount = 0;
@@ -380,9 +373,8 @@ void parseInclude(char const *pattern, yycontext *ctx)
             PARSE_ERROR;
         }
 
-        if (S_ISDIR(st.st_mode)) {
+        if (S_ISDIR(st.st_mode))
             continue;  /* Skip directories silently */
-        }
 
         /* Check for circular includes */
         char *canonical = realpath(file, NULL);
