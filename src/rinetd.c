@@ -1985,13 +1985,33 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         return;
     }
 
-    /* Setup UDP-specific connection state (allocateConnection already initialized most fields) */
+    /* Setup minimal state needed for rule check */
+    cnx->remoteAddress = *(struct sockaddr_storage*)addr;
+    cnx->server = srv;
+
+    int logCode = checkConnectionAllowed(cnx);
+    if (logCode != logAllowed) {
+        logEvent(cnx, srv, logCode);
+        free(buf->base);
+        /* No handles initialized yet, just remove from list and free */
+        if (cnx->prev) {
+            cnx->prev->next = cnx->next;
+        } else {
+            connectionListHead = cnx->next;
+        }
+        if (cnx->next) {
+            cnx->next->prev = cnx->prev;
+        }
+        activeConnections--;
+        free(cnx);
+        return;
+    }
+
+    /* Connection allowed - continue with full setup */
     cnx->remote.fd = server_fd;
     cnx->remote.family = srv->fromAddrInfo->ai_family;
     cnx->remote.protocol = IPPROTO_UDP;
-    cnx->remoteAddress = *(struct sockaddr_storage*)addr;
     cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
-    cnx->server = srv;
     cacheServerInfoForLogging(cnx, srv);
 
     /* Remote handle shared with server (don't initialize separate handle) */
@@ -2008,18 +2028,6 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         return;
     }
     cnx->timer_initialized = 1;
-
-    /* Check access rules */
-    int logCode = checkConnectionAllowed(cnx);
-    if (logCode != logAllowed) {
-        uv_timer_stop(&cnx->timeout_timer);
-        cnx->timer_closing = 1;  /* Set BEFORE uv_close() */
-        uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
-        cnx->timer_initialized = 0;
-        logEvent(cnx, srv, logCode);
-        free(buf->base);
-        return;
-    }
 
     /* Create local UDP socket for backend */
     uv_udp_init(main_loop, &cnx->local_uv_handle.udp);
@@ -2375,7 +2383,7 @@ static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int resul
                 referrer, and server name information. */
             len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
                            "%s - - "
-                           "[%s %c%.2d%.2d] "
+                           "[%s%c%.2d%.2d] "
                            "\"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" "
                            "200 %llu - - - %llu\n",
                            addressText, tstr, sign, timz / 60, timz % 60, fromHost,
