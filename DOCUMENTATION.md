@@ -574,7 +574,7 @@ Thanks are due to Bill Davidsen, Libor Pechachek, Sascha Ziemann, the Apache Gro
 
 ## LLM
 
-This implementation was created with support of assorted LLM agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was reviewed by human.
+This implementation was created with support of assorted LLM agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was always reviewed by human.
 
 ## SEE ALSO
 
