@@ -23,6 +23,7 @@
 #   include <netdb.h>
 #   include <netinet/in.h>
 #   include <arpa/inet.h>
+#   include <unistd.h>
 #endif
 
 #include <stdint.h>
@@ -31,9 +32,7 @@
 #   include <errno.h>
 #endif
 
-#if defined HAVE_UNISTD_H
-#   include <unistd.h>
-#endif
+/* unistd.h is included in the non-Windows block above for close() */
 
 /* We've got to get FIONBIO from somewhere. Try the Solaris location
     if it isn't defined yet by the above includes. */
