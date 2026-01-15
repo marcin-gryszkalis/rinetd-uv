@@ -48,6 +48,11 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     if listen_proto == "udp" and chunk_size == 1 and size > 1024:
         pytest.skip("UDP with 1-byte chunks is too slow for large sizes")
 
+    # UDP has a maximum datagram size (65535 total, ~65507 payload)
+    if listen_proto == "udp" and chunk_size > 65507:
+        chunk_size = 65507
+
+
     # Setup rinetd ports/paths
     listen_port = None
     listen_path = None
