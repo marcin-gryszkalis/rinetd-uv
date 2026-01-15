@@ -22,6 +22,9 @@ static int const RINETD_DEFAULT_DNS_REFRESH_PERIOD = 600;
 static int const RINETD_MAX_UDP_CONNECTIONS = 5000;
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
 static int const RINETD_LOG_BUFFER_SIZE = 2048;
+static int const RINETD_DEFAULT_POOL_MIN_FREE = 64;
+static int const RINETD_DEFAULT_POOL_MAX_FREE = 1024;
+static int const RINETD_DEFAULT_POOL_TRIM_DELAY = 60000;
 
 #define RINETD_CONFIG_FILE "/etc/rinetd-uv.conf"
 #define RINETD_PID_FILE "/var/run/rinetd-uv.pid"
@@ -42,6 +45,9 @@ extern int logFormatCommon;
 extern uv_file logFd;
 extern int bufferSize;
 extern int globalDnsRefreshPeriod;
+extern int poolMinFree;
+extern int poolMaxFree;
+extern int poolTrimDelay;
 
 /* libuv event loop */
 extern uv_loop_t *main_loop;

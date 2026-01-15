@@ -5,20 +5,21 @@
  * Complete rewrite using libuv event loop (replacing select()-based I/O)
  * Renamed to rinetd-uv to distinguish from original implementation
  * Configurable buffer sizes (1 KB to 1 MB, default 64 KB)
+ * Configurable buffer pool for optimal memory allocation strategies
  * Zero-copy buffer forwarding for improved performance
- * Removed malloc+memcpy overhead in UDP receive paths
  * Comprehensive code cleanup: removed unused functions and legacy code
  * Fixed SIGPIPE handling via libuv
  * Updated documentation: single-source markdown with auto-generated man page and HTML
  * Backward compatible with original rinetd configuration files
  * Modern C99 codebase with improved error handling
+ * Large test suite covering many different scenarios
  * **Include directive support:**
    - New `include` directive allows splitting configuration across multiple files
    - Supports wildcard patterns (e.g., `include conf.d/*.conf`)
    - Relative paths resolved from current config file's directory
  * **UDP improvements:**
    - Reduced default UDP timeout from 72s to 10s to prevent FD exhaustion
-   - Added connection limit of 1000 UDP connections per forwarding rule
+   - Added connection limit of 5000 UDP connections per forwarding rule
    - Implemented LRU (Least Recently Used) eviction when limit reached
    - Prevents "too many open files" errors under high UDP load
    - Maintains RFC 5452 compliance (source port randomization for DNS security)

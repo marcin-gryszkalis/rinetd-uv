@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-13" />
+  <meta name="dcterms.date" content="2026-01-15" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-13</p>
+<p class="date">2026-01-15</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -407,6 +407,67 @@ for all forwarding rules with backend hostnames:</p>
 by a per-rule <code>[dns-refresh=N]</code> option. See the <strong>DNS
 Refresh Option</strong> section under <strong>FORWARDING
 OPTIONS</strong> for detailed documentation and examples.</p>
+<h3 id="buffer-pool">Buffer Pool</h3>
+<p><strong>rinetd-uv</strong> uses a dynamic buffer pool to reduce
+memory allocation overhead. The pool maintains pre-allocated buffers and
+lazily trims excess memory after burst traffic subsides.</p>
+<pre><code>pool-min-free 64
+pool-max-free 1024
+pool-trim-delay 60000</code></pre>
+<dl>
+<dt><strong>pool-min-free</strong></dt>
+<dd>
+Minimum number of buffers to keep in the pool. The pool will not shrink
+below this level.
+</dd>
+<dd>
+<strong>Range:</strong> 0 to 10000
+</dd>
+<dd>
+<strong>Default:</strong> 64
+</dd>
+<dt><strong>pool-max-free</strong></dt>
+<dd>
+Maximum number of buffers in the pool. When returning a buffer to the
+pool and this limit is reached, the buffer is freed immediately instead
+of being pooled.
+</dd>
+<dd>
+<strong>Range:</strong> 1 to 100000
+</dd>
+<dd>
+<strong>Default:</strong> 1024
+</dd>
+<dt><strong>pool-trim-delay</strong></dt>
+<dd>
+Milliseconds the pool must remain oversized (above
+<code>pool-min-free</code>) before excess buffers are trimmed. This
+prevents aggressive memory churn during burst traffic.
+</dd>
+<dd>
+<strong>Range:</strong> 100 to 300000 (100 ms to 5 minutes)
+</dd>
+<dd>
+<strong>Default:</strong> 60000 (60 seconds)
+</dd>
+</dl>
+<p><strong>Memory Behavior:</strong> - When traffic starts, buffers are
+allocated from the pool (or via <code>malloc()</code> if the pool is
+empty) - When traffic ends, buffers are returned to the pool up to
+<code>pool-max-free</code> - If the pool remains oversized for
+<code>pool-trim-delay</code> milliseconds, excess buffers are freed -
+Pool warming pre-allocates <code>pool-min-free</code> buffers at startup
+for consistent initial performance</p>
+<p><strong>Recommendations:</strong> - <strong>Low traffic
+servers:</strong> <code>pool-min-free 16</code>
+<code>pool-max-free 128</code> - Reduces idle memory usage -
+<strong>Burst traffic servers:</strong> <code>pool-min-free 64</code>
+<code>pool-max-free 2048</code> - Handles bursts without thrashing -
+<strong>High traffic servers:</strong> <code>pool-min-free 256</code>
+<code>pool-max-free 4096</code> - Pre-allocated capacity for sustained
+load - <strong>Memory-constrained:</strong>
+<code>pool-max-free 64</code> <code>pool-trim-delay 10000</code> -
+Aggressive memory reclamation</p>
 <h3 id="logging">Logging</h3>
 <p><strong>rinetd-uv</strong> is able to produce a log file in either of
 two formats: tab-delimited and web server-style “common log format”.</p>
@@ -557,6 +618,14 @@ pidfile /var/run/rinetd-uv.pid
 # Smaller values reduce memory usage and latency, larger values improve throughput
 buffersize 65536  # 64KB is the default
 
+# Buffer pool configuration (reduces allocation overhead)
+# Min buffers to keep (0-10000, default: 64)
+pool-min-free 64
+# Max buffers before trimming (1-100000, default: 1024)
+pool-max-free 1024
+# Time before freeing excess, in milliseconds (100-300000, default: 60000)
+pool-trim-delay 60000
+
 # DNS refresh interval (default: 600 seconds = 10 minutes)
 # Automatically re-resolves backend hostnames at specified intervals
 # Set to 0 to disable, or override per-rule with [dns-refresh=N]
@@ -605,22 +674,22 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb29"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
-<p>Or simply:</p>
 <div class="sourceCode" id="cb30"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<p>Or simply:</p>
+<div class="sourceCode" id="cb31"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="run-with-docker">RUN WITH DOCKER</h2>
 <p>There’s simple <code>Dockerfile</code> provided to create working
 docker image with <strong>rinetd-uv</strong> built from sources (HEAD).
 Image is based on Debian Linux. Thanks to using <code>-slim</code> base
 image and 2-stage build final image size shouldn’t exceed 100MB.</p>
 <p>Build the image:</p>
-<div class="sourceCode" id="cb31"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span></code></pre></div>
-<p>Example run:</p>
 <div class="sourceCode" id="cb32"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span></code></pre></div>
+<p>Example run:</p>
+<div class="sourceCode" id="cb33"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple
@@ -648,8 +717,8 @@ receiving slowly.</p>
 <ul>
 <li>logging format and behavior changed slightly: date is in the iso8601
 format (yyyy-mm-ddThh:mm:ss+tz:tz), for every connection 2 lines are
-logged - one with ‘open’ result and one with ‘done-’ result (which
-contain valid values for transferred data sizes)</li>
+logged - one with ‘open’ result and one with ‘done-’ result (this entry
+contains valid values for transferred data sizes)</li>
 <li><code>pidlogfile</code> option was renamed to
 <code>pidfile</code></li>
 <li>original rinetd mentioned possibility to proxy traffic between
@@ -662,17 +731,22 @@ it’s not possible due to fundamental protocol incompatibilities. See
 excellent performance characteristics:</p>
 <ul>
 <li>Single-process, event-driven architecture</li>
-<li>Dynamic buffer allocation with zero-copy forwarding</li>
+<li>Dynamic buffer pool with lazy trimming reduces allocation
+overhead</li>
 <li>Efficient handling of thousands of concurrent connections</li>
 <li>Low CPU overhead per connection</li>
 </ul>
-<p>Memory usage can be tuned via the <code>buffersize</code> option.
-Typical memory usage:</p>
-<pre><code>Total Memory = buffersize × concurrent_connections</code></pre>
+<p>Memory usage can be tuned via the <code>buffersize</code> and
+<code>pool-*</code> options. Typical memory usage:</p>
+<pre><code>Total Memory = bufferSize × pool-max-free  (maximum pooled buffers)
+             + bufferSize × active_connections  (in-flight data)</code></pre>
 <p>For high-performance deployments, consider: - Using larger buffer
 sizes (64 KB - 128 KB) for better throughput - Using smaller buffer
-sizes (2 KB - 8 KB) when memory is constrained - Monitoring active
-connections and adjusting buffer size accordingly</p>
+sizes (2 KB - 8 KB) when memory is constrained - Tuning
+<code>pool-min-free</code> to match typical concurrent connection count
+- Setting <code>pool-trim-delay</code> lower (10-30 seconds) for
+memory-constrained systems - Monitoring active connections and adjusting
+buffer size accordingly</p>
 <h2 id="license">LICENSE</h2>
 <p>Copyright (c) 1997, 1998, 1999, Thomas Boutell and Boutell.Com,
 Inc.</p>

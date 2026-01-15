@@ -6,6 +6,7 @@ rinetd_uv_SOURCES = rinetd.c rinetd.h \
                     parse.c parse.h \
                     match.c match.h \
                     net.c net.h \
+                    buffer_pool.c buffer_pool.h \
                     types.h
 
 BUILT_SOURCES = parse.c

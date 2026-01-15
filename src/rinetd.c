@@ -42,6 +42,7 @@
 #include "types.h"
 #include "rinetd.h"
 #include "parse.h"
+#include "buffer_pool.h"
 
 Rule *allRules = NULL;
 int allRulesCount = 0;
@@ -77,6 +78,9 @@ int logFormatCommon = 0;
 uv_file logFd = -1;
 int bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
 int globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
+int poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
+int poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
+int poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
 
 char const *logMessages[] = {
     "unknown-error",
@@ -208,6 +212,10 @@ int main(int argc, char *argv[])
 
     /* Initialize UDP hash table for O(1) connection lookup */
     init_udp_hash_table();
+
+    /* Initialize buffer pool */
+    buffer_pool_init(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
+    buffer_pool_warm();
 
     /* Start libuv event handling for all servers */
     for (int i = 0; i < seTotal; ++i)
@@ -359,6 +367,8 @@ static void clearConfiguration(void)
         if (config_reload_pending) {
             config_reload_pending = 0;
             readConfiguration(options.conf_file);
+            /* Update buffer pool config (stale buffers handled on return) */
+            buffer_pool_update_config(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
@@ -798,6 +808,8 @@ static void check_all_servers_closed(void)
         if (config_reload_pending) {
             config_reload_pending = 0;
             readConfiguration(options.conf_file);
+            /* Update buffer pool config (stale buffers handled on return) */
+            buffer_pool_update_config(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
@@ -1331,8 +1343,8 @@ static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_siz
     (void)handle;
     (void)suggested_size;
 
-    /* Allocate buffer for UDP datagrams */
-    buf->base = malloc(bufferSize);
+    /* Allocate buffer for UDP datagrams from pool */
+    buf->base = buffer_pool_alloc();
     if (!buf->base) {
         buf->len = 0;
     } else {
@@ -1347,10 +1359,10 @@ static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
     (void)handle;  /* Unused - we don't need connection info to allocate */
     (void)suggested_size;  /* Use configured bufferSize instead */
 
-    /* Allocate buffer for each read - will be freed in write callback */
-    char *buffer = (char*)malloc(bufferSize);
+    /* Allocate buffer from pool - will be freed in write callback */
+    char *buffer = buffer_pool_alloc();
     if (!buffer) {
-        logError("malloc failed for read buffer\n");
+        logError("buffer_pool_alloc failed for read buffer\n");
         buf->base = NULL;
         buf->len = 0;
         return;
@@ -1370,9 +1382,8 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 
     /* Defensive null check */
     if (!cnx) {
-        if (buf->base) {
-            free(buf->base);
-        }
+        if (buf->base)
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1392,7 +1403,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     if (nread < 0) {
         /* Error or EOF - free buffer and close */
         if (buf->base)
-            free(buf->base);
+            buffer_pool_free(buf->base, buf->len);
         if (nread != UV_EOF)
             logError("read error: %s\n", uv_strerror((int)nread));
         handleClose(cnx, socket, other_socket);
@@ -1402,7 +1413,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     if (nread == 0) {
         /* EAGAIN - free buffer and try again later */
         if (buf->base)
-            free(buf->base);
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1416,7 +1427,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 
     if (*other_closing || uv_is_closing((uv_handle_t*)other_stream)) {
         /* Other side is closing, discard this data */
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1424,22 +1435,23 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     WriteReq *wreq = (WriteReq*)malloc(sizeof(WriteReq));
     if (!wreq) {
         logError("malloc failed for WriteReq\n");
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         handleClose(cnx, socket, other_socket);
         return;
     }
 
     wreq->cnx = cnx;
-    wreq->buffer = buf->base;  /* Take ownership of buffer */
-    wreq->buffer_size = nread;
-    wreq->socket = other_socket;  /* Writing to OTHER socket */
+    wreq->buffer = buf->base;   /* Take ownership of buffer */
+    wreq->buffer_size = nread;  /* Bytes being written (for stats) */
+    wreq->alloc_size = buf->len; /* Allocated size (for pool) */
+    wreq->socket = other_socket; /* Writing to OTHER socket */
 
     /* Set up uv_write request */
     uv_buf_t wrbuf = uv_buf_init(buf->base, nread);
     int ret = uv_write(&wreq->req, other_stream, &wrbuf, 1, tcp_write_cb);
     if (ret != 0) {
         logError("uv_write error: %s\n", uv_strerror(ret));
-        free(wreq->buffer);
+        buffer_pool_free(wreq->buffer, wreq->alloc_size);
         free(wreq);
         handleClose(cnx, socket, other_socket);
         return;
@@ -1458,8 +1470,8 @@ static void tcp_write_cb(uv_write_t *req, int status)
     /* Update statistics */
     wreq->socket->totalBytesOut += wreq->buffer_size;
 
-    /* Free the buffer that was allocated in tcp_read_cb */
-    free(wreq->buffer);
+    /* Return buffer to pool */
+    buffer_pool_free(wreq->buffer, wreq->alloc_size);
 
     /* Handle write errors */
     if (status < 0) {
@@ -1548,12 +1560,12 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
                               unsigned flags);
 
 /* UDP send to backend - takes ownership of buffer */
-static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len)
+static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, int alloc_size)
 {
     /* Check if local handle is closing */
     if (cnx->local_handle_closing || !cnx->local_handle_initialized ||
         uv_is_closing((uv_handle_t*)&cnx->local_uv_handle.udp)) {
-        free(data);  /* Can't send, free the buffer */
+        buffer_pool_free(data, alloc_size);  /* Can't send, return to pool */
         return;
     }
 
@@ -1561,13 +1573,14 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len)
     UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
     if (!sreq) {
         logError("malloc failed for UdpSendReq\n");
-        free(data);
+        buffer_pool_free(data, alloc_size);
         return;
     }
 
     sreq->cnx = cnx;
-    sreq->buffer = data;  /* Take ownership */
-    sreq->buffer_size = data_len;
+    sreq->buffer = data;        /* Take ownership */
+    sreq->buffer_size = data_len; /* Bytes being sent (for stats) */
+    sreq->alloc_size = alloc_size; /* Allocated size (for pool) */
     sreq->is_to_backend = 1;
     sreq->dest_addr = *(struct sockaddr_storage*)cnx->server->toAddrInfo->ai_addr;
 
@@ -1578,23 +1591,23 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len)
                           cnx->server->toAddrInfo->ai_addr, udp_send_cb);
     if (ret != 0) {
         logError("uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
-        free(sreq->buffer);
+        buffer_pool_free(sreq->buffer, sreq->alloc_size);
         free(sreq);
     }
 }
 
 /* UDP send to client - takes ownership of buffer */
-static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len)
+static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len, int alloc_size)
 {
     ServerInfo *srv = (ServerInfo *)cnx->server;
     if (!srv) {
-        free(data);  /* Server gone, free the buffer */
+        buffer_pool_free(data, alloc_size);  /* Server gone, return to pool */
         return;
     }
 
     /* Check if server UDP handle is closing */
     if (!srv->handle_initialized || uv_is_closing((uv_handle_t*)&srv->uv_handle.udp)) {
-        free(data);  /* Can't send, free the buffer */
+        buffer_pool_free(data, alloc_size);  /* Can't send, return to pool */
         return;
     }
 
@@ -1602,13 +1615,14 @@ static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len)
     UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
     if (!sreq) {
         logError("malloc failed for UdpSendReq\n");
-        free(data);
+        buffer_pool_free(data, alloc_size);
         return;
     }
 
     sreq->cnx = cnx;
-    sreq->buffer = data;  /* Take ownership */
-    sreq->buffer_size = data_len;
+    sreq->buffer = data;        /* Take ownership */
+    sreq->buffer_size = data_len; /* Bytes being sent (for stats) */
+    sreq->alloc_size = alloc_size; /* Allocated size (for pool) */
     sreq->is_to_backend = 0;
     sreq->dest_addr = cnx->remoteAddress;
 
@@ -1619,7 +1633,7 @@ static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len)
                           (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
     if (ret != 0) {
         logError("uv_udp_send (to client) error: %s\n", uv_strerror(ret));
-        free(sreq->buffer);
+        buffer_pool_free(sreq->buffer, sreq->alloc_size);
         free(sreq);
     }
 }
@@ -1637,8 +1651,8 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
         cnx->remote.totalBytesOut += sreq->buffer_size;
     }
 
-    /* Free the buffer */
-    free(sreq->buffer);
+    /* Return buffer to pool */
+    buffer_pool_free(sreq->buffer, sreq->alloc_size);
 
     if (status < 0) {
         logError("UDP send error: %s\n", uv_strerror(status));
@@ -1869,12 +1883,14 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
 
     if (nread < 0) {
         logError("UDP local recv error: %s\n", uv_strerror((int)nread));
-        if (buf->base) free(buf->base);
+        if (buf->base)
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
     if (nread == 0) {
-        if (buf->base) free(buf->base);
+        if (buf->base)
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1884,7 +1900,7 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
     cnx->local.totalBytesIn += nread;
 
     /* Send immediately to client - udp_send_to_client takes ownership of buf->base */
-    udp_send_to_client(cnx, buf->base, (int)nread);
+    udp_send_to_client(cnx, buf->base, (int)nread, buf->len);
 }
 
 /* UDP server receive callback */
@@ -1897,12 +1913,14 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
     if (nread < 0) {
         logError("UDP server recv error: %s\n", uv_strerror((int)nread));
-        if (buf->base) free(buf->base);
+        if (buf->base)
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
     if (nread == 0 || addr == NULL) {
-        if (buf->base) free(buf->base);
+        if (buf->base)
+            buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1931,7 +1949,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         cnx->remote.totalBytesIn += nread;
 
         /* Send immediately to backend - udp_send_to_backend takes ownership of buf->base */
-        udp_send_to_backend(cnx, buf->base, (int)nread);
+        udp_send_to_backend(cnx, buf->base, (int)nread, buf->len);
         return;
     }
 
@@ -1943,7 +1961,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
     cnx = allocateConnection();
     if (!cnx) {
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -1954,7 +1972,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     int logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
         logEvent(cnx, srv, logCode);
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         /* No handles initialized yet, just remove from list and free */
         if (cnx->prev) {
             cnx->prev->next = cnx->next;
@@ -1985,7 +2003,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
                              srv->serverTimeout * 1000, 0);
     if (ret != 0) {
         logError("uv_timer_start error: %s\n", uv_strerror(ret));
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         return;
     }
     cnx->timer_initialized = 1;
@@ -2021,7 +2039,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     if (ret != 0) {
         logError("uv_udp_recv_start (local) error: %s\n", uv_strerror(ret));
         handleClose(cnx, &cnx->local, &cnx->remote);
-        free(buf->base);
+        buffer_pool_free(buf->base, buf->len);
         return;
     }
 
@@ -2029,7 +2047,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     cnx->remote.totalBytesIn += nread;
 
     /* Send initial data to backend - udp_send_to_backend takes ownership of buf->base */
-    udp_send_to_backend(cnx, buf->base, (int)nread);
+    udp_send_to_backend(cnx, buf->base, (int)nread, buf->len);
 
     logEvent(cnx, srv, logOpened);
 
@@ -2245,6 +2263,9 @@ RETSIGTYPE quit(int s)
     }
 
     logInfo("forced quit\n");
+
+    /* Shutdown buffer pool */
+    buffer_pool_shutdown();
 
     /* Clear configuration (connections will be freed when process exits) */
     clearConfiguration();

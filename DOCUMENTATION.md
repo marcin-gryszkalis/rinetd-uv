@@ -279,6 +279,43 @@ dns-refresh 600
 
 This global setting applies to all forwarding rules unless overridden by a per-rule `[dns-refresh=N]` option. See the **DNS Refresh Option** section under **FORWARDING OPTIONS** for detailed documentation and examples.
 
+### Buffer Pool
+
+**rinetd-uv** uses a dynamic buffer pool to reduce memory allocation overhead. The pool maintains pre-allocated buffers and lazily trims excess memory after burst traffic subsides.
+
+```
+pool-min-free 64
+pool-max-free 1024
+pool-trim-delay 60000
+```
+
+**pool-min-free**
+:   Minimum number of buffers to keep in the pool. The pool will not shrink below this level.
+:   **Range:** 0 to 10000
+:   **Default:** 64
+
+**pool-max-free**
+:   Maximum number of buffers in the pool. When returning a buffer to the pool and this limit is reached, the buffer is freed immediately instead of being pooled.
+:   **Range:** 1 to 100000
+:   **Default:** 1024
+
+**pool-trim-delay**
+:   Milliseconds the pool must remain oversized (above `pool-min-free`) before excess buffers are trimmed. This prevents aggressive memory churn during burst traffic.
+:   **Range:** 100 to 300000 (100 ms to 5 minutes)
+:   **Default:** 60000 (60 seconds)
+
+**Memory Behavior:**
+- When traffic starts, buffers are allocated from the pool (or via `malloc()` if the pool is empty)
+- When traffic ends, buffers are returned to the pool up to `pool-max-free`
+- If the pool remains oversized for `pool-trim-delay` milliseconds, excess buffers are freed
+- Pool warming pre-allocates `pool-min-free` buffers at startup for consistent initial performance
+
+**Recommendations:**
+- **Low traffic servers:** `pool-min-free 16` `pool-max-free 128` - Reduces idle memory usage
+- **Burst traffic servers:** `pool-min-free 64` `pool-max-free 2048` - Handles bursts without thrashing
+- **High traffic servers:** `pool-min-free 256` `pool-max-free 4096` - Pre-allocated capacity for sustained load
+- **Memory-constrained:** `pool-max-free 64` `pool-trim-delay 10000` - Aggressive memory reclamation
+
 ### Logging
 
 **rinetd-uv** is able to produce a log file in either of two formats: tab-delimited and web server-style "common log format".
@@ -435,6 +472,14 @@ pidfile /var/run/rinetd-uv.pid
 # Smaller values reduce memory usage and latency, larger values improve throughput
 buffersize 65536  # 64KB is the default
 
+# Buffer pool configuration (reduces allocation overhead)
+# Min buffers to keep (0-10000, default: 64)
+pool-min-free 64
+# Max buffers before trimming (1-100000, default: 1024)
+pool-max-free 1024
+# Time before freeing excess, in milliseconds (100-300000, default: 60000)
+pool-trim-delay 60000
+
 # DNS refresh interval (default: 600 seconds = 10 minutes)
 # Automatically re-resolves backend hostnames at specified intervals
 # Set to 0 to disable, or override per-rule with [dns-refresh=N]
@@ -525,7 +570,7 @@ Two rules with the same source ip/port and different destination ip/port are not
 
 **rinetd-uv** was meant as drop-in replacement for **rinetd**, although there are some differences
 
-- logging format and behavior changed slightly: date is in the iso8601 format (yyyy-mm-ddThh:mm:ss+tz:tz), for every connection 2 lines are logged - one with 'open' result and one with 'done-' result (which contain valid values for transferred data sizes)
+- logging format and behavior changed slightly: date is in the iso8601 format (yyyy-mm-ddThh:mm:ss+tz:tz), for every connection 2 lines are logged - one with 'open' result and one with 'done-' result (this entry contains valid values for transferred data sizes)
 - `pidlogfile` option was renamed to `pidfile`
 - original rinetd mentioned possibility to proxy traffic between differen protocols (UDP <-> TCP), in **rinetd-uv** it's not possible due to fundamental protocol incompatibilities. See `TCP-UDP_MIXED_MODE.md` for technical details.
 
@@ -534,18 +579,21 @@ Two rules with the same source ip/port and different destination ip/port are not
 **rinetd-uv** uses libuv for event-driven I/O, providing excellent performance characteristics:
 
 - Single-process, event-driven architecture
-- Dynamic buffer allocation with zero-copy forwarding
+- Dynamic buffer pool with lazy trimming reduces allocation overhead
 - Efficient handling of thousands of concurrent connections
 - Low CPU overhead per connection
 
-Memory usage can be tuned via the `buffersize` option. Typical memory usage:
+Memory usage can be tuned via the `buffersize` and `pool-*` options. Typical memory usage:
 ```
-Total Memory = buffersize × concurrent_connections
+Total Memory = bufferSize × pool-max-free  (maximum pooled buffers)
+             + bufferSize × active_connections  (in-flight data)
 ```
 
 For high-performance deployments, consider:
 - Using larger buffer sizes (64 KB - 128 KB) for better throughput
 - Using smaller buffer sizes (2 KB - 8 KB) when memory is constrained
+- Tuning `pool-min-free` to match typical concurrent connection count
+- Setting `pool-trim-delay` lower (10-30 seconds) for memory-constrained systems
 - Monitoring active connections and adjusting buffer size accordingly
 
 ## LICENSE

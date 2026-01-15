@@ -69,7 +69,7 @@ static char *stripQuotes(char const *str);
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | include-directive)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-spec - connect-spec (-? server-options)?
@@ -196,6 +196,33 @@ dns-refresh-global  =  "dns-refresh" - < number >
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
         logError("invalid dns-refresh value at line %d\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+pool-min-free  =  "pool-min-free" - < number >
+{
+    poolMinFree = atoi(yytext);
+    if (poolMinFree < 0 || poolMinFree > 10000) {
+        logError("invalid pool-min-free value %d at line %d (must be 0-10000)\n", poolMinFree, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+pool-max-free  =  "pool-max-free" - < number >
+{
+    poolMaxFree = atoi(yytext);
+    if (poolMaxFree < 1 || poolMaxFree > 100000) {
+        logError("invalid pool-max-free value %d at line %d (must be 1-100000)\n", poolMaxFree, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+pool-trim-delay  =  "pool-trim-delay" - < number >
+{
+    poolTrimDelay = atoi(yytext);
+    if (poolTrimDelay < 100 || poolTrimDelay > 300000) {
+        logError("invalid pool-trim-delay value %d at line %d (must be 100-300000 ms)\n", poolTrimDelay, yy->currentLine);
         PARSE_ERROR;
     }
 }
