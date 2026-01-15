@@ -36,16 +36,19 @@ def calculate_checksum(data):
     """Calculate SHA256 checksum of data."""
     return hashlib.sha256(data).hexdigest()
 
-def create_rinetd_conf(rules, filename=None):
+def create_rinetd_conf(rules, filename=None, logfile=None):
     """
     Create a rinetd configuration file.
     rules: list of strings, each representing a line in the config.
+    logfile: optional path to a log file.
     """
     if filename is None:
         fd, filename = tempfile.mkstemp(suffix='.conf', prefix='rinetd_test_')
         os.close(fd)
     
     with open(filename, 'w') as f:
+        if logfile:
+            f.write(f"logfile {logfile}\n")
         for rule in rules:
             f.write(f"{rule}\n")
             

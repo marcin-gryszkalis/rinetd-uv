@@ -73,7 +73,12 @@ def rinetd(request, rinetd_path):
     
     def _run_rinetd(rules, valgrind=False):
         nonlocal process, config_file
-        config_file = create_rinetd_conf(rules)
+        
+        # Generate a log file name based on the test name
+        test_name = request.node.name.replace("[", "_").replace("]", "_").replace("/", "_")
+        logfile = f"/tmp/{test_name}.log"
+        
+        config_file = create_rinetd_conf(rules, logfile=logfile)
         
         cmd = []
         if valgrind or request.config.getoption("--valgrind"):
