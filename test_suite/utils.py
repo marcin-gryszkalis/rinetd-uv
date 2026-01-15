@@ -151,3 +151,58 @@ def recv_until_close(sock):
         except OSError:
             break
     return b''.join(chunks)
+
+def run_transfer(listen_proto, listen_addr, size, chunk_size, seed):
+    """Run a single transfer and verify data integrity."""
+    if listen_proto == "udp":
+        data = generate_random_data(size)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(5)
+            sent_bytes = 0
+            received_data = b""
+            while sent_bytes < size:
+                to_send = min(size - sent_bytes, chunk_size)
+                s.sendto(data[sent_bytes:sent_bytes+to_send], listen_addr)
+                try:
+                    chunk, _ = s.recvfrom(65535)
+                    received_data += chunk
+                except socket.timeout:
+                    return False, "UDP timeout"
+                sent_bytes += to_send
+            
+            if received_data != data:
+                return False, "UDP data mismatch"
+            return True, None
+    else:
+        family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
+        with socket.socket(family, socket.SOCK_STREAM) as s:
+            s.settimeout(10)
+            try:
+                s.connect(listen_addr)
+            except Exception as e:
+                return False, f"Connect failed: {e}"
+            
+            import threading
+            def sender():
+                try:
+                    send_streaming(s, size, chunk_size=chunk_size, seed=seed)
+                except Exception:
+                    pass
+            
+            t = threading.Thread(target=sender)
+            t.start()
+            
+            success, msg = verify_streaming(s, size, chunk_size=chunk_size, seed=seed)
+            t.join()
+            return success, msg
+
+def run_repeated_transfers(listen_proto, listen_addr, size, chunk_size, seed, duration):
+    """Repeat transfers until duration is reached."""
+    start_time = time.time()
+    count = 0
+    while time.time() - start_time < duration:
+        success, msg = run_transfer(listen_proto, listen_addr, size, chunk_size, seed)
+        if not success:
+            return False, f"Transfer {count} failed: {msg}"
+        count += 1
+    return True, f"Completed {count} transfers"

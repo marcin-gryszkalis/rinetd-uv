@@ -34,15 +34,21 @@ CHUNK_SIZES = [
     pytest.param(65536, marks=pytest.mark.slow), # Very large
 ]
 
+# Parallelism dimension
+PARALLELISM = [1, 2, 5, 10]
+
+# Minimum duration for each test case (seconds)
+DEFAULT_DURATION = 10
 
 @pytest.mark.parametrize("listen_proto, connect_proto", PROTOCOLS)
 @pytest.mark.parametrize("size", SIZES)
 @pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+@pytest.mark.parametrize("parallelism", PARALLELISM)
 def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_server, 
-                         listen_proto, connect_proto, size, chunk_size, tmp_path):
+                         listen_proto, connect_proto, size, chunk_size, parallelism, tmp_path):
     """
     Multidimensional matrix test for data transfer.
-    Tests combinations of protocols, transfer sizes, and chunk sizes.
+    Tests combinations of protocols, transfer sizes, chunk sizes, and parallelism.
     """
     # Skip UDP with 1-byte chunks if it's too slow or problematic for UDP
     if listen_proto == "udp" and chunk_size == 1 and size > 1024:
@@ -52,14 +58,13 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     if listen_proto == "udp" and chunk_size > 65507:
         chunk_size = 65507
 
-
     # Setup rinetd ports/paths
     listen_port = None
     listen_path = None
     if listen_proto == "tcp" or listen_proto == "udp":
         listen_port = get_free_port()
     else:
-        listen_path = str(tmp_path / f"listen_{listen_proto}_{connect_proto}_{size}_{chunk_size}.sock")
+        listen_path = str(tmp_path / f"listen_{listen_proto}_{connect_proto}_{size}_{chunk_size}_{parallelism}.sock")
 
     # Setup backend info
     backend_host = "127.0.0.1"
@@ -96,47 +101,20 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
         assert os.path.exists(listen_path)
 
     # Generate random data with a seed for reproducibility
-    seed = hash((listen_proto, connect_proto, size, chunk_size)) % 2**32
+    seed = hash((listen_proto, connect_proto, size, chunk_size, parallelism)) % 2**32
     
-    if listen_proto == "udp":
-        # UDP transfer (datagram-based)
-        data = generate_random_data(size)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(5)
-            # For UDP, we send in chunks if chunk_size < size
-            # Note: rinetd-uv UDP might not reassemble packets if they are split by the client
-            # but here we are testing the forwarding of datagrams.
-            # If we send multiple datagrams, we expect multiple datagrams back.
-            sent_bytes = 0
-            received_data = b""
-            while sent_bytes < size:
-                to_send = min(size - sent_bytes, chunk_size)
-                s.sendto(data[sent_bytes:sent_bytes+to_send], ('127.0.0.1', listen_port))
-                try:
-                    chunk, _ = s.recvfrom(65535)
-                    received_data += chunk
-                except socket.timeout:
-                    break
-                sent_bytes += to_send
-            
-            assert received_data == data
-    else:
-        # Stream transfer (TCP or Unix)
-        family = socket.AF_INET if listen_port else socket.AF_UNIX
-        addr = ('127.0.0.1', listen_port) if listen_port else listen_path
+    listen_addr = ('127.0.0.1', listen_port) if listen_port else listen_path
+    
+    from .utils import run_repeated_transfers
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallelism) as executor:
+        futures = [
+            executor.submit(run_repeated_transfers, listen_proto, listen_addr, size, chunk_size, seed + i, DEFAULT_DURATION)
+            for i in range(parallelism)
+        ]
         
-        with socket.socket(family, socket.SOCK_STREAM) as s:
-            s.settimeout(10)
-            s.connect(addr)
-            
-            # Use streaming functions for better control
-            def sender():
-                send_streaming(s, size, chunk_size=chunk_size, seed=seed)
-            
-            t = threading.Thread(target=sender)
-            t.start()
-            
-            success, msg = verify_streaming(s, size, chunk_size=chunk_size, seed=seed)
-            t.join()
-            
-            assert success, msg
+        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+    failures = [r for r in results if not r[0]]
+    assert len(failures) == 0, f"Failed {len(failures)}/{parallelism} clients: {failures[:5]}"
