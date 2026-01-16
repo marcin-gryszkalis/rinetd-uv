@@ -75,16 +75,39 @@ def generate_random_string(length):
     letters = string.ascii_lowercase
     return ''.join(random.choice(letters) for i in range(length))
 
-def get_free_port():
+def ipv6_available():
+    """
+    Check if IPv6 loopback (::1) is available on this system.
+    Returns True if IPv6 can be used, False otherwise.
+    """
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('::1', 0))
+            return True
+    except (OSError, socket.error):
+        return False
+
+
+def get_free_port(ipv6=False):
     """
     Get a free port on localhost.
     Note: There's an inherent race condition between this function returning
     and the caller binding to the port. We use SO_REUSEADDR to mitigate this.
+
+    Args:
+        ipv6: If True, get a port on IPv6 loopback (::1)
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
+    if ipv6:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('::1', 0))
+            return s.getsockname()[1]
+    else:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('127.0.0.1', 0))
+            return s.getsockname()[1]
 
 def wait_for_port(port, host='127.0.0.1', timeout=5.0):
     """Wait for a port to be open."""

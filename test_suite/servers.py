@@ -72,6 +72,54 @@ class TcpEchoServer(BaseEchoServer):
         finally:
             conn.close()
 
+class TcpEchoServerIPv6(BaseEchoServer):
+    """IPv6 TCP echo server."""
+    def __init__(self, host='::1', port=0):
+        super().__init__((host, port))
+        self.host = host
+        self.port = port
+        self.actual_port = 0
+
+    def run(self):
+        try:
+            self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.sock.bind((self.host, self.port))
+            self.actual_port = self.sock.getsockname()[1]
+            self.sock.listen(100)
+            self.ready.set()
+
+            while self.running:
+                try:
+                    r, _, _ = select.select([self.sock], [], [], 0.5)
+                    if not r:
+                        continue
+
+                    conn, addr = self.sock.accept()
+                    client_thread = threading.Thread(target=self.handle_client, args=(conn,))
+                    client_thread.daemon = True
+                    client_thread.start()
+                except OSError:
+                    break
+        except Exception as e:
+            print(f"TcpEchoServerIPv6 error: {e}", file=sys.stderr)
+        finally:
+            if self.sock:
+                self.sock.close()
+
+    def handle_client(self, conn):
+        try:
+            while self.running:
+                data = conn.recv(4096)
+                if not data:
+                    break
+                conn.sendall(data)
+        except (OSError, ConnectionError, BrokenPipeError):
+            pass  # Expected when client disconnects
+        finally:
+            conn.close()
+
+
 class UdpEchoServer(BaseEchoServer):
     def __init__(self, host='127.0.0.1', port=0):
         super().__init__((host, port))

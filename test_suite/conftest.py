@@ -5,7 +5,8 @@ import subprocess
 import time
 import shutil
 import tempfile
-from .servers import TcpEchoServer, UdpEchoServer, UnixEchoServer
+from .servers import TcpEchoServer, TcpEchoServerIPv6, UdpEchoServer, UnixEchoServer
+from .utils import ipv6_available
 from .utils import create_rinetd_conf, get_free_port, wait_for_port
 
 # Add test_suite directory to path so we can import modules
@@ -43,6 +44,19 @@ def tcp_echo_server():
     server.wait_ready()
     yield server
     server.stop()
+
+
+@pytest.fixture
+def tcp_echo_server_ipv6():
+    """IPv6 TCP echo server. Skips if IPv6 unavailable."""
+    if not ipv6_available():
+        pytest.skip("IPv6 not available on this system")
+    server = TcpEchoServerIPv6()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
 
 @pytest.fixture
 def udp_echo_server():
