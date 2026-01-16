@@ -1,7 +1,44 @@
 import pytest
 import socket
 import time
+import re
+import signal
 from .utils import get_free_port, wait_for_port, generate_random_data, send_all, recv_all
+
+
+def parse_valgrind_output(stderr):
+    """
+    Parse Valgrind output and return leak information.
+    Returns dict with 'definitely_lost', 'indirectly_lost', 'possibly_lost', 'errors'.
+    """
+    result = {
+        'definitely_lost': 0,
+        'indirectly_lost': 0,
+        'possibly_lost': 0,
+        'errors': 0,
+        'raw_output': stderr
+    }
+
+    # Match "definitely lost: X bytes in Y blocks"
+    match = re.search(r'definitely lost:\s*([\d,]+)\s*bytes', stderr)
+    if match:
+        result['definitely_lost'] = int(match.group(1).replace(',', ''))
+
+    match = re.search(r'indirectly lost:\s*([\d,]+)\s*bytes', stderr)
+    if match:
+        result['indirectly_lost'] = int(match.group(1).replace(',', ''))
+
+    match = re.search(r'possibly lost:\s*([\d,]+)\s*bytes', stderr)
+    if match:
+        result['possibly_lost'] = int(match.group(1).replace(',', ''))
+
+    # Match "ERROR SUMMARY: X errors"
+    match = re.search(r'ERROR SUMMARY:\s*(\d+)\s*errors', stderr)
+    if match:
+        result['errors'] = int(match.group(1))
+
+    return result
+
 
 @pytest.mark.valgrind
 def test_memory_leaks_tcp(rinetd, tcp_echo_server, request):
@@ -9,53 +46,152 @@ def test_memory_leaks_tcp(rinetd, tcp_echo_server, request):
     Run a simple transfer test under valgrind to check for leaks.
     This test forces valgrind execution for the rinetd process.
     """
-    # Check if valgrind is available
     import shutil
     if not shutil.which("valgrind"):
         pytest.skip("valgrind not found")
 
     rinetd_port = get_free_port()
-    
+
     rules = [
         f"0.0.0.0 {rinetd_port} {tcp_echo_server.host} {tcp_echo_server.actual_port}"
     ]
-    
-    # Start rinetd with valgrind enabled explicitly
-    # The fixture handles the --valgrind flag, but we can pass it here too if we want to force it
-    # for this specific test even if not globally enabled.
-    # However, our fixture logic in conftest.py checks request.config.getoption("--valgrind")
-    # OR the valgrind arg to the function.
-    
-    # We'll use the internal function returned by the fixture
+
     proc = rinetd(rules, valgrind=True)
-    
-    assert wait_for_port(rinetd_port)
-    
-    # Do some transfers to exercise code paths
-    for _ in range(5):
+
+    assert wait_for_port(rinetd_port), "rinetd did not start"
+
+    # Exercise code paths with multiple connections
+    for i in range(10):
         with socket.create_connection(('127.0.0.1', rinetd_port), timeout=5) as s:
-            data = b"leak_check" * 100
+            data = b"leak_check_" + str(i).encode() + b"_" * 100
             s.sendall(data)
-            recv_all(s, len(data))
-            
-    # The fixture cleanup will terminate the process.
-    # If valgrind finds errors, it returns exit code 1 (due to --error-exitcode=1 in conftest),
-    # but we are terminating it.
-    # Wait, if we terminate it, valgrind might not report correctly or exit with error code?
-    # Valgrind usually reports on exit. SIGTERM should be fine for valgrind to generate report.
-    # But if we kill it, maybe not.
-    # The fixture sends terminate, then waits.
-    
-    # To properly check valgrind result, we should let it exit gracefully if possible,
-    # or rely on the exit code after termination.
-    # rinetd handles SIGTERM/SIGINT to exit cleanly?
-    # If so, valgrind will exit with the error code if leaks are found.
-    
-    # We need to verify the exit code in the fixture or here.
-    # The fixture doesn't return the exit code automatically on cleanup.
-    # But if we want to assert on it, we might need to modify the fixture or manual handling.
-    
-    # For now, let's assume if it crashes or exits with error, we'll know.
-    # But we really want to know if valgrind found leaks.
-    # The fixture could check return code after wait().
-    pass
+            received = recv_all(s, len(data))
+            assert received == data, f"Data mismatch on iteration {i}"
+
+    # Gracefully terminate rinetd to allow Valgrind to produce complete report
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()
+        proc.wait()
+
+    # Capture Valgrind output
+    stdout_output = ""
+    stderr_output = ""
+    try:
+        if proc.stdout and not proc.stdout.closed:
+            stdout_output = proc.stdout.read()
+        if proc.stderr and not proc.stderr.closed:
+            stderr_output = proc.stderr.read()
+    except ValueError:
+        pass
+
+    # Parse and verify Valgrind results
+    valgrind_result = parse_valgrind_output(stderr_output)
+
+    # Assert no memory leaks
+    assert valgrind_result['definitely_lost'] == 0, \
+        f"Valgrind found definitely lost memory: {valgrind_result['definitely_lost']} bytes\n{stderr_output}"
+    assert valgrind_result['indirectly_lost'] == 0, \
+        f"Valgrind found indirectly lost memory: {valgrind_result['indirectly_lost']} bytes\n{stderr_output}"
+    assert valgrind_result['errors'] == 0, \
+        f"Valgrind found {valgrind_result['errors']} errors\n{stderr_output}"
+
+
+@pytest.mark.valgrind
+def test_memory_leaks_udp(rinetd, udp_echo_server, request):
+    """
+    Run UDP transfer test under valgrind to check for leaks.
+    """
+    import shutil
+    if not shutil.which("valgrind"):
+        pytest.skip("valgrind not found")
+
+    rinetd_port = get_free_port()
+
+    rules = [
+        f"0.0.0.0 {rinetd_port}/udp 127.0.0.1 {udp_echo_server.actual_port}/udp"
+    ]
+
+    proc = rinetd(rules, valgrind=True)
+    # Valgrind adds significant overhead, need longer wait for UDP readiness
+    time.sleep(2)
+
+    # Exercise UDP code paths
+    for i in range(10):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(10)  # Longer timeout under Valgrind
+            data = f"udp_leak_check_{i}".encode()
+            s.sendto(data, ('127.0.0.1', rinetd_port))
+            received, _ = s.recvfrom(65535)
+            assert received == data, f"UDP data mismatch on iteration {i}"
+
+    # Gracefully terminate
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()
+        proc.wait()
+
+    stderr_output = ""
+    try:
+        if proc.stderr and not proc.stderr.closed:
+            stderr_output = proc.stderr.read()
+    except ValueError:
+        pass
+
+    valgrind_result = parse_valgrind_output(stderr_output)
+
+    assert valgrind_result['definitely_lost'] == 0, \
+        f"Valgrind found definitely lost memory: {valgrind_result['definitely_lost']} bytes\n{stderr_output}"
+    assert valgrind_result['errors'] == 0, \
+        f"Valgrind found {valgrind_result['errors']} errors\n{stderr_output}"
+
+
+@pytest.mark.valgrind
+def test_memory_leaks_rapid_connections(rinetd, tcp_echo_server, request):
+    """
+    Test for leaks under rapid connection/disconnection cycles.
+    """
+    import shutil
+    if not shutil.which("valgrind"):
+        pytest.skip("valgrind not found")
+
+    rinetd_port = get_free_port()
+
+    rules = [
+        f"0.0.0.0 {rinetd_port} {tcp_echo_server.host} {tcp_echo_server.actual_port}"
+    ]
+
+    proc = rinetd(rules, valgrind=True)
+    assert wait_for_port(rinetd_port), "rinetd did not start"
+
+    # Rapid connect/disconnect cycles to stress connection handling
+    for i in range(50):
+        try:
+            with socket.create_connection(('127.0.0.1', rinetd_port), timeout=2) as s:
+                s.sendall(b"x")
+                s.recv(1)
+        except Exception:
+            pass  # Some failures expected under load
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()
+        proc.wait()
+
+    stderr_output = ""
+    try:
+        if proc.stderr and not proc.stderr.closed:
+            stderr_output = proc.stderr.read()
+    except ValueError:
+        pass
+
+    valgrind_result = parse_valgrind_output(stderr_output)
+
+    assert valgrind_result['definitely_lost'] == 0, \
+        f"Valgrind found definitely lost memory after rapid connections: {valgrind_result['definitely_lost']} bytes\n{stderr_output}"

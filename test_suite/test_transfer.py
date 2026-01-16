@@ -147,12 +147,12 @@ def test_large_transfer(rinetd, tcp_echo_server):
         
         def sender():
             send_streaming(s, size)
-            
+
         t = threading.Thread(target=sender)
         t.start()
-        
-        success, msg = verify_streaming(s, size)
+
+        success, msg, _ = verify_streaming(s, size)
         t.join()
-        
+
         assert success, msg
 

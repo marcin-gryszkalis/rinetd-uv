@@ -62,7 +62,7 @@ def unix_echo_server(tmp_path):
     server.stop()
 
 @pytest.fixture
-def rinetd(request, rinetd_path):
+def rinetd(request, rinetd_path, tmp_path):
     """
     Fixture to run rinetd.
     Usage: rinetd(rules_list)
@@ -70,41 +70,53 @@ def rinetd(request, rinetd_path):
     """
     process = None
     config_file = None
-    
-    def _run_rinetd(rules, valgrind=False):
-        nonlocal process, config_file
-        
-        # Generate a log file name based on the test name
+    logfile_path = None
+    using_valgrind = False
+
+    def _run_rinetd(rules, valgrind=False, logfile=None):
+        nonlocal process, config_file, logfile_path, using_valgrind
+
+        # Generate a log file in tmp_path to avoid parallel test conflicts
         test_name = request.node.name.replace("[", "_").replace("]", "_").replace("/", "_")
-        logfile = f"/tmp/{test_name}.log"
-        
-        config_file = create_rinetd_conf(rules, logfile=logfile)
-        
+        if logfile:
+            logfile_path = logfile
+        else:
+            logfile_path = str(tmp_path / f"{test_name}.log")
+
+        config_file = create_rinetd_conf(rules, logfile=logfile_path)
+
         cmd = []
-        if valgrind or request.config.getoption("--valgrind"):
-            cmd.extend(["valgrind", "--leak-check=full", "--track-fds=yes", "--error-exitcode=1", "--quiet"])
-            
+        using_valgrind = valgrind or request.config.getoption("--valgrind")
+        if using_valgrind:
+            cmd.extend([
+                "valgrind",
+                "--leak-check=full",
+                "--show-leak-kinds=definite,indirect",
+                "--track-fds=yes",
+                "--error-exitcode=1",
+                "--quiet"
+            ])
+
         cmd.extend([rinetd_path, "-f", "-c", config_file])
-        
-        # Start rinetd
+
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True
         )
-        
+
         # Give it a moment to start
         time.sleep(0.2)
-        
+
         if process.poll() is not None:
             stdout, stderr = process.communicate()
             pytest.fail(f"rinetd failed to start:\nStdout: {stdout}\nStderr: {stderr}")
-            
+
         return process
 
     yield _run_rinetd
-    
+
     # Cleanup
     if process:
         if process.poll() is None:
@@ -113,8 +125,9 @@ def rinetd(request, rinetd_path):
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
-        
-        # Print output for debugging
+                process.wait()
+
+        # Capture output for debugging
         stdout_output = ""
         stderr_output = ""
         try:
@@ -123,33 +136,30 @@ def rinetd(request, rinetd_path):
             if process.stderr and not process.stderr.closed:
                 stderr_output = process.stderr.read()
         except ValueError:
-            # Pipes might be closed if communicate() was called
             pass
-        
+
         if stdout_output:
             print(f"\n[rinetd stdout]:\n{stdout_output}")
         if stderr_output:
             print(f"\n[rinetd stderr]:\n{stderr_output}")
 
-        # Check exit code if valgrind was used
-        # Note: If we terminated it, the exit code might be related to the signal (e.g. -15)
-        # unless rinetd catches it and exits with 0 or a specific code.
-        # Valgrind with --error-exitcode=1 will return 1 if errors found, 
-        # but only if the program exits normally (or handles signal and exits).
-        # If rinetd doesn't handle SIGTERM, valgrind might not report errors via exit code 
-        # in the way we expect if it's killed.
-        # However, we can check stderr for "definitely lost" or similar.
-        
-        args = getattr(process, 'args', [])
-        if any("valgrind" in str(arg) for arg in args):
-             if "definitely lost: 0 bytes in 0 blocks" not in stderr_output and "ERROR SUMMARY: 0 errors" not in stderr_output:
-                 # This is a heuristic, might need adjustment based on actual valgrind output
-                 # If we see "ERROR SUMMARY: X errors" where X > 0, it's a fail.
-                 import re
-                 match = re.search(r"ERROR SUMMARY: (\d+) errors", stderr_output)
-                 if match and int(match.group(1)) > 0:
-                     print(stderr_output, file=sys.stderr)
-                     pytest.fail(f"Valgrind reported {match.group(1)} errors")
+        # Valgrind error checking - only for tests not explicitly handling valgrind themselves
+        # (test_leaks.py handles valgrind output directly)
+        if using_valgrind and "test_memory_leaks" not in request.node.name:
+            import re
+            # Check for definitely lost memory
+            def_lost_match = re.search(r'definitely lost:\s*([\d,]+)\s*bytes', stderr_output)
+            if def_lost_match:
+                bytes_lost = int(def_lost_match.group(1).replace(',', ''))
+                if bytes_lost > 0:
+                    pytest.fail(f"Valgrind found {bytes_lost} bytes definitely lost\n{stderr_output}")
+
+            # Check error summary
+            error_match = re.search(r'ERROR SUMMARY:\s*(\d+)\s*errors', stderr_output)
+            if error_match:
+                error_count = int(error_match.group(1))
+                if error_count > 0:
+                    pytest.fail(f"Valgrind reported {error_count} errors\n{stderr_output}")
 
     if config_file and os.path.exists(config_file):
         os.unlink(config_file)

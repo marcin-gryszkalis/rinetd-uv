@@ -19,7 +19,7 @@ class BaseEchoServer(threading.Thread):
         if self.sock:
             try:
                 self.sock.close()
-            except:
+            except OSError:
                 pass
         self.join(timeout=2)
 
@@ -67,8 +67,8 @@ class TcpEchoServer(BaseEchoServer):
                 if not data:
                     break
                 conn.sendall(data)
-        except:
-            pass
+        except (OSError, ConnectionError, BrokenPipeError):
+            pass  # Expected when client disconnects
         finally:
             conn.close()
 
@@ -137,7 +137,7 @@ class UnixEchoServer(BaseEchoServer):
             if os.path.exists(self.path):
                 try:
                     os.unlink(self.path)
-                except:
+                except OSError:
                     pass
 
     def handle_client(self, conn):
@@ -147,7 +147,7 @@ class UnixEchoServer(BaseEchoServer):
                 if not data:
                     break
                 conn.sendall(data)
-        except:
-            pass
+        except (OSError, ConnectionError, BrokenPipeError):
+            pass  # Expected when client disconnects
         finally:
             conn.close()
