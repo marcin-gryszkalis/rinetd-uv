@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Extract example configuration from DOCUMENTATION.md and save to rinetd-uv.conf
 # This ensures the example in documentation stays in sync with the distributed config file
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Generate rinetd-uv.8 man page from DOCUMENTATION.md
 
 set -e

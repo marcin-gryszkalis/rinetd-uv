@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Generate index.html from DOCUMENTATION.md
 
 set -e
