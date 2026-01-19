@@ -173,8 +173,8 @@ logfile  =  "logfile" - < filename >
 
 pidfile  =  "pidfile" - < filename >
 {
-    pidLogFileName = stripQuotes(yytext);
-    if (!pidLogFileName)
+    pidFileName = stripQuotes(yytext);
+    if (!pidFileName)
         MEMORY_ERROR;
 }
 

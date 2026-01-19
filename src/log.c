@@ -44,6 +44,11 @@ char const *logMessages[] = {
     "denied",
 };
 
+/* Log file configuration (set by config parser) */
+char *logFileName = NULL;
+int logFormatCommon = 0;
+uv_file logFd = -1;
+
 /* Internal state set via log_init() */
 static int log_forked = 0;
 static int log_debug_enabled = 0;

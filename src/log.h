@@ -11,6 +11,8 @@
 
 #include "types.h"
 
+static int const RINETD_LOG_BUFFER_SIZE = 2048;
+
 /* Log event codes */
 enum {
     logUnknownError = 0,
@@ -28,6 +30,11 @@ enum {
 
 /* Log message strings (indexed by log event codes) */
 extern char const *logMessages[];
+
+/* Log file configuration */
+extern char *logFileName;
+extern int logFormatCommon;
+extern uv_file logFd;
 
 /* Basic logging (no connection context) */
 void logError(char const *fmt, ...);

@@ -25,7 +25,6 @@
 #   include <getopt.h>
 #   include <unistd.h>
 #   include <sys/time.h>
-#   include <syslog.h>
 #endif /* _WIN32 */
 
 #include <stdio.h>
@@ -73,10 +72,7 @@ static int should_exit = 0;  /* Flag to signal graceful shutdown */
 /* libuv signal handlers */
 static uv_signal_t sighup_handle, sigint_handle, sigterm_handle, sigpipe_handle;
 
-char *logFileName = NULL;
-char *pidLogFileName = NULL;
-int logFormatCommon = 0;
-uv_file logFd = -1;
+char *pidFileName = NULL;
 int bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
 int globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
 int poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
@@ -155,8 +151,8 @@ int main(int argc, char *argv[])
     }
 
     readConfiguration(options.conf_file);
-    if (pidLogFileName || !options.foreground)
-        registerPID(pidLogFileName ? pidLogFileName : RINETD_PID_FILE);
+    if (pidFileName || !options.foreground)
+        registerPID(pidFileName ? pidFileName : RINETD_PID_FILE);
 
     /* Initialize libuv event loop */
     main_loop = uv_default_loop();
@@ -292,8 +288,8 @@ static void clearConfiguration(void)
     /* Free file names */
     free(logFileName);
     logFileName = NULL;
-    free(pidLogFileName);
-    pidLogFileName = NULL;
+    free(pidFileName);
+    pidFileName = NULL;
 }
 
 static void readConfiguration(char const *file)
