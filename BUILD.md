@@ -53,6 +53,18 @@ brew install autoconf automake pkg-config libuv
 sudo pacman -S base-devel autoconf automake pkgconf libuv
 ```
 
+### FreeBSD
+
+```bash
+pkg install autoconf automake pkgconf libuv
+```
+
+### OpenBSD
+
+```
+pkg_add autoconf automake libuv
+```
+
 ## Build Instructions
 
 ### Quick Build
@@ -141,17 +153,10 @@ If you're modifying the source code, you may need additional steps:
 
 ### Regenerating the Parser
 
-If you modify `src/parse.peg`, you must regenerate `src/parse.c`:
+If you modify `src/parse.peg`, you must regenerate `src/parse.c`. It should happen automatically on `make` - but one can force regeneration manually as well:
 
 ```bash
-# Install peg/leg parser generator (if not already installed)
-# Debian/Ubuntu: sudo apt-get install peg
-# Arch Linux: sudo pacman -S peg
-
-# Regenerate parser
-cd src
-leg -o parse.c parse.peg
-cd ..
+leg -o src/parse.c src/parse.peg
 ```
 
 ### Debug Build
@@ -172,9 +177,17 @@ For optimized production build:
 make
 ```
 
+### Cleanup
+
+If you work on sources from GitHub, you can easily cleanup all generated files (ignored by `.gitignore`) with
+
+```bash
+git clean -Xf
+```
+
 ## Testing
 
-See: [[test_suite/README.md]].
+See: [test_suite/README.md].
 
 ## Troubleshooting
 
@@ -276,6 +289,10 @@ No special requirements. libuv is available in all major distribution repositori
 
 Install dependencies via Homebrew. The build process is identical to Linux.
 
+### FreeBSD, OpenBSD
+
+Install dependencies with `pkg`, `portmaster` etc. The build process is identical to Linux.
+
 ### Windows
 
 rinetd-uv can be built on Windows using:
@@ -283,17 +300,6 @@ rinetd-uv can be built on Windows using:
 - **Visual Studio**: Use `rinetd.vcxproj` project file (included)
 - **WSL**: Build as if on Linux
 
-### BSD Systems
-
-FreeBSD and OpenBSD support rinetd-uv. Install dependencies via pkg/ports:
-
-```bash
-# FreeBSD
-pkg install autoconf automake pkgconf libuv
-
-# OpenBSD
-pkg_add autoconf automake libuv
-```
 ## Further Information
 
 - **Documentation**: See `DOCUMENTATION.md` for complete usage documentation

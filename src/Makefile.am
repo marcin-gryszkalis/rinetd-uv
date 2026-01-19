@@ -14,7 +14,7 @@ BUILT_SOURCES = parse.c
 
 # If peg/leg is available, regenerate parse.h
 parse.c: parse.peg
-	if which leg >/dev/null 2>&1; then leg -o $@ $^; else touch $@; fi
+	if which leg >/dev/null 2>&1; then leg -o $@ $^; else echo "parse.peg is newer than parse.c but leg/peg is not found"; exit 1; fi
 
 # _POSIX_C_SOURCE is for SA_RESTART and others
 # _DARWIN_C_SOURCE is for NI_MAXHOST on OS X
