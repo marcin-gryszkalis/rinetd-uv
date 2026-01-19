@@ -16,6 +16,7 @@
 #include <arpa/inet.h>
 #include "net.h"
 #include "rinetd.h"
+#include "log.h"
 
 int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinfo **ai)
 {

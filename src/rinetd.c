@@ -41,6 +41,7 @@
 #include "net.h"
 #include "types.h"
 #include "rinetd.h"
+#include "log.h"
 #include "parse.h"
 #include "buffer_pool.h"
 
@@ -82,34 +83,6 @@ int poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
 int poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
 int poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
 
-char const *logMessages[] = {
-    "unknown-error",
-    "done-local-closed",
-    "done-remote-closed",
-    "accept-failed -",
-    "local-socket-failed -",
-    "local-bind-failed -",
-    "local-connect-failed -",
-    "opened",
-    "allowed",
-    "not-allowed",
-    "denied",
-};
-
-enum {
-    logUnknownError = 0,
-    logLocalClosedFirst,
-    logRemoteClosedFirst,
-    logAcceptFailed,
-    logLocalSocketFailed,
-    logLocalBindFailed,
-    logLocalConnectFailed,
-    logOpened,
-    logAllowed,
-    logNotAllowed,
-    logDenied,
-};
-
 static RinetdOptions options = {
     .conf_file = RINETD_CONFIG_FILE,
     .foreground = 0,
@@ -134,8 +107,6 @@ static void clearConfiguration(void);
 static void readConfiguration(char const *file);
 
 static void registerPID(char const *pid_file_name);
-static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int result);
-static struct tm *get_gmtoff(int *tz);
 
 /* Signal handlers */
 #if !_WIN32
@@ -150,7 +121,6 @@ static void startServerListening(ServerInfo *srv);
 static void server_handle_close_cb(uv_handle_t *handle);
 static void dns_timer_close_cb(uv_handle_t *handle);
 static void check_all_servers_closed(void);
-static void log_write_cb(uv_fs_t *req);
 
 
 int main(int argc, char *argv[])
@@ -162,11 +132,11 @@ int main(int argc, char *argv[])
         logError("Your computer was not connected to the Internet at the time that this program was launched, or you do not have a 32-bit connection to the Internet.\n");
         exit(1);
     }
-#else
-    openlog("rinetd-uv", LOG_PID, LOG_DAEMON);
 #endif
+    log_init();
 
     readArgs(argc, argv, &options);
+    log_set_debug(options.debug);
 
     if (!options.foreground) {
 #if HAVE_DAEMON
@@ -174,10 +144,12 @@ int main(int argc, char *argv[])
             exit(0);
         }
         forked = 1;
+        log_set_forked(1);
 #elif HAVE_FORK
         if (fork() != 0)
             exit(0);
         forked = 1;
+        log_set_forked(1);
 #endif
     }
 
@@ -249,73 +221,6 @@ int main(int argc, char *argv[])
     uv_loop_close(main_loop);
 
     return 0;
-}
-
-void logError(char const *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-#if !_WIN32
-    if (forked)
-        vsyslog(LOG_ERR, fmt, ap);
-    else
-#endif
-    {
-        fprintf(stderr, "rinetd-uv error: ");
-        vfprintf(stderr, fmt, ap);
-    }
-    va_end(ap);
-}
-
-void logWarning(char const *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-#if !_WIN32
-    if (forked)
-        vsyslog(LOG_WARNING, fmt, ap);
-    else
-#endif
-    {
-        fprintf(stderr, "rinetd-uv warning: ");
-        vfprintf(stderr, fmt, ap);
-    }
-    va_end(ap);
-}
-
-void logInfo(char const *fmt, ...)
-{
-    va_list ap;
-    va_start(ap, fmt);
-#if !_WIN32
-    if (forked)
-        vsyslog(LOG_INFO, fmt, ap);
-    else
-#endif
-    {
-        fprintf(stderr, "rinetd-uv: ");
-        vfprintf(stderr, fmt, ap);
-    }
-    va_end(ap);
-}
-
-void logDebug(char const *fmt, ...)
-{
-    if (!options.debug)
-        return;
-
-    va_list ap;
-    va_start(ap, fmt);
-#if !_WIN32
-    if (forked)
-        vsyslog(LOG_DEBUG, fmt, ap);
-    else
-#endif
-    {
-        fprintf(stderr, "rinetd-uv debug: ");
-        vfprintf(stderr, fmt, ap);
-    }
-    va_end(ap);
 }
 
 static void clearConfiguration(void)
@@ -908,7 +813,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     free(req);
 
     if (status < 0) {
-        logError("connect error: %s\n", uv_strerror(status));
+        logErrorConn(cnx, "connect error: %s\n", uv_strerror(status));
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
         /* Track failures and trigger DNS refresh if threshold reached */
@@ -944,7 +849,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
         /* Use 60 second delay before first keepalive probe */
         int ret = uv_tcp_keepalive(&cnx->local_uv_handle.tcp, 1, 60);
         if (ret != 0) {
-            logError("uv_tcp_keepalive (local) error: %s\n", uv_strerror(ret));
+            logErrorConn(cnx, "uv_tcp_keepalive (local) error: %s\n", uv_strerror(ret));
             /* Continue anyway - keepalive is optional */
         }
     }
@@ -953,7 +858,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.tcp,
                             alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
-        logError("uv_read_start (local) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_read_start (local) error: %s\n", uv_strerror(ret));
         /* Close both handles - local read failed, remote never started */
         handleClose(cnx, &cnx->local, &cnx->remote);
         return;
@@ -963,7 +868,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     ret = uv_read_start((uv_stream_t*)&cnx->remote_uv_handle.tcp,
                         alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
-        logError("uv_read_start (remote) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_read_start (remote) error: %s\n", uv_strerror(ret));
         /* Stop reading on local handle since remote read failed */
         uv_read_stop((uv_stream_t*)&cnx->local_uv_handle.tcp);
         /* Close both handles */
@@ -1144,7 +1049,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     free(req);
 
     if (status < 0) {
-        logError("Unix connect error: %s\n", uv_strerror(status));
+        logErrorConn(cnx, "Unix connect error: %s\n", uv_strerror(status));
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
         /* Close local handle that was initialized but failed to connect */
@@ -1171,7 +1076,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.pipe,
                             alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
-        logError("uv_read_start (local unix) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_read_start (local unix) error: %s\n", uv_strerror(ret));
         handleClose(cnx, &cnx->local, &cnx->remote);
         return;
     }
@@ -1186,7 +1091,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
 
     ret = uv_read_start(remote_stream, alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
-        logError("uv_read_start (remote) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_read_start (remote) error: %s\n", uv_strerror(ret));
         uv_read_stop((uv_stream_t*)&cnx->local_uv_handle.pipe);
         handleClose(cnx, &cnx->local, &cnx->remote);
         return;
@@ -1405,7 +1310,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
         if (buf->base)
             buffer_pool_free(buf->base, buf->len);
         if (nread != UV_EOF)
-            logError("read error: %s\n", uv_strerror((int)nread));
+            logErrorConn(cnx, "read error: %s\n", uv_strerror((int)nread));
         handleClose(cnx, socket, other_socket);
         return;
     }
@@ -1450,7 +1355,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     uv_buf_t wrbuf = uv_buf_init(buf->base, nread);
     int ret = uv_write(&wreq->req, other_stream, &wrbuf, 1, tcp_write_cb);
     if (ret != 0) {
-        logError("uv_write error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_write error: %s\n", uv_strerror(ret));
         buffer_pool_free(wreq->buffer, wreq->alloc_size);
         free(wreq);
         handleClose(cnx, socket, other_socket);
@@ -1475,7 +1380,7 @@ static void tcp_write_cb(uv_write_t *req, int status)
 
     /* Handle write errors */
     if (status < 0) {
-        logError("write error: %s\n", uv_strerror(status));
+        logErrorConn(cnx, "write error: %s\n", uv_strerror(status));
         /* Determine which socket failed based on handle */
         Socket *socket, *other_socket;
         if (req->handle == (uv_stream_t*)&cnx->local_uv_handle.tcp) {
@@ -1590,7 +1495,7 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1,
                           cnx->server->toAddrInfo->ai_addr, udp_send_cb);
     if (ret != 0) {
-        logError("uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
         free(sreq);
     }
@@ -1632,7 +1537,7 @@ static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len, in
     int ret = uv_udp_send(&sreq->req, &srv->uv_handle.udp, &wrbuf, 1,
                           (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
     if (ret != 0) {
-        logError("uv_udp_send (to client) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_udp_send (to client) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
         free(sreq);
     }
@@ -1655,7 +1560,7 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
     buffer_pool_free(sreq->buffer, sreq->alloc_size);
 
     if (status < 0) {
-        logError("UDP send error: %s\n", uv_strerror(status));
+        logErrorConn(cnx, "UDP send error: %s\n", uv_strerror(status));
         /* For UDP, we don't close on send errors - just log */
 
         /* Track backend failures and trigger DNS refresh if threshold reached */
@@ -1880,9 +1785,10 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
 {
     (void)addr;  /* Unused - we already know the backend */
     (void)flags;
+    ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
 
     if (nread < 0) {
-        logError("UDP local recv error: %s\n", uv_strerror((int)nread));
+        logErrorConn(cnx, "UDP local recv error: %s\n", uv_strerror((int)nread));
         if (buf->base)
             buffer_pool_free(buf->base, buf->len);
         return;
@@ -1893,8 +1799,6 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
             buffer_pool_free(buf->base, buf->len);
         return;
     }
-
-    ConnectionInfo *cnx = (ConnectionInfo*)handle->data;
 
     /* Update statistics */
     cnx->local.totalBytesIn += nread;
@@ -2294,114 +2198,6 @@ error:
 #endif
 }
 
-static void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int result)
-{
-    /* Bit of borrowing from Apache logging module here,
-        thanks folks */
-    int timz;
-    char tstr[1024];
-    char addressText[NI_MAXHOST] = { '?' };
-    struct tm *t = get_gmtoff(&timz);
-    char sign = (timz < 0 ? '-' : '+');
-    if (timz < 0)
-        timz = -timz;
-    strftime(tstr, sizeof(tstr), "%Y-%m-%dT%H:%M:%S", t);
-
-    int64_t bytesOut = 0, bytesIn = 0;
-    if (cnx != NULL) {
-        /* Handle Unix socket clients - they don't have IP addresses */
-        if (cnx->remoteAddress.ss_family == AF_UNIX) {
-            snprintf(addressText, sizeof(addressText), "unix-client");
-        } else {
-            getnameinfo((struct sockaddr *)&cnx->remoteAddress, sizeof(cnx->remoteAddress),
-                addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
-        }
-        bytesOut = cnx->remote.totalBytesOut;
-        bytesIn = cnx->remote.totalBytesIn;
-    }
-
-    char const *fromHost = "?", *toHost = "?";
-    uint16_t fromPort = 0, toPort = 0;
-    /* Use cached server info from connection (survives server reload) */
-    if (cnx && cnx->log_fromHost) {
-        fromHost = cnx->log_fromHost;
-        fromPort = cnx->log_fromPort;
-        toHost = cnx->log_toHost;
-        toPort = cnx->log_toPort;
-    } else if (srv != NULL) {
-        /* Fallback to srv if cached info not available */
-        fromHost = srv->fromHost;
-        fromPort = srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0;
-        toHost = srv->toHost;
-        toPort = srv->toAddrInfo ? getPort(srv->toAddrInfo) : 0;
-    }
-
-    if (result == logNotAllowed || result == logDenied)
-        logInfo("%s %s\n", addressText, logMessages[result]);
-    if (logFd != -1) {
-        char *log_buffer = malloc(RINETD_LOG_BUFFER_SIZE);
-        if (!log_buffer) {
-            return;
-        }
-
-        int len;
-        if (logFormatCommon) {
-            /* Fake a common log format log file in a way that
-                most web analyzers can do something interesting with.
-                We lie and say the protocol is HTTP because we don't
-                want the web analyzer to reject the line. We also
-                lie and claim success (code 200) because we don't
-                want the web analyzer to ignore the line as an
-                error and not analyze the "URL." We put a result
-                message into our "URL" instead. The last field
-                is an extra, giving the number of input bytes,
-                after several placeholders meant to fill the
-                positions frequently occupied by user agent,
-                referrer, and server name information. */
-            len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
-                           "%s - - [%s%c%.2d%.2d] \"GET /rinetd-services/%s/%d/%s/%d/%s HTTP/1.0\" 200 %llu - - - %llu\n",
-                           addressText, tstr, sign, timz / 60, timz % 60, fromHost, (int)fromPort, toHost, (int)toPort, logMessages[result], (unsigned long long int)bytesOut, (unsigned long long int)bytesIn);
-        } else {
-            /* Write an rinetd-specific log entry with a
-                less goofy format. */
-            len = snprintf(log_buffer, RINETD_LOG_BUFFER_SIZE,
-                           "%s%c%02d:%02d\t%s\t%s\t%d\t%s\t%d\t%llu\t%llu\t%s\n",
-                           tstr, sign, timz / 60, timz % 60, addressText, fromHost, (int)fromPort, toHost, (int)toPort, (unsigned long long int)bytesIn, (unsigned long long int)bytesOut, logMessages[result]);
-        }
-
-        if (len > 0) {
-            uv_fs_t *req = malloc(sizeof(uv_fs_t));
-            if (req) {
-                req->data = log_buffer;
-                uv_buf_t buf = uv_buf_init(log_buffer, len);
-                int ret = uv_fs_write(main_loop, req, logFd, &buf, 1, -1, log_write_cb);
-                if (ret < 0) {
-                    logError("uv_fs_write failed: %s\n", uv_strerror(ret));
-                    free(log_buffer);
-                    free(req);
-                }
-            } else {
-                free(log_buffer);
-            }
-        } else {
-            free(log_buffer);
-        }
-    }
-}
-
-static void log_write_cb(uv_fs_t *req)
-{
-    if (req->result < 0)
-        logError("Async log write failed: %s\n", uv_strerror((int)req->result));
-
-    /* Free the buffer stored in req->data */
-    if (req->data)
-        free(req->data);
-
-    uv_fs_req_cleanup(req);
-    free(req);
-}
-
 static int readArgs (int argc, char **argv, RinetdOptions *options)
 {
     for (;;) {
@@ -2452,20 +2248,4 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
         }
     }
     return 0;
-}
-
-/* get_gmtoff was borrowed from Apache. Thanks folks. */
-static struct tm *get_gmtoff(int *tz)
-{
-    time_t tt = time(NULL);
-
-    /* Assume we are never more than 24 hours away. */
-    struct tm gmt = *gmtime(&tt); /* remember gmtime/localtime return ptr to static */
-    struct tm *t = localtime(&tt); /* buffer... so be careful */
-    int days = t->tm_yday - gmt.tm_yday;
-    int hours = ((days < -1 ? 24 : 1 < days ? -24 : days * 24)
-        + t->tm_hour - gmt.tm_hour);
-    int minutes = hours * 60 + t->tm_min - gmt.tm_min;
-    *tz = minutes;
-    return t;
 }

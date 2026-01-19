@@ -52,13 +52,6 @@ extern int poolTrimDelay;
 /* libuv event loop */
 extern uv_loop_t *main_loop;
 
-/* Logging */
-
-void logError(char const *fmt, ...);
-void logWarning(char const *fmt, ...);
-void logInfo(char const *fmt, ...);
-void logDebug(char const *fmt, ...);
-
 /* Functions */
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,

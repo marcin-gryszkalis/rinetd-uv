@@ -13,6 +13,7 @@
 #include "net.h"
 #include "types.h"
 #include "rinetd.h"
+#include "log.h"
 #include "parse.h"
 
 #include <glob.h>

@@ -3,6 +3,7 @@ EXTRA_DIST = parse.peg getopt.c getopt.h
 
 sbin_PROGRAMS = rinetd-uv
 rinetd_uv_SOURCES = rinetd.c rinetd.h \
+                    log.c log.h \
                     parse.c parse.h \
                     match.c match.h \
                     net.c net.h \
