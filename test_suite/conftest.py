@@ -5,7 +5,10 @@ import subprocess
 import time
 import shutil
 import tempfile
-from .servers import TcpEchoServer, TcpEchoServerIPv6, UdpEchoServer, UnixEchoServer
+from .servers import (
+    TcpEchoServer, TcpEchoServerIPv6, UdpEchoServer, UnixEchoServer,
+    TcpUploadServer, TcpDownloadServer, TcpUploadSha256Server, TcpDownloadSha256Server
+)
 from .utils import ipv6_available
 from .utils import create_rinetd_conf, get_free_port, wait_for_port
 
@@ -74,6 +77,49 @@ def unix_echo_server(tmp_path):
     server.wait_ready()
     yield server
     server.stop()
+
+
+# === Alternative Transfer Mode Server Fixtures ===
+
+@pytest.fixture
+def tcp_upload_server():
+    """Server that accepts uploads and returns byte count."""
+    server = TcpUploadServer()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def tcp_download_server():
+    """Server that generates and sends seeded random data."""
+    server = TcpDownloadServer()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def tcp_upload_sha256_server():
+    """Server that returns rolling SHA256 after each received chunk."""
+    server = TcpUploadSha256Server()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def tcp_download_sha256_server():
+    """Server that sends data and verifies client's rolling SHA256."""
+    server = TcpDownloadSha256Server()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
 
 @pytest.fixture
 def rinetd(request, rinetd_path, tmp_path):

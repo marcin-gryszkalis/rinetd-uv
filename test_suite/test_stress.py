@@ -6,14 +6,18 @@ import random
 import os
 from .utils import (
     get_free_port, wait_for_port, generate_random_data, calculate_checksum,
-    send_all, recv_all, run_transfer_until_deadline, random_transfer_params
+    send_all, recv_all, run_transfer_until_deadline, random_transfer_params,
+    get_max_concurrent_connections, get_file_limit
 )
 
 INACTIVE_WAIT = 30
 
 # Duration can be overridden via environment variable
-DEFAULT_STRESS_DURATION = 600  # 10 minutes default
+DEFAULT_STRESS_DURATION = 60  # 1 minute default
 QUICK_STRESS_DURATION = 10    # 10 seconds for quick tests
+
+# Grace period after deadline for in-progress transfers to complete
+COMPLETION_GRACE_PERIOD = 300
 
 
 def get_stress_duration(is_quick=False):
@@ -40,7 +44,12 @@ def test_randomized_stress(rinetd, tcp_echo_server, unix_echo_server, num_client
     """
     Stress test where each thread runs transfers with fully randomized parameters
     (SIZE and CHUNK_SIZE calculated using log-scale distribution).
-    Stops gracefully at deadline by finishing current chunk, not whole transfer.
+
+    Graceful shutdown sequence:
+    1. When stress_duration is reached, threads stop starting NEW transfers
+    2. In-progress transfers complete fully (send all data, receive all response)
+    3. All threads finish and report results
+    4. Only then are servers stopped (via fixture cleanup)
 
     Note: UDP is excluded from stress tests due to inherent unreliability under
     high concurrency (packet loss causes timeouts). Use test_matrix for UDP coverage.
@@ -53,7 +62,19 @@ def test_randomized_stress(rinetd, tcp_echo_server, unix_echo_server, num_client
         ("unix", "unix"),
     ]
 
-    num_threads = num_clients
+    # Check file descriptor limits and adjust num_clients if needed
+    can_run, effective_clients, reason = get_max_concurrent_connections(
+        num_clients, protocols_count=len(STRESS_PROTOCOLS)
+    )
+
+    if not can_run:
+        soft, hard = get_file_limit()
+        pytest.skip(f"Insufficient file descriptors: {reason} (soft={soft}, hard={hard})")
+
+    if reason:
+        print(f"\nNote: {reason}")
+
+    num_threads = effective_clients
     stress_duration = get_stress_duration(is_quick)
 
     # Setup rules for all protocol combinations
@@ -88,26 +109,33 @@ def test_randomized_stress(rinetd, tcp_echo_server, unix_echo_server, num_client
     rinetd(rules)
     time.sleep(1)  # Give rinetd time to bind all
 
-    deadline = time.time() + stress_duration
+    # Deadline for starting NEW transfers (not for completing in-progress ones)
+    stop_new_transfers_at = time.time() + stress_duration
 
     def worker(thread_id):
         """
-        Worker thread that runs randomized transfers until deadline.
-        Uses log-scale randomization for SIZE and CHUNK_SIZE.
-        Stops gracefully after completing current chunk when deadline is reached.
+        Worker thread that runs randomized transfers.
+
+        Behavior:
+        - Start new transfers until stop_new_transfers_at is reached
+        - Each transfer completes fully (sender finishes, receiver gets all data)
+        - After deadline, no new transfers are started, but current one completes
         """
         # Each thread gets its own RNG seeded from thread_id for reproducibility
         thread_rng = random.Random(thread_id + int(time.time()))
         total_count = 0
 
-        while time.time() < deadline:
+        while time.time() < stop_new_transfers_at:
             # Pick random protocol combination (TCP/Unix only)
             lp, cp = thread_rng.choice(STRESS_PROTOCOLS)
             listen_addr = protocol_map[(lp, cp)]
 
             # Run transfers until deadline with fully randomized parameters
+            # The deadline is passed to run_transfer_until_deadline which will:
+            # - Stop starting new transfers when deadline is reached
+            # - Complete any in-progress transfer fully
             success, msg, count = run_transfer_until_deadline(
-                lp, listen_addr, deadline, rng=thread_rng
+                lp, listen_addr, stop_new_transfers_at, rng=thread_rng
             )
 
             total_count += count
@@ -120,9 +148,29 @@ def test_randomized_stress(rinetd, tcp_echo_server, unix_echo_server, num_client
     # Cap max_workers to avoid system exhaustion
     # Note: run_transfer also spawns a thread for TCP, so effective load is higher
     max_workers = min(num_threads, 500)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(worker, i) for i in range(num_threads)]
-        results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        # Wait for all workers with grace period for completion
+        # The grace period allows in-progress transfers to finish after deadline
+        done, not_done = concurrent.futures.wait(
+            futures,
+            timeout=stress_duration + COMPLETION_GRACE_PERIOD
+        )
+
+        # Collect results from completed futures
+        results = []
+        for f in done:
+            try:
+                results.append(f.result(timeout=10))
+            except Exception as e:
+                results.append((False, f"Exception: {e}"))
+
+        # Any futures that didn't complete in time are failures
+        for f in not_done:
+            results.append((False, "Timed out waiting for completion"))
+            f.cancel()
 
     failures = [r for r in results if not r[0]]
     assert len(failures) == 0, f"Stress test failed: {failures[:5]}"

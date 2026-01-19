@@ -71,6 +71,9 @@ Run tests in parallel (requires pytest-xdist):
 | `@pytest.mark.quick` | Fast tests suitable for rapid feedback during development |
 | `@pytest.mark.slow` | Long-running tests (large transfers, high concurrency) |
 | `@pytest.mark.valgrind` | Tests specifically for Valgrind memory leak detection |
+| `@pytest.mark.reload` | Tests for SIGHUP configuration reload functionality |
+| `@pytest.mark.ipv6` | Tests requiring IPv6 support |
+| `@pytest.mark.big` | Very large transfer tests (1GB+), requires significant time/resources |
 
 ### Marker Examples
 
@@ -78,11 +81,20 @@ Run tests in parallel (requires pytest-xdist):
 # Run only quick tests
 ./venv/bin/pytest -m quick
 
-# Run everything except slow tests
-./venv/bin/pytest -m "not slow"
+# Run everything except slow and big tests
+./venv/bin/pytest -m "not slow and not big"
 
 # Run valgrind-specific tests
 ./venv/bin/pytest -m valgrind --valgrind
+
+# Run reload tests only
+./venv/bin/pytest -m reload
+
+# Run IPv6 tests only
+./venv/bin/pytest -m ipv6
+
+# Run big transfer tests (may take hours)
+./venv/bin/pytest -m big --timeout=86400
 ```
 
 ## Command-Line Options
@@ -105,6 +117,9 @@ Functional tests for basic data forwarding across protocols.
 | `test_unix_to_tcp` | Unix socket to TCP forwarding |
 | `test_tcp_to_unix` | TCP to Unix socket forwarding |
 | `test_large_transfer` | 100MB streaming transfer (marked `@slow`) |
+| `test_tcp_transfer_ipv6[size]` | IPv6-to-IPv6 forwarding (marked `@ipv6`) |
+| `test_ipv4_to_ipv6_forwarding` | IPv4 client to IPv6 backend (marked `@ipv6`) |
+| `test_ipv6_to_ipv4_forwarding` | IPv6 client to IPv4 backend (marked `@ipv6`) |
 
 ### test_config.py - Configuration Tests
 
@@ -114,6 +129,10 @@ Tests for rinetd configuration directives and options.
 |------|-------------|
 | `test_allow_rule` | Global `allow` access control |
 | `test_deny_rule` | Global `deny` access control |
+| `test_allow_wildcard_star` | Wildcard `*` pattern matching (e.g., `127.0.0.*`) |
+| `test_deny_wildcard_star` | Deny with wildcard patterns |
+| `test_allow_wildcard_question` | Single-char `?` wildcard matching |
+| `test_allow_all_wildcard` | Allow all with `*` |
 | `test_logfile` | Log file creation and content |
 | `test_logcommon` | Apache common log format |
 | `test_pidfile` | PID file creation |
@@ -124,6 +143,9 @@ Tests for rinetd configuration directives and options.
 | `test_source_address` | Source address binding (`src=`) |
 | `test_unix_socket_mode` | Unix socket permissions (`mode=`) |
 | `test_bind_options` | Per-rule options parsing |
+| `test_multiple_tcp_rules` | Multiple forwarding rules in one config |
+| `test_mixed_protocol_rules` | TCP, UDP, and Unix rules together |
+| `test_per_rule_allow_deny` | Per-rule access control (after forwarding rule) |
 
 ### test_matrix.py - Matrix Tests
 
@@ -172,22 +194,81 @@ Valgrind-based memory and file descriptor leak detection.
 
 **Requirements:** Valgrind must be installed. Tests are skipped if unavailable.
 
+### test_reload.py - SIGHUP Reload Tests
+
+Tests for configuration reload via SIGHUP signal.
+
+| Test | Description |
+|------|-------------|
+| `test_sighup_adds_new_rule` | New forwarding rules after SIGHUP |
+| `test_sighup_preserves_existing_connections` | Active connections survive reload |
+| `test_sighup_multiple_reloads` | Multiple consecutive reloads |
+| `test_sighup_under_load` | Config reload while handling active traffic |
+
+**Marker:** `@pytest.mark.reload`
+
+### test_error_handling.py - Error Recovery Tests
+
+Tests for error conditions and recovery scenarios.
+
+| Test | Description |
+|------|-------------|
+| `test_backend_unavailable_at_start` | Behavior when backend is down |
+| `test_backend_becomes_available` | Recovery when backend comes up |
+| `test_backend_goes_down_and_recovers` | Backend failure and recovery cycle |
+| `test_client_disconnect_mid_transfer` | Graceful handling of client disconnect |
+| `test_rapid_connect_disconnect` | Resource exhaustion prevention |
+| `test_half_close_handling` | TCP half-close (shutdown) support |
+| `test_connection_timeout_backend_slow` | Slow backend connection handling |
+
+### test_big.py - Large Transfer Tests
+
+Tests for very large data transfers (1GB, 8GB, 16GB).
+
+| Test | Description |
+|------|-------------|
+| `test_big_tcp_upload[size]` | Large upload to server (sizes: 1GB, 8GB, 16GB) |
+| `test_big_tcp_download[size]` | Large download from server |
+| `test_big_tcp_echo[size]` | Large bidirectional echo transfer |
+| `test_big_multiple_concurrent` | 4x1GB parallel transfers |
+
+**Marker:** `@pytest.mark.big`
+
+**Usage:**
+```bash
+# Run all big tests (may take several hours)
+./venv/bin/pytest -v -m big --timeout=86400
+
+# Run only 1GB tests
+./venv/bin/pytest -v -m big -k "1GB"
+```
+
+**Features:**
+- Optimal 64KB chunk size for maximum throughput
+- Progress reporting during transfers
+- Bandwidth measurement (MB/s)
+- Memory-efficient streaming (never loads full data in memory)
+- SHA256 verification for data integrity
+
 ## Test Architecture
 
 ### Directory Structure
 
 ```
 test_suite/
-├── conftest.py          # Pytest configuration and fixtures
-├── servers.py           # Echo server implementations (TCP, UDP, Unix)
-├── utils.py             # Helper functions and utilities
-├── test_transfer.py     # Basic transfer tests
-├── test_config.py       # Configuration directive tests
-├── test_matrix.py       # Matrix parametrized tests
-├── test_stress.py       # Stress and concurrency tests
-├── test_leaks.py        # Valgrind leak detection tests
-├── requirements.txt     # Python dependencies
-└── README.md            # This file
+├── conftest.py           # Pytest configuration and fixtures
+├── servers.py            # Server implementations (Echo, Upload, Download, SHA256)
+├── utils.py              # Helper functions and utilities
+├── test_transfer.py      # Basic transfer tests (TCP, UDP, Unix, IPv6)
+├── test_config.py        # Configuration directive tests
+├── test_matrix.py        # Matrix parametrized tests
+├── test_stress.py        # Stress and concurrency tests
+├── test_leaks.py         # Valgrind leak detection tests
+├── test_reload.py        # SIGHUP reload tests
+├── test_error_handling.py # Error recovery tests
+├── test_big.py           # Very large transfer tests (1GB+)
+├── requirements.txt      # Python dependencies
+└── README.md             # This file
 ```
 
 ### Fixtures
@@ -197,16 +278,34 @@ test_suite/
 | `rinetd_path` | session | Path to rinetd-uv executable |
 | `rinetd` | function | Starts rinetd-uv with given rules |
 | `tcp_echo_server` | function | TCP echo backend server |
+| `tcp_echo_server_ipv6` | function | IPv6 TCP echo backend server |
 | `udp_echo_server` | function | UDP echo backend server |
 | `unix_echo_server` | function | Unix socket echo backend server |
+| `tcp_upload_server` | function | Server that accepts uploads, returns byte count |
+| `tcp_download_server` | function | Server that generates seeded random data |
+| `tcp_upload_sha256_server` | function | Server that returns rolling SHA256 of uploads |
+| `tcp_download_sha256_server` | function | Server that verifies client's rolling SHA256 |
 
-### Echo Servers
+### Test Servers
 
-The test suite includes built-in echo servers that reflect all received data back to the client. These run in background threads and are automatically started/stopped by fixtures.
+The test suite includes built-in servers for various transfer patterns. These run in background threads and are automatically started/stopped by fixtures.
 
+**Echo Servers** - Reflect all received data back:
 - **TcpEchoServer**: Threaded TCP server, handles multiple concurrent clients
+- **TcpEchoServerIPv6**: IPv6 version of TCP echo server
 - **UdpEchoServer**: Datagram-based UDP server
 - **UnixEchoServer**: Unix domain socket server
+
+**Alternative Transfer Mode Servers** - For asymmetric data flows:
+- **TcpUploadServer**: Accepts uploads, discards data, returns byte count
+- **TcpDownloadServer**: Generates seeded random data stream for client to receive
+- **TcpUploadSha256Server**: Returns rolling SHA256 hash after each received chunk
+- **TcpDownloadSha256Server**: Sends data and verifies client's rolling SHA256
+
+The alternative modes enable testing of:
+- Upload-only scenarios (backpressure handling)
+- Download-only scenarios (flow control)
+- Chunk-level data integrity verification via SHA256
 
 ### Data Verification
 

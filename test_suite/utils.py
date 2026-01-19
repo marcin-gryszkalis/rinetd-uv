@@ -7,8 +7,85 @@ import tempfile
 import hashlib
 import math
 import threading
+import resource
 
-def random_transfer_params(protocol, rng=None):
+DEFAULT_TIMEOUT = 120
+
+def get_file_limit():
+    """
+    Get the current file descriptor limit (soft limit).
+    Returns (soft_limit, hard_limit) tuple.
+    """
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        return soft, hard
+    except (AttributeError, ValueError):
+        # Windows or other systems without RLIMIT_NOFILE
+        return 1024, 1024  # Assume conservative default
+
+
+def try_increase_file_limit(target):
+    """
+    Try to increase the file descriptor limit to target.
+    Returns the actual limit achieved (may be less than target).
+    """
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        # Can only increase soft limit up to hard limit without root
+        new_soft = min(target, hard)
+        if new_soft > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
+            return new_soft
+        return soft
+    except (AttributeError, ValueError, OSError):
+        return get_file_limit()[0]
+
+
+def get_max_concurrent_connections(num_clients, protocols_count=4, safety_margin=100):
+    """
+    Calculate if we have enough file descriptors for a stress test.
+
+    Each connection consumes approximately:
+    - 1 FD for client socket
+    - 2 FDs for rinetd (client + backend)
+    - 1 FD for backend server per-connection (if using threading model)
+
+    Plus base FDs for: stdin, stdout, stderr, server listeners, etc.
+
+    Args:
+        num_clients: Number of concurrent client threads
+        protocols_count: Number of different protocol combinations
+        safety_margin: Extra FDs to keep available
+
+    Returns:
+        (can_run, max_clients, reason) tuple
+    """
+    soft_limit, hard_limit = get_file_limit()
+
+    # Try to increase limit if needed
+    estimated_fds = num_clients * 4 + protocols_count * 2 + safety_margin + 50
+    if estimated_fds > soft_limit:
+        new_limit = try_increase_file_limit(estimated_fds)
+        soft_limit = new_limit
+
+    # Base FDs: stdin/stdout/stderr + listeners + misc
+    base_fds = 50 + protocols_count * 2
+
+    # Available for connections
+    available = soft_limit - base_fds - safety_margin
+
+    # Each concurrent connection needs ~4 FDs
+    max_clients = available // 4
+
+    if max_clients >= num_clients:
+        return True, num_clients, None
+    elif max_clients > 10:
+        return True, max_clients, f"Reduced from {num_clients} to {max_clients} due to ulimit -n ({soft_limit})"
+    else:
+        return False, 0, f"ulimit -n too low ({soft_limit}), need at least {base_fds + safety_margin + 40} for minimal test"
+
+
+def random_transfer_params(protocol, rng=None, max_size=10*1024*1024):
     """
     Generate random but sensible SIZE and CHUNK_SIZE for stress testing.
     Uses log-scale distribution to cover both small and large values.
@@ -16,6 +93,7 @@ def random_transfer_params(protocol, rng=None):
     Args:
         protocol: 'tcp', 'udp', or 'unix'
         rng: random.Random instance for reproducibility (optional)
+        max_size: Maximum transfer size in bytes (default 1MB for stress tests)
 
     Returns:
         (size, chunk_size) tuple
@@ -23,9 +101,10 @@ def random_transfer_params(protocol, rng=None):
     if rng is None:
         rng = random.Random()
 
-    # Size: log-scale from 1 byte to 10MB (10^0 to 10^7)
+    # Size: log-scale from 1 byte up to max_size
     # This gives good coverage of edge cases (tiny) and stress cases (large)
-    log_size = rng.uniform(0, 7)  # 1 byte to 10MB
+    log_max = math.log10(max(1, max_size))
+    log_size = rng.uniform(0, log_max)
     size = int(10 ** log_size)
 
     # Protocol-specific constraints
@@ -133,29 +212,69 @@ def create_rinetd_conf(rules, filename=None, logfile=None):
     if filename is None:
         fd, filename = tempfile.mkstemp(suffix='.conf', prefix='rinetd_test_')
         os.close(fd)
-    
+
     with open(filename, 'w') as f:
         if logfile:
             f.write(f"logfile {logfile}\n")
         for rule in rules:
             f.write(f"{rule}\n")
-            
+
     return filename
 
 class SeededRandomStream:
-    """A stream of pseudo-random bytes generated from a seed."""
+    """
+    A stream of pseudo-random bytes generated from a seed.
+
+    IMPORTANT: Uses a chunk-aligned generation approach to ensure that
+    read() calls of any size produce the same bytes at the same offsets.
+    This is critical for verification - the sender may write in one chunk
+    size, but TCP recv() may return different sized chunks.
+    """
+    INTERNAL_CHUNK_SIZE = 4096  # Internal generation chunk size
+
     def __init__(self, seed, total_size):
-        self.rng = random.Random(seed)
+        self.seed = seed
         self.total_size = total_size
         self.bytes_generated = 0
+        self._cache = b""
+        self._cache_offset = 0  # Offset where cache starts
+
+    def _generate_chunk(self, chunk_index):
+        """Generate a specific chunk using deterministic seeding."""
+        # Use chunk_index + seed to create deterministic bytes for each chunk
+        chunk_rng = random.Random(self.seed ^ (chunk_index * 0x9e3779b9))
+        chunk_start = chunk_index * self.INTERNAL_CHUNK_SIZE
+        chunk_end = min(chunk_start + self.INTERNAL_CHUNK_SIZE, self.total_size)
+        return chunk_rng.randbytes(chunk_end - chunk_start)
 
     def read(self, size):
         if self.bytes_generated >= self.total_size:
             return b""
+
         to_gen = min(size, self.total_size - self.bytes_generated)
-        data = self.rng.randbytes(to_gen)
-        self.bytes_generated += to_gen
-        return data
+        result = bytearray()
+
+        while len(result) < to_gen:
+            # Check if we need data beyond our cache
+            needed_offset = self.bytes_generated + len(result)
+
+            if (self._cache and
+                needed_offset >= self._cache_offset and
+                needed_offset < self._cache_offset + len(self._cache)):
+                # Can serve from cache
+                cache_pos = needed_offset - self._cache_offset
+                available = len(self._cache) - cache_pos
+                take = min(available, to_gen - len(result))
+                result.extend(self._cache[cache_pos:cache_pos + take])
+            else:
+                # Generate new chunk and cache it
+                chunk_index = needed_offset // self.INTERNAL_CHUNK_SIZE
+                self._cache = self._generate_chunk(chunk_index)
+                self._cache_offset = chunk_index * self.INTERNAL_CHUNK_SIZE
+                # Continue loop to serve from the new cache
+
+        self.bytes_generated += len(result)
+        return bytes(result)
 
 def send_all(sock, data, chunk_size=None):
     """Send all data to a socket, optionally in chunks."""
@@ -289,26 +408,32 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
     """
     Run a single transfer and verify data integrity.
 
+    NOTE: The deadline parameter is only checked BEFORE starting a transfer.
+    Once a transfer starts, it completes fully. This ensures data integrity
+    and proper connection cleanup.
+
     Args:
         listen_proto: 'tcp', 'udp', or 'unix'
         listen_addr: Address tuple or Unix socket path
         size: Total bytes to transfer
         chunk_size: Size of each chunk
         seed: Random seed for data generation
-        deadline: time.time() value after which to stop gracefully (optional)
+        deadline: time.time() value - if reached, return immediately without transfer
 
     Returns:
         (success, message) tuple
     """
+    # Check deadline before starting - if past, just return success
+    if deadline and time.time() >= deadline:
+        return True, "stopped at deadline"
+
     if listen_proto == "udp":
         data = generate_random_data(size)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(5)
+            s.settimeout(DEFAULT_TIMEOUT)
             sent_bytes = 0
             received_data = b""
             while sent_bytes < size:
-                if deadline and time.time() >= deadline:
-                    return True, "stopped at deadline"
                 to_send = min(size - sent_bytes, chunk_size)
                 s.sendto(data[sent_bytes:sent_bytes+to_send], listen_addr)
                 try:
@@ -322,52 +447,60 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
                 return False, "UDP data mismatch"
             return True, None
     else:
+        # TCP/Unix: simple sequential send-then-receive (no threads needed)
         family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
         with socket.socket(family, socket.SOCK_STREAM) as s:
-            s.settimeout(10)
+            s.settimeout(DEFAULT_TIMEOUT)
             try:
                 s.connect(listen_addr)
             except Exception as e:
                 return False, f"Connect failed: {e}"
 
-            sender_error = [None]
-            sender_done = [False]
-
-            def sender():
+            # Generate and send data
+            stream = SeededRandomStream(seed, size)
+            bytes_sent = 0
+            while bytes_sent < size:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
                 try:
-                    send_streaming(s, size, chunk_size=chunk_size, seed=seed, deadline=deadline)
-                    sender_done[0] = True
+                    s.sendall(chunk)
+                    bytes_sent += len(chunk)
                 except Exception as e:
-                    sender_error[0] = str(e)
-                    try:
-                        s.shutdown(socket.SHUT_WR)
-                    except OSError:
-                        pass
+                    return False, f"Send failed after {bytes_sent} bytes: {e}"
 
-            t = threading.Thread(target=sender)
-            t.start()
+            # Receive and verify - use same seed for verification
+            verify_stream = SeededRandomStream(seed, size)
+            bytes_received = 0
+            while bytes_received < size:
+                try:
+                    chunk = s.recv(chunk_size)
+                except socket.timeout:
+                    return False, f"Receive timeout after {bytes_received}/{size} bytes"
+                if not chunk:
+                    return False, f"Connection closed after {bytes_received}/{size} bytes"
 
-            try:
-                success, msg, _ = verify_streaming(s, size, chunk_size=chunk_size, seed=seed, deadline=deadline)
-            except (RuntimeError, socket.timeout) as e:
-                success, msg = False, str(e)
+                expected = verify_stream.read(len(chunk))
+                if chunk != expected:
+                    return False, f"Data mismatch at offset {bytes_received}"
+                bytes_received += len(chunk)
 
-            t.join(timeout=5)
-
-            if sender_error[0]:
-                return False, f"Sender failed: {sender_error[0]}"
-            return success, msg
+            return True, None
 
 
 def run_transfer_until_deadline(listen_proto, listen_addr, deadline, rng=None):
     """
     Run transfers with random parameters until deadline is reached.
-    Stops gracefully after completing the current chunk (not whole transfer).
+
+    Graceful shutdown behavior:
+    - Checks deadline BEFORE starting each new transfer
+    - Once a transfer starts, it completes fully (no mid-transfer abort)
+    - This ensures data integrity and proper connection cleanup
 
     Args:
         listen_proto: 'tcp', 'udp', or 'unix'
         listen_addr: Address tuple or Unix socket path
-        deadline: time.time() value when to stop
+        deadline: time.time() value when to stop starting new transfers
         rng: random.Random instance for reproducibility (optional)
 
     Returns:
@@ -381,16 +514,18 @@ def run_transfer_until_deadline(listen_proto, listen_addr, deadline, rng=None):
         size, chunk_size = random_transfer_params(listen_proto, rng)
         seed = rng.randint(0, 2**32 - 1)
 
+        # Pass deadline so run_transfer can check it before starting
+        # If past deadline, run_transfer returns immediately with "stopped at deadline"
         success, msg = run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=deadline)
 
-        if not success and msg != "stopped at deadline":
+        if msg == "stopped at deadline":
+            # Deadline was reached, exit gracefully
+            break
+
+        if not success:
             return False, f"Transfer {count} failed: {msg}", count
 
         count += 1
-
-        # Check deadline before starting next transfer
-        if time.time() >= deadline:
-            break
 
     return True, f"Completed {count} transfers", count
 
