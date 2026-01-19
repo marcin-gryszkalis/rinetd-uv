@@ -30,6 +30,15 @@ rinetd-uv -v
 
 The configuration file is found in the file `/etc/rinetd-uv.conf`, unless another file is specified using the `-c` command line option.
 
+### Run with Docker
+
+Example:
+
+```bash
+docker pull marcingryszkalis/rinetd-uv
+docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv
+```
+
 ## OPTIONS
 
 **-f**
@@ -538,22 +547,6 @@ Or simply:
 
 ```bash
 killall -HUP rinetd-uv
-```
-
-## RUN WITH DOCKER
-
-There's simple `Dockerfile` provided to create working docker image with **rinetd-uv** built from sources (HEAD). Image is based on Debian Linux. Thanks to using `-slim` base image and 2-stage build final image size shouldn't exceed 100MB.
-
-Build the image:
-
-```bash
-docker build -t rinetd-uv .
-```
-
-Example run:
-
-```bash
-docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
 ```
 
 ## BUGS AND LIMITATIONS

@@ -16,7 +16,7 @@
 FROM debian:trixie AS builder
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     autoconf \
     automake \
