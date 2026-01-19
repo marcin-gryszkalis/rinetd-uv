@@ -33,12 +33,12 @@ jobs:
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Suppress all 3 lines of each warning: "libuv 1.51.0 is already installed and up-to-date. To reinstall 1.51.0, run: brew reinstall libuv" 
+          # Suppress all 3 lines of each warning: "libuv 1.51.0 is already installed and up-to-date. To reinstall 1.51.0, run: brew reinstall libuv"
           brew install --quiet autoconf automake libtool pkg-config libuv
 
       - name: Log platform and compiler
         run: |
-          CC=${{ matrix.compiler }}  
+          CC=${{ matrix.compiler }}
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             os_name=$(grep "^NAME=" /etc/os-release | sed -E 's/^NAME="([^"]+)"/\1/' | tr -d '"')
             os_version=$(grep "^VERSION=" /etc/os-release | sed -E 's/^VERSION="([^"]+).*/\1/' | tr -d '"')
@@ -53,7 +53,7 @@ jobs:
           echo "Compiler: $($CC --version | head -1)"
           echo "CC=$CC" >> $GITHUB_ENV
 
-      - run: ./bootstrap
+      - run: autoreconf -fvi
 
       - name: Configure build with ${{ matrix.compiler }}
         run: |

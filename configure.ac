@@ -1,6 +1,7 @@
 # Process this file with autoconf to produce a configure script.
+m4_include([VERSION]) #Force reconf on VERSION change
 AC_PREREQ(2.52)
-AC_INIT(rinetd-uv, 2.0, sam@hocevar.net)
+AC_INIT(rinetd-uv, m4_esyscmd_s(cat VERSION), mg@fork.pl, rinetd-uv, https://github.com/marcin-gryszkalis/rinetd-uv)
 AC_CONFIG_AUX_DIR(.auto)
 AC_CONFIG_SRCDIR([src/rinetd.c])
 AC_CONFIG_HEADERS([src/config.h])

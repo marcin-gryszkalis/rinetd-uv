@@ -60,7 +60,7 @@ sudo pacman -S base-devel autoconf automake pkgconf libuv
 For most users, the following commands will build and install rinetd-uv:
 
 ```bash
-./bootstrap
+autoreconf -fiv
 ./configure
 make
 sudo make install
@@ -70,16 +70,19 @@ sudo make install
 
 #### 1. Generate Configuration Files
 
-Run the bootstrap script to generate the autotools infrastructure:
+Run the `autoreconf` to generate the autotools infrastructure:
+
+```bash
+autoreconf -fiv
+```
+
+##### Alternative
+
+If `autoreconf` causes problems on your system, consider using old-style `./bootstrap` script that runs applicable autotools.
 
 ```bash
 ./bootstrap
 ```
-
-This creates:
-- `configure` script
-- `Makefile.in` templates
-- `aclocal.m4` and related files
 
 #### 2. Configure the Build
 
@@ -119,12 +122,6 @@ make
 
 The compiled binary will be in `src/rinetd-uv`.
 
-**Parallel build** (faster on multi-core systems):
-
-```bash
-make -j$(nproc)
-```
-
 #### 4. Install
 
 Install rinetd-uv system-wide (requires root privileges):
@@ -133,7 +130,7 @@ Install rinetd-uv system-wide (requires root privileges):
 sudo make install
 ```
 
-This installs:
+This installs (assuming default prefix (`/usr/local`) is used):
 - `/usr/local/sbin/rinetd-uv` - Main executable
 - `/usr/local/share/man/man8/rinetd-uv.8` - Man page
 - `/usr/local/etc/rinetd-uv.conf` - Example configuration file
@@ -177,43 +174,7 @@ make
 
 ## Testing
 
-rinetd-uv includes test scripts in the `test/` directory.
-
-### Running Tests
-
-**TCP tests:**
-
-```bash
-cd test
-./test_tcp.sh
-```
-
-**UDP tests:**
-
-```bash
-cd test
-./test_udp.sh
-```
-
-### Manual Testing
-
-1. Create a test configuration file (e.g., `test.conf`):
-
-```
-0.0.0.0 8080 127.0.0.1 80
-```
-
-2. Run rinetd-uv in foreground mode:
-
-```bash
-./src/rinetd-uv -f -c test.conf
-```
-
-3. Test the forwarding:
-
-```bash
-curl http://localhost:8080
-```
+See: [[test_suite/README.md]].
 
 ## Troubleshooting
 
@@ -254,44 +215,6 @@ sudo apt-get install peg
 
 # Arch Linux
 sudo pacman -S peg
-
-# From source
-git clone https://github.com/westes/peg.git
-cd peg
-make
-sudo make install
-```
-
-### Permission Denied During Install
-
-**Error:**
-```
-Permission denied
-```
-
-**Solution:**
-Use sudo for installation:
-
-```bash
-sudo make install
-```
-
-### Bootstrap Script Fails
-
-**Error:**
-```
-./bootstrap: autoreconf: command not found
-```
-
-**Solution:**
-Install autotools:
-
-```bash
-# Debian/Ubuntu
-sudo apt-get install autoconf automake
-
-# Fedora/RHEL
-sudo dnf install autoconf automake
 ```
 
 ## Uninstalling
@@ -310,7 +233,7 @@ sudo make uninstall
 make dist
 ```
 
-This creates `rinetd-uv-2.0.tar.gz` and `rinetd-uv-2.0.tar.bz2`.
+This creates `rinetd-uv-{VERSION}.tar.gz` and `rinetd-uv-{VERSION}.tar.bz2`.
 
 ### Distribution Check
 
@@ -371,29 +294,9 @@ pkg install autoconf automake pkgconf libuv
 # OpenBSD
 pkg_add autoconf automake libuv
 ```
-
-## Memory and Performance Optimization
-
-### Buffer Size Configuration
-
-rinetd-uv's memory usage depends on buffer size and concurrent connections:
-
-```
-Total Memory ≈ bufferSize × concurrent_connections
-```
-
-You can configure buffer size in `rinetd-uv.conf`:
-
-```
-buffersize 32768  # 32 KB per connection
-```
-
-See `BUFFER_OPTIMIZATION.md` for detailed tuning recommendations.
-
 ## Further Information
 
 - **Documentation**: See `DOCUMENTATION.md` for complete usage documentation
 - **Man Page**: `man rinetd-uv` (after installation)
-- **Performance**: See `BUFFER_OPTIMIZATION.md` for optimization tips
 - **Changes**: See `CHANGES.md` for version history
 - **Original rinetd**: https://github.com/samhocevar/rinetd
