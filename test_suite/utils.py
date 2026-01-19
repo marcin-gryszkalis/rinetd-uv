@@ -544,3 +544,320 @@ def run_repeated_transfers(listen_proto, listen_addr, size, chunk_size, seed, du
             return False, f"Transfer {count} failed: {msg}"
         count += 1
     return True, f"Completed {count} transfers"
+
+
+def run_upload_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+    """
+    Run an upload-only transfer: send data, verify server received correct byte count.
+
+    Protocol (proxy-friendly):
+    - Client sends: "<size>\n" followed by exactly <size> bytes
+    - Server responds: "<received_bytes>\n"
+
+    Args:
+        listen_proto: 'tcp' or 'unix' (UDP not supported for upload mode)
+        listen_addr: Address tuple or Unix socket path
+        size: Total bytes to upload
+        chunk_size: Size of each chunk
+        seed: Random seed for data generation
+        deadline: time.time() value - if reached, return immediately
+
+    Returns:
+        (success, message) tuple
+    """
+    if deadline and time.time() >= deadline:
+        return True, "stopped at deadline"
+
+    if listen_proto == "udp":
+        return False, "UDP not supported for upload mode"
+
+    family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.settimeout(DEFAULT_TIMEOUT)
+        try:
+            s.connect(listen_addr)
+        except Exception as e:
+            return False, f"Connect failed: {e}"
+
+        # Send size header
+        header = f"{size}\n".encode()
+        try:
+            s.sendall(header)
+        except Exception as e:
+            return False, f"Failed to send header: {e}"
+
+        # Send data
+        stream = SeededRandomStream(seed, size)
+        bytes_sent = 0
+        while bytes_sent < size:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            try:
+                s.sendall(chunk)
+                bytes_sent += len(chunk)
+            except Exception as e:
+                return False, f"Send failed after {bytes_sent} bytes: {e}"
+
+        # Receive byte count response
+        try:
+            response = b""
+            while b"\n" not in response:
+                chunk = s.recv(1024)
+                if not chunk:
+                    break
+                response += chunk
+
+            received_count = int(response.strip())
+            if received_count != size:
+                return False, f"Server received {received_count} bytes, expected {size}"
+            return True, None
+
+        except Exception as e:
+            return False, f"Failed to receive byte count: {e}"
+
+
+def run_download_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+    """
+    Run a download-only transfer: request data from server, verify received data.
+
+    Protocol:
+    - Client sends: "<size> <seed>\n"
+    - Server responds with <size> bytes of seeded random data
+
+    Args:
+        listen_proto: 'tcp' or 'unix' (UDP not supported for download mode)
+        listen_addr: Address tuple or Unix socket path
+        size: Total bytes to download
+        chunk_size: Size of each chunk (for receiving)
+        seed: Random seed for data verification
+        deadline: time.time() value - if reached, return immediately
+
+    Returns:
+        (success, message) tuple
+    """
+    if deadline and time.time() >= deadline:
+        return True, "stopped at deadline"
+
+    if listen_proto == "udp":
+        return False, "UDP not supported for download mode"
+
+    family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.settimeout(DEFAULT_TIMEOUT)
+        try:
+            s.connect(listen_addr)
+        except Exception as e:
+            return False, f"Connect failed: {e}"
+
+        # Send request: "<size> <seed>\n"
+        request = f"{size} {seed}\n".encode()
+        try:
+            s.sendall(request)
+        except Exception as e:
+            return False, f"Failed to send request: {e}"
+
+        # Receive and verify data
+        verify_stream = SeededRandomStream(seed, size)
+        bytes_received = 0
+        while bytes_received < size:
+            try:
+                chunk = s.recv(chunk_size)
+            except socket.timeout:
+                return False, f"Receive timeout after {bytes_received}/{size} bytes"
+            if not chunk:
+                return False, f"Connection closed after {bytes_received}/{size} bytes"
+
+            expected = verify_stream.read(len(chunk))
+            if chunk != expected:
+                return False, f"Data mismatch at offset {bytes_received}"
+            bytes_received += len(chunk)
+
+        return True, None
+
+
+def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+    """
+    Run an upload transfer with rolling SHA256 verification.
+
+    Protocol (proxy-friendly, length-prefixed):
+    - Client sends: "<size>\n" followed by exactly <size> bytes
+    - Server buffers data, and after each HASH_CHUNK_SIZE bytes, sends back rolling SHA256 (32 bytes)
+    - At end, server sends final hash of any remaining data
+
+    Note: The test's chunk_size controls how data is sent through the proxy,
+    but the server uses a fixed 65536-byte hash boundary (HASH_CHUNK_SIZE).
+
+    Args:
+        listen_proto: 'tcp' or 'unix' (UDP not supported)
+        listen_addr: Address tuple or Unix socket path
+        size: Total bytes to upload
+        chunk_size: Size of each send chunk (proxy stress test parameter)
+        seed: Random seed for data generation
+        deadline: time.time() value - if reached, return immediately
+
+    Returns:
+        (success, message) tuple
+    """
+    HASH_CHUNK_SIZE = 65536  # Server's fixed hash boundary size
+
+    if deadline and time.time() >= deadline:
+        return True, "stopped at deadline"
+
+    if listen_proto == "udp":
+        return False, "UDP not supported for upload_sha256 mode"
+
+    family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.settimeout(DEFAULT_TIMEOUT)
+        try:
+            s.connect(listen_addr)
+        except Exception as e:
+            return False, f"Connect failed: {e}"
+
+        # Send size header first
+        header = f"{size}\n".encode()
+        try:
+            s.sendall(header)
+        except Exception as e:
+            return False, f"Failed to send header: {e}"
+
+        # Send all data (using test's chunk_size for send operations)
+        stream = SeededRandomStream(seed, size)
+        bytes_sent = 0
+        while bytes_sent < size:
+            chunk = stream.read(chunk_size)
+            if not chunk:
+                break
+            try:
+                s.sendall(chunk)
+                bytes_sent += len(chunk)
+            except Exception as e:
+                return False, f"Send failed after {bytes_sent} bytes: {e}"
+
+        # Now receive and verify rolling hashes
+        # Server sends 32-byte SHA256 after each HASH_CHUNK_SIZE bytes processed
+        verify_stream = SeededRandomStream(seed, size)
+        hasher = hashlib.sha256()
+        bytes_hashed = 0
+        expected_hashes = []
+
+        # Calculate expected hashes using server's fixed hash boundary
+        while bytes_hashed < size:
+            to_hash = min(HASH_CHUNK_SIZE, size - bytes_hashed)
+            chunk_data = verify_stream.read(to_hash)
+            hasher.update(chunk_data)
+            bytes_hashed += to_hash
+            # Server sends hash after each HASH_CHUNK_SIZE boundary, or at end
+            if bytes_hashed % HASH_CHUNK_SIZE == 0 or bytes_hashed == size:
+                expected_hashes.append(hasher.digest())
+
+        # Receive hashes from server
+        for i, expected_hash in enumerate(expected_hashes):
+            try:
+                received_hash = recv_all(s, 32)
+            except Exception as e:
+                return False, f"Failed to receive hash {i}: {e}"
+
+            if received_hash != expected_hash:
+                return False, f"Hash mismatch at chunk {i}: expected {expected_hash.hex()}, got {received_hash.hex()}"
+
+        return True, None
+
+
+def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+    """
+    Run a download transfer with rolling SHA256 verification.
+
+    Protocol (from TcpDownloadSha256Server):
+    - Client sends: "<size> <seed> <chunk_size>\n"
+    - Server sends data in chunks using random.Random(seed).randbytes()
+    - After each chunk, client sends back rolling SHA256 (32 bytes)
+    - Server verifies the hash
+
+    Args:
+        listen_proto: 'tcp' or 'unix' (UDP not supported)
+        listen_addr: Address tuple or Unix socket path
+        size: Total bytes to download
+        chunk_size: Size of each chunk
+        seed: Random seed for data verification
+        deadline: time.time() value - if reached, return immediately
+
+    Returns:
+        (success, message) tuple
+    """
+    if deadline and time.time() >= deadline:
+        return True, "stopped at deadline"
+
+    if listen_proto == "udp":
+        return False, "UDP not supported for download_sha256 mode"
+
+    family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.settimeout(DEFAULT_TIMEOUT)
+        try:
+            s.connect(listen_addr)
+        except Exception as e:
+            return False, f"Connect failed: {e}"
+
+        # Send request: "<size> <seed> <chunk_size>\n"
+        request = f"{size} {seed} {chunk_size}\n".encode()
+        try:
+            s.sendall(request)
+        except Exception as e:
+            return False, f"Failed to send request: {e}"
+
+        # Server uses simple random.Random(seed).randbytes() - must match exactly
+        rng = random.Random(seed)
+        hasher = hashlib.sha256()
+        bytes_received = 0
+
+        while bytes_received < size:
+            to_recv = min(chunk_size, size - bytes_received)
+            try:
+                data = recv_all(s, to_recv)
+            except socket.timeout:
+                return False, f"Receive timeout after {bytes_received}/{size} bytes"
+            except Exception as e:
+                return False, f"Receive failed after {bytes_received}/{size} bytes: {e}"
+
+            # Verify data matches expected (using same RNG as server)
+            expected = rng.randbytes(len(data))
+            if data != expected:
+                return False, f"Data mismatch at offset {bytes_received}"
+
+            bytes_received += len(data)
+
+            # Update hash and send to server
+            hasher.update(data)
+            try:
+                s.sendall(hasher.digest())
+            except Exception as e:
+                return False, f"Failed to send hash after {bytes_received} bytes: {e}"
+
+        return True, None
+
+
+def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, seed, duration, mode="echo"):
+    """
+    Repeat transfers until duration is reached, with specified transfer mode.
+
+    Args:
+        mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
+    """
+    transfer_fn = {
+        "echo": run_transfer,
+        "upload": run_upload_transfer,
+        "download": run_download_transfer,
+        "upload_sha256": run_upload_sha256_transfer,
+        "download_sha256": run_download_sha256_transfer,
+    }.get(mode, run_transfer)
+
+    start_time = time.time()
+    count = 0
+    while time.time() - start_time < duration:
+        success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed)
+        if not success:
+            return False, f"Transfer {count} failed: {msg}"
+        count += 1
+    return True, f"Completed {count} transfers"

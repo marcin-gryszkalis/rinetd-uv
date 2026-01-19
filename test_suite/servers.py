@@ -225,7 +225,9 @@ class UnixEchoServer(BaseEchoServer):
 class TcpUploadServer(BaseEchoServer):
     """
     Server that accepts data uploads and discards them.
-    Returns total bytes received when client closes connection.
+    Protocol (proxy-friendly, no half-close needed):
+    - Client sends: "<size>\n" followed by exactly <size> bytes
+    - Server responds: "<received_bytes>\n"
     """
     def __init__(self, host='127.0.0.1', port=0):
         super().__init__((host, port))
@@ -260,17 +262,36 @@ class TcpUploadServer(BaseEchoServer):
                 self.sock.close()
 
     def handle_upload(self, conn):
-        """Receive all data, return byte count at end."""
-        total_bytes = 0
+        """Receive specified amount of data, return byte count."""
         try:
-            # Don't check self.running - let in-flight transfers complete
-            while True:
-                data = conn.recv(65536)
-                if not data:
+            # Read the size header: "<size>\n"
+            header = b""
+            while b"\n" not in header and len(header) < 100:
+                chunk = conn.recv(100)
+                if not chunk:
+                    return
+                header += chunk
+
+            line = header.split(b"\n")[0].decode().strip()
+            expected_size = int(line)
+
+            # Calculate how much of the data was already read with the header
+            extra_data = header[header.index(b"\n") + 1:]
+            total_bytes = len(extra_data)
+
+            # Read remaining data
+            remaining = expected_size - total_bytes
+            while remaining > 0:
+                chunk = conn.recv(min(65536, remaining))
+                if not chunk:
                     break
-                total_bytes += len(data)
+                total_bytes += len(chunk)
+                remaining -= len(chunk)
+
+            # Send response
             conn.sendall(f"{total_bytes}\n".encode())
-        except (OSError, ConnectionError, BrokenPipeError):
+
+        except (OSError, ConnectionError, BrokenPipeError, ValueError):
             pass
         finally:
             conn.close()
@@ -352,9 +373,10 @@ class TcpDownloadServer(BaseEchoServer):
 class TcpUploadSha256Server(BaseEchoServer):
     """
     Server that accepts uploads and returns rolling SHA256 after each chunk.
-    Protocol:
-    - Client sends data in chunks
-    - After receiving each chunk, server sends back the rolling SHA256 (32 bytes)
+    Protocol (proxy-friendly, length-prefixed):
+    - Client sends: "<size>\n" followed by exactly <size> bytes
+    - Server buffers data, after each chunk_size bytes sends back rolling SHA256 (32 bytes)
+    - After all data received, sends final SHA256 for any remaining bytes
     """
     def __init__(self, host='127.0.0.1', port=0, chunk_size=65536):
         super().__init__((host, port))
@@ -390,30 +412,48 @@ class TcpUploadSha256Server(BaseEchoServer):
                 self.sock.close()
 
     def handle_upload_sha256(self, conn):
-        """Receive data, return rolling SHA256 after each chunk."""
+        """Receive specified amount of data, return rolling SHA256 after each chunk."""
         hasher = hashlib.sha256()
         buffer = b""
 
         try:
-            # Don't check self.running - let in-flight transfers complete
-            while True:
-                data = conn.recv(65536)
-                if not data:
+            # Read the size header: "<size>\n"
+            header = b""
+            while b"\n" not in header and len(header) < 100:
+                chunk = conn.recv(100)
+                if not chunk:
+                    return
+                header += chunk
+
+            line = header.split(b"\n")[0].decode().strip()
+            expected_size = int(line)
+
+            # Calculate how much of the data was already read with the header
+            extra_data = header[header.index(b"\n") + 1:]
+            buffer = extra_data
+            total_received = len(extra_data)
+
+            # Read remaining data and send rolling hashes
+            while total_received < expected_size:
+                chunk = conn.recv(min(65536, expected_size - total_received))
+                if not chunk:
                     break
+                buffer += chunk
+                total_received += len(chunk)
 
-                buffer += data
-
+                # Send hash after each chunk_size boundary
                 while len(buffer) >= self.chunk_size:
-                    chunk = buffer[:self.chunk_size]
+                    hash_chunk = buffer[:self.chunk_size]
                     buffer = buffer[self.chunk_size:]
-                    hasher.update(chunk)
+                    hasher.update(hash_chunk)
                     conn.sendall(hasher.digest())
 
+            # Send final hash for remaining bytes
             if buffer:
                 hasher.update(buffer)
                 conn.sendall(hasher.digest())
 
-        except (OSError, ConnectionError, BrokenPipeError):
+        except (OSError, ConnectionError, BrokenPipeError, ValueError):
             pass
         finally:
             conn.close()
