@@ -125,6 +125,8 @@ static void check_all_servers_closed(void);
 
 int main(int argc, char *argv[])
 {
+    log_init();
+
 #ifdef _WIN32
     WSADATA wsaData;
     int result = WSAStartup(MAKEWORD(1, 1), &wsaData);
@@ -133,7 +135,6 @@ int main(int argc, char *argv[])
         exit(1);
     }
 #endif
-    log_init();
 
     readArgs(argc, argv, &options);
     log_set_debug(options.debug);
