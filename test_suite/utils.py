@@ -767,16 +767,21 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
 
 def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
     """
-    Run a download transfer with rolling SHA256 verification.
+    Run a download transfer with SHA256 verification.
 
-    Protocol (from TcpDownloadSha256Server):
+    For TCP/Unix (rolling hash):
     - Client sends: "<size> <seed> <chunk_size>\n"
     - Server sends data in chunks using random.Random(seed).randbytes()
     - After each chunk, client sends back rolling SHA256 (32 bytes)
     - Server verifies the hash
 
+    For UDP (per-packet hash):
+    - Client sends: "<offset> <chunk_size> <seed>\n" per request
+    - Server responds: <data><sha256_of_data> (chunk_size + 32 bytes)
+    - Each packet is self-contained with its own SHA256
+
     Args:
-        listen_proto: 'tcp' or 'unix' (UDP not supported)
+        listen_proto: 'tcp', 'unix', or 'udp'
         listen_addr: Address tuple or Unix socket path
         size: Total bytes to download
         chunk_size: Size of each chunk
@@ -790,8 +795,49 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
         return True, "stopped at deadline"
 
     if listen_proto == "udp":
-        return False, "UDP not supported for download_sha256 mode"
+        # UDP: per-packet SHA256 verification (stateless protocol)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(DEFAULT_TIMEOUT)
+            bytes_received = 0
 
+            while bytes_received < size:
+                # Request this chunk: "<offset> <chunk_size> <seed>\n"
+                to_recv = min(chunk_size, size - bytes_received)
+                request = f"{bytes_received} {to_recv} {seed}\n".encode()
+                try:
+                    s.sendto(request, listen_addr)
+                except Exception as e:
+                    return False, f"Failed to send request at offset {bytes_received}: {e}"
+
+                # Receive data + sha256 (chunk_size + 32 bytes)
+                try:
+                    response, _ = s.recvfrom(to_recv + 32 + 100)  # Extra buffer for safety
+                except socket.timeout:
+                    return False, f"UDP timeout at offset {bytes_received}"
+
+                if len(response) < to_recv + 32:
+                    return False, f"Short response at offset {bytes_received}: got {len(response)}, expected {to_recv + 32}"
+
+                data = response[:to_recv]
+                received_hash = response[to_recv:to_recv + 32]
+
+                # Generate expected data using same algorithm as server
+                chunk_rng = random.Random(seed ^ (bytes_received * 0x9e3779b9))
+                expected_data = chunk_rng.randbytes(to_recv)
+
+                if data != expected_data:
+                    return False, f"Data mismatch at offset {bytes_received}"
+
+                # Verify SHA256
+                expected_hash = hashlib.sha256(data).digest()
+                if received_hash != expected_hash:
+                    return False, f"Hash mismatch at offset {bytes_received}"
+
+                bytes_received += len(data)
+
+            return True, None
+
+    # TCP/Unix: rolling hash protocol
     family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
     with socket.socket(family, socket.SOCK_STREAM) as s:
         s.settimeout(DEFAULT_TIMEOUT)

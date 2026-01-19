@@ -7,7 +7,9 @@ import shutil
 import tempfile
 from .servers import (
     TcpEchoServer, TcpEchoServerIPv6, UdpEchoServer, UnixEchoServer,
-    TcpUploadServer, TcpDownloadServer, TcpUploadSha256Server, TcpDownloadSha256Server
+    TcpUploadServer, TcpDownloadServer, TcpUploadSha256Server, TcpDownloadSha256Server,
+    UnixUploadServer, UnixDownloadServer, UnixUploadSha256Server, UnixDownloadSha256Server,
+    UdpDownloadSha256Server
 )
 from .utils import ipv6_available
 from .utils import create_rinetd_conf, get_free_port, wait_for_port
@@ -115,6 +117,62 @@ def tcp_upload_sha256_server():
 def tcp_download_sha256_server():
     """Server that sends data and verifies client's rolling SHA256."""
     server = TcpDownloadSha256Server()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def udp_download_sha256_server():
+    """UDP server that sends data chunks with per-packet SHA256."""
+    server = UdpDownloadSha256Server()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+# === Unix Socket Alternative Transfer Mode Server Fixtures ===
+
+@pytest.fixture
+def unix_upload_server(tmp_path):
+    """Unix socket server that accepts uploads and returns byte count."""
+    socket_path = str(tmp_path / "upload.sock")
+    server = UnixUploadServer(socket_path)
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def unix_download_server(tmp_path):
+    """Unix socket server that generates and sends seeded random data."""
+    socket_path = str(tmp_path / "download.sock")
+    server = UnixDownloadServer(socket_path)
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def unix_upload_sha256_server(tmp_path):
+    """Unix socket server that returns rolling SHA256 after each received chunk."""
+    socket_path = str(tmp_path / "upload_sha256.sock")
+    server = UnixUploadSha256Server(socket_path)
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def unix_download_sha256_server(tmp_path):
+    """Unix socket server that sends data and verifies client's rolling SHA256."""
+    socket_path = str(tmp_path / "download_sha256.sock")
+    server = UnixDownloadSha256Server(socket_path)
     server.start()
     server.wait_ready()
     yield server

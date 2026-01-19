@@ -72,6 +72,9 @@ def get_compatible_protocols(server_type):
 def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_server,
                          tcp_upload_server, tcp_download_server,
                          tcp_upload_sha256_server, tcp_download_sha256_server,
+                         unix_upload_server, unix_download_server,
+                         unix_upload_sha256_server, unix_download_sha256_server,
+                         udp_download_sha256_server,
                          server_type, listen_proto, connect_proto, size, chunk_size,
                          parallelism, tmp_path):
     """
@@ -79,11 +82,8 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     Tests combinations of server types, protocols, transfer sizes, chunk sizes, and parallelism.
     """
     # Skip incompatible server_type/protocol combinations
-    # Non-echo modes (upload, download, sha256 variants) only have TCP backend servers
-    if server_type != "echo" and connect_proto != "tcp":
-        pytest.skip(f"{server_type} mode only supports TCP backend")
-
-    if server_type != "echo" and listen_proto == "udp":
+    # Only echo and download_sha256 support UDP
+    if server_type not in ("echo", "download_sha256") and (listen_proto == "udp" or connect_proto == "udp"):
         pytest.skip(f"{server_type} mode not supported with UDP")
 
     # Skip UDP with 1-byte chunks if it's too slow or problematic for UDP
@@ -115,13 +115,27 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
         elif connect_proto == "unix":
             backend_path = unix_echo_server.path
     elif server_type == "upload":
-        backend_port = tcp_upload_server.actual_port
+        if connect_proto == "tcp":
+            backend_port = tcp_upload_server.actual_port
+        elif connect_proto == "unix":
+            backend_path = unix_upload_server.path
     elif server_type == "download":
-        backend_port = tcp_download_server.actual_port
+        if connect_proto == "tcp":
+            backend_port = tcp_download_server.actual_port
+        elif connect_proto == "unix":
+            backend_path = unix_download_server.path
     elif server_type == "upload_sha256":
-        backend_port = tcp_upload_sha256_server.actual_port
+        if connect_proto == "tcp":
+            backend_port = tcp_upload_sha256_server.actual_port
+        elif connect_proto == "unix":
+            backend_path = unix_upload_sha256_server.path
     elif server_type == "download_sha256":
-        backend_port = tcp_download_sha256_server.actual_port
+        if connect_proto == "tcp":
+            backend_port = tcp_download_sha256_server.actual_port
+        elif connect_proto == "unix":
+            backend_path = unix_download_sha256_server.path
+        elif connect_proto == "udp":
+            backend_port = udp_download_sha256_server.actual_port
 
     # Build rinetd rule
     listen_spec = f"0.0.0.0 {listen_port}" if listen_port else f"unix:{listen_path}"
