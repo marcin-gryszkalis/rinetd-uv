@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-15" />
+  <meta name="dcterms.date" content="2026-01-20" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-15</p>
+<p class="date">2026-01-20</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -123,8 +123,6 @@ AND DENY RULES</a></li>
 id="toc-example-configuration">EXAMPLE CONFIGURATION</a></li>
 <li><a href="#reinitializing-rinetd-uv"
 id="toc-reinitializing-rinetd-uv">REINITIALIZING RINETD-UV</a></li>
-<li><a href="#run-with-docker" id="toc-run-with-docker">RUN WITH
-DOCKER</a></li>
 <li><a href="#bugs-and-limitations" id="toc-bugs-and-limitations">BUGS
 AND LIMITATIONS</a></li>
 <li><a href="#performance-notes" id="toc-performance-notes">PERFORMANCE
@@ -169,6 +167,11 @@ the following syntax:</p>
 <p>The configuration file is found in the file
 <code>/etc/rinetd-uv.conf</code>, unless another file is specified using
 the <code>-c</code> command line option.</p>
+<h3 id="run-with-docker">Run with Docker</h3>
+<p>Example:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> pull marcingryszkalis/rinetd-uv</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv</span></code></pre></div>
 <h2 id="options">OPTIONS</h2>
 <dl>
 <dt><strong>-f</strong></dt>
@@ -674,22 +677,11 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb30"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
-<p>Or simply:</p>
 <div class="sourceCode" id="cb31"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
-<h2 id="run-with-docker">RUN WITH DOCKER</h2>
-<p>There’s simple <code>Dockerfile</code> provided to create working
-docker image with <strong>rinetd-uv</strong> built from sources (HEAD).
-Image is based on Debian Linux. Thanks to using <code>-slim</code> base
-image and 2-stage build final image size shouldn’t exceed 100MB.</p>
-<p>Build the image:</p>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<p>Or simply:</p>
 <div class="sourceCode" id="cb32"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span></code></pre></div>
-<p>Example run:</p>
-<div class="sourceCode" id="cb33"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple
