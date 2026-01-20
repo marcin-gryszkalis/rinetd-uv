@@ -9,7 +9,7 @@ from .servers import (
     TcpEchoServer, TcpEchoServerIPv6, UdpEchoServer, UnixEchoServer,
     TcpUploadServer, TcpDownloadServer, TcpUploadSha256Server, TcpDownloadSha256Server,
     UnixUploadServer, UnixDownloadServer, UnixUploadSha256Server, UnixDownloadSha256Server,
-    UdpDownloadSha256Server
+    UdpDownloadSha256Server, UdpUploadSha256Server
 )
 from .utils import ipv6_available
 from .utils import create_rinetd_conf, get_free_port, wait_for_port
@@ -127,6 +127,16 @@ def tcp_download_sha256_server():
 def udp_download_sha256_server():
     """UDP server that sends data chunks with per-packet SHA256."""
     server = UdpDownloadSha256Server()
+    server.start()
+    server.wait_ready()
+    yield server
+    server.stop()
+
+
+@pytest.fixture
+def udp_upload_sha256_server():
+    """UDP server that receives data chunks and verifies per-packet SHA256."""
+    server = UdpUploadSha256Server()
     server.start()
     server.wait_ready()
     yield server

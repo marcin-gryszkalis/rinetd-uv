@@ -74,7 +74,7 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
                          tcp_upload_sha256_server, tcp_download_sha256_server,
                          unix_upload_server, unix_download_server,
                          unix_upload_sha256_server, unix_download_sha256_server,
-                         udp_download_sha256_server,
+                         udp_download_sha256_server, udp_upload_sha256_server,
                          server_type, listen_proto, connect_proto, size, chunk_size,
                          parallelism, tmp_path):
     """
@@ -82,8 +82,8 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     Tests combinations of server types, protocols, transfer sizes, chunk sizes, and parallelism.
     """
     # Skip incompatible server_type/protocol combinations
-    # Only echo and download_sha256 support UDP
-    if server_type not in ("echo", "download_sha256") and (listen_proto == "udp" or connect_proto == "udp"):
+    # echo and sha256 modes support UDP; upload/download (non-sha256) don't
+    if server_type not in ("echo", "upload_sha256", "download_sha256") and (listen_proto == "udp" or connect_proto == "udp"):
         pytest.skip(f"{server_type} mode not supported with UDP")
 
     # Skip UDP with 1-byte chunks if it's too slow or problematic for UDP
@@ -129,6 +129,8 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
             backend_port = tcp_upload_sha256_server.actual_port
         elif connect_proto == "unix":
             backend_path = unix_upload_sha256_server.path
+        elif connect_proto == "udp":
+            backend_port = udp_upload_sha256_server.actual_port
     elif server_type == "download_sha256":
         if connect_proto == "tcp":
             backend_port = tcp_download_sha256_server.actual_port

@@ -678,34 +678,74 @@ def run_download_transfer(listen_proto, listen_addr, size, chunk_size, seed, dea
 
 def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
     """
-    Run an upload transfer with rolling SHA256 verification.
+    Run an upload transfer with SHA256 verification.
 
-    Protocol (proxy-friendly, length-prefixed):
+    For TCP/Unix (rolling hash):
     - Client sends: "<size>\n" followed by exactly <size> bytes
     - Server buffers data, and after each HASH_CHUNK_SIZE bytes, sends back rolling SHA256 (32 bytes)
     - At end, server sends final hash of any remaining data
 
-    Note: The test's chunk_size controls how data is sent through the proxy,
-    but the server uses a fixed 65536-byte hash boundary (HASH_CHUNK_SIZE).
+    For UDP (per-packet hash):
+    - Client sends: <data><sha256_of_data> (chunk_size + 32 bytes)
+    - Server verifies hash, responds: <computed_sha256> (32 bytes)
+    - Client confirms response matches what it sent
 
     Args:
-        listen_proto: 'tcp' or 'unix' (UDP not supported)
+        listen_proto: 'tcp', 'unix', or 'udp'
         listen_addr: Address tuple or Unix socket path
         size: Total bytes to upload
-        chunk_size: Size of each send chunk (proxy stress test parameter)
+        chunk_size: Size of each send chunk
         seed: Random seed for data generation
         deadline: time.time() value - if reached, return immediately
 
     Returns:
         (success, message) tuple
     """
-    HASH_CHUNK_SIZE = 65536  # Server's fixed hash boundary size
-
     if deadline and time.time() >= deadline:
         return True, "stopped at deadline"
 
     if listen_proto == "udp":
-        return False, "UDP not supported for upload_sha256 mode"
+        # UDP: per-packet SHA256 verification (stateless protocol)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(DEFAULT_TIMEOUT)
+
+            stream = SeededRandomStream(seed, size)
+            bytes_sent = 0
+
+            while bytes_sent < size:
+                to_send = min(chunk_size, size - bytes_sent)
+                data = stream.read(to_send)
+
+                # Compute hash of this chunk
+                data_hash = hashlib.sha256(data).digest()
+
+                # Send data + hash as single packet
+                try:
+                    s.sendto(data + data_hash, listen_addr)
+                except Exception as e:
+                    return False, f"Failed to send at offset {bytes_sent}: {e}"
+
+                # Receive server's computed hash
+                try:
+                    response, _ = s.recvfrom(64)  # 32 bytes expected
+                except socket.timeout:
+                    return False, f"UDP timeout at offset {bytes_sent}"
+
+                if len(response) < 32:
+                    return False, f"Short response at offset {bytes_sent}: got {len(response)}, expected 32"
+
+                server_hash = response[:32]
+
+                # Verify server computed same hash (confirms data integrity)
+                if server_hash != data_hash:
+                    return False, f"Hash mismatch at offset {bytes_sent}"
+
+                bytes_sent += len(data)
+
+            return True, None
+
+    # TCP/Unix: rolling hash protocol
+    HASH_CHUNK_SIZE = 65536  # Server's fixed hash boundary size
 
     family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
     with socket.socket(family, socket.SOCK_STREAM) as s:

@@ -612,6 +612,65 @@ class UdpDownloadSha256Server(BaseEchoServer):
             pass
 
 
+class UdpUploadSha256Server(BaseEchoServer):
+    """
+    UDP server that receives data with per-packet SHA256 and verifies it.
+    Protocol (stateless, per-packet):
+    - Client sends: <data><sha256_of_data> (chunk_size + 32 bytes)
+    - Server computes sha256(data), responds: <computed_sha256> (32 bytes)
+
+    Client can verify the response matches what it sent to confirm
+    the data was received and verified correctly.
+    """
+    def __init__(self, host='127.0.0.1', port=0):
+        super().__init__((host, port))
+        self.host = host
+        self.port = port
+        self.actual_port = 0
+
+    def run(self):
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.bind((self.host, self.port))
+            self.actual_port = self.sock.getsockname()[1]
+            self.ready.set()
+
+            while self.running:
+                try:
+                    r, _, _ = select.select([self.sock], [], [], 0.5)
+                    if not r:
+                        continue
+
+                    data, addr = self.sock.recvfrom(65535)
+                    self.handle_request(data, addr)
+                except OSError:
+                    break
+        except Exception as e:
+            print(f"UdpUploadSha256Server error: {e}", file=sys.stderr)
+        finally:
+            if self.sock:
+                self.sock.close()
+
+    def handle_request(self, packet, addr):
+        """Handle a single UDP packet: verify SHA256 and respond."""
+        try:
+            if len(packet) < 33:  # At least 1 byte data + 32 byte hash
+                return
+
+            # Last 32 bytes are the hash
+            data = packet[:-32]
+            received_hash = packet[-32:]
+
+            # Compute hash of received data
+            computed_hash = hashlib.sha256(data).digest()
+
+            # Respond with computed hash (client can verify it matches)
+            self.sock.sendto(computed_hash, addr)
+
+        except (ValueError, OSError):
+            pass
+
+
 # === Unix Socket Versions of Alternative Transfer Mode Servers ===
 
 class UnixUploadServer(BaseEchoServer):
