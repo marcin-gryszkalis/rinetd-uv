@@ -100,7 +100,9 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     if listen_proto == "tcp" or listen_proto == "udp":
         listen_port = get_free_port()
     else:
-        listen_path = str(tmp_path / f"listen_{server_type}_{listen_proto}_{connect_proto}_{size}_{chunk_size}_{parallelism}.sock")
+        # Unix socket paths limited to 107 chars - use hash for uniqueness
+        path_hash = hash((server_type, listen_proto, connect_proto, size, chunk_size, parallelism)) & 0xFFFFFFFF
+        listen_path = str(tmp_path / f"l_{path_hash:08x}.sock")
 
     # Select backend server based on server_type
     backend_host = "127.0.0.1"
