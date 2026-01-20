@@ -28,13 +28,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config libuv1-dev
+          sudo apt-get install -y autoconf automake libtool pkg-config libuv1-dev peg
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           # Suppress all 3 lines of each warning: "libuv 1.51.0 is already installed and up-to-date. To reinstall 1.51.0, run: brew reinstall libuv"
-          brew install --quiet autoconf automake libtool pkg-config libuv
+          brew install --quiet autoconf automake libtool pkg-config peg libuv
 
       - name: Log platform and compiler
         run: |
