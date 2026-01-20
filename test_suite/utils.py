@@ -658,8 +658,12 @@ def run_download_transfer(listen_proto, listen_addr, size, chunk_size, seed, dea
             return False, f"Failed to send request: {e}"
 
         # Receive and verify data
-        verify_stream = SeededRandomStream(seed, size)
+        # Server uses random.Random(seed).randbytes(size) all at once
+        # We must pre-generate to match (randbytes behavior differs for small vs large calls)
+        rng = random.Random(seed)
+        expected_data = rng.randbytes(size)
         bytes_received = 0
+
         while bytes_received < size:
             try:
                 chunk = s.recv(chunk_size)
@@ -668,7 +672,7 @@ def run_download_transfer(listen_proto, listen_addr, size, chunk_size, seed, dea
             if not chunk:
                 return False, f"Connection closed after {bytes_received}/{size} bytes"
 
-            expected = verify_stream.read(len(chunk))
+            expected = expected_data[bytes_received:bytes_received + len(chunk)]
             if chunk != expected:
                 return False, f"Data mismatch at offset {bytes_received}"
             bytes_received += len(chunk)
