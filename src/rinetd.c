@@ -1277,6 +1277,115 @@ static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
 /* Forward declaration for write callback */
 static void tcp_write_cb(uv_write_t *req, int status);
 
+/* Forward declaration for shutdown callback */
+static void shutdown_cb(uv_shutdown_t *req, int status);
+
+/* Helper: check if connection can be fully closed (both sides EOF) */
+static void tryFullClose(ConnectionInfo *cnx)
+{
+    /* Only close when both sides have received EOF */
+    if (!cnx->local_read_eof || !cnx->remote_read_eof)
+        return;
+
+    /* Both sides have EOF - now we can safely close both handles */
+    if (!cnx->coClosing) {
+        cnx->coLog = logLocalClosedFirst;  /* Arbitrary, both are done */
+        logEvent(cnx, cnx->server, cnx->coLog);
+        cnx->coClosing = 1;
+    }
+
+    /* Close local handle if not already closing */
+    if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
+        uv_handle_t *handle = (cnx->local_handle_type == UV_TCP)
+            ? (uv_handle_t*)&cnx->local_uv_handle.tcp
+            : (cnx->local_handle_type == UV_NAMED_PIPE)
+            ? (uv_handle_t*)&cnx->local_uv_handle.pipe
+            : (uv_handle_t*)&cnx->local_uv_handle.udp;
+        if (!uv_is_closing(handle)) {
+            uv_read_stop((uv_stream_t*)handle);
+            cnx->local_handle_closing = 1;
+            uv_close(handle, handle_close_cb);
+        }
+        cnx->local.fd = INVALID_SOCKET;
+    }
+
+    /* Close remote handle if not already closing */
+    if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
+        uv_handle_t *handle = (cnx->remote_handle_type == UV_TCP)
+            ? (uv_handle_t*)&cnx->remote_uv_handle.tcp
+            : (cnx->remote_handle_type == UV_NAMED_PIPE)
+            ? (uv_handle_t*)&cnx->remote_uv_handle.pipe
+            : (uv_handle_t*)&cnx->remote_uv_handle.udp;
+        if (!uv_is_closing(handle)) {
+            uv_read_stop((uv_stream_t*)handle);
+            cnx->remote_handle_closing = 1;
+            uv_close(handle, handle_close_cb);
+        }
+        cnx->remote.fd = INVALID_SOCKET;
+    }
+
+    /* Close timer if active */
+    if (cnx->timer_initialized && !cnx->timer_closing &&
+        !uv_is_closing((uv_handle_t*)&cnx->timeout_timer)) {
+        cnx->timer_closing = 1;
+        uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
+    }
+}
+
+/* Shutdown callback - called when uv_shutdown completes (pending writes flushed, FIN sent) */
+static void shutdown_cb(uv_shutdown_t *req, int status)
+{
+    ConnectionInfo *cnx = (ConnectionInfo*)req->data;
+    if (!cnx)
+        return;
+
+    if (status < 0 && status != UV_ECANCELED) {
+        logErrorConn(cnx, "shutdown error: %s\n", uv_strerror(status));
+    }
+
+    /* Shutdown complete - check if we can fully close now */
+    tryFullClose(cnx);
+}
+
+/* Handle EOF on a stream with half-close semantics */
+static void handleReadEOF(ConnectionInfo *cnx, Socket *socket,
+                          Socket *other_socket __attribute__((unused)),
+                          uv_stream_t *stream, uv_stream_t *other_stream)
+{
+    int is_local = (socket == &cnx->local);
+    int *my_eof = is_local ? &cnx->local_read_eof : &cnx->remote_read_eof;
+    int *other_shutdown = is_local ? &cnx->remote_shutdown_sent : &cnx->local_shutdown_sent;
+    uv_shutdown_t *shutdown_req = is_local ? &cnx->remote_shutdown_req : &cnx->local_shutdown_req;
+
+    /* Mark this side as EOF */
+    *my_eof = 1;
+
+    /* Stop reading from this side */
+    uv_read_stop(stream);
+
+    /* Check if other side already got EOF too */
+    if (cnx->local_read_eof && cnx->remote_read_eof) {
+        /* Both sides done - close everything */
+        tryFullClose(cnx);
+        return;
+    }
+
+    /* Other side still active - send shutdown (FIN) to signal our EOF
+       but keep reading from other side so we can forward to this side's write */
+    if (!*other_shutdown && !uv_is_closing((uv_handle_t*)other_stream)) {
+        *other_shutdown = 1;
+        shutdown_req->data = cnx;
+        int ret = uv_shutdown(shutdown_req, other_stream, shutdown_cb);
+        if (ret != 0) {
+            logErrorConn(cnx, "uv_shutdown error: %s\n", uv_strerror(ret));
+            /* Shutdown failed - force close */
+            cnx->local_read_eof = 1;
+            cnx->remote_read_eof = 1;
+            tryFullClose(cnx);
+        }
+    }
+}
+
 /* TCP read callback */
 static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
 {
@@ -1303,11 +1412,21 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     }
 
     if (nread < 0) {
-        /* Error or EOF - free buffer and close */
+        /* Error or EOF - free buffer */
         if (buf->base)
             buffer_pool_free(buf->base, buf->len);
-        if (nread != UV_EOF)
+
+        if (nread == UV_EOF) {
+            /* Clean EOF - use half-close semantics for TCP/Unix streams */
+            if (socket->protocol == IPPROTO_TCP || socket->family == AF_UNIX) {
+                handleReadEOF(cnx, socket, other_socket, stream, other_stream);
+                return;
+            }
+        } else {
+            /* Actual error - log it */
             logErrorConn(cnx, "read error: %s\n", uv_strerror((int)nread));
+        }
+        /* For errors or UDP, do immediate close */
         handleClose(cnx, socket, other_socket);
         return;
     }

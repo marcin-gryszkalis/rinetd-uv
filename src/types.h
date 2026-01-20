@@ -138,6 +138,14 @@ struct _connection_info
     int remote_handle_initialized;
     int remote_handle_closing;  /* Set when uv_close() called, cleared in callback */
 
+    /* Half-close state for graceful shutdown (TCP/Unix streams only) */
+    int local_read_eof;         /* Received EOF reading from local (backend) */
+    int remote_read_eof;        /* Received EOF reading from remote (client) */
+    int local_shutdown_sent;    /* Called uv_shutdown() on local */
+    int remote_shutdown_sent;   /* Called uv_shutdown() on remote */
+    uv_shutdown_t local_shutdown_req;   /* Shutdown request for local */
+    uv_shutdown_t remote_shutdown_req;  /* Shutdown request for remote */
+
     /* libuv timer for UDP timeouts */
     uv_timer_t timeout_timer;
     int timer_initialized;
