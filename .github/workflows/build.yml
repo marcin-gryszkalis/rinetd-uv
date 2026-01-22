@@ -28,13 +28,22 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config libuv1-dev peg
+          sudo apt-get install -y autoconf automake libtool pkg-config libuv1-dev peg ccache
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           # Suppress all 3 lines of each warning: "libuv 1.51.0 is already installed and up-to-date. To reinstall 1.51.0, run: brew reinstall libuv"
-          brew install --quiet autoconf automake libtool pkg-config peg libuv
+          brew install --quiet autoconf automake libtool pkg-config peg libuv ccache
+
+      - name: Restore ccache cache
+        if: runner.os != 'Windows'
+        uses: actions/cache@0c45773b623bea8c8e75f6c82a4f6ba4ff96e66c # v4.0.2
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ matrix.compiler }}-${{ hashFiles('configure.ac', 'Makefile.am', 'src/**/*.c', 'src/**/*.h') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ matrix.compiler }}-
 
       - name: Log platform and compiler
         run: |
@@ -52,17 +61,80 @@ jobs:
           fi
           echo "Compiler: $($CC --version | head -1)"
           echo "CC=$CC" >> $GITHUB_ENV
+          echo "BASE_CC=$CC" >> $GITHUB_ENV
+
+      - name: Configure compiler cache
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p "$HOME/.cache/ccache"
+          ccache --max-size=500M
+          ccache --zero-stats
+          echo "CCACHE_DIR=$HOME/.cache/ccache" >> $GITHUB_ENV
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
 
       - run: autoreconf -fvi
 
       - name: Configure build with ${{ matrix.compiler }}
         run: |
+          export CC="ccache $BASE_CC"
           ./configure --prefix=$HOME/local
 
       - name: Compile
         run: |
           export VERBOSE=1
+          export CC="ccache $BASE_CC"
           make
+
+      - name: ccache stats
+        if: runner.os != 'Windows'
+        run: ccache --show-stats
 
       - name: Check build
         run: src/rinetd-uv --version
+
+  windows-msvc:
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ runner.temp }}\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@0c45773b623bea8c8e75f6c82a4f6ba4ff96e66c # v4.0.2
+        with:
+          path: ${{ env.VCPKG_ROOT }}
+          key: vcpkg-${{ runner.os }}-${{ env.VCPKG_DEFAULT_TRIPLET }}-${{ hashFiles('rinetd.vcxproj', '.github/workflows/build.yml') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.VCPKG_DEFAULT_TRIPLET }}-
+
+      - name: Install libuv
+        run: |
+          if (-not (Test-Path "$env:VCPKG_ROOT\.git")) {
+            git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
+          } else {
+            git -C $env:VCPKG_ROOT pull
+          }
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:VCPKG_ROOT\vcpkg.exe" install libuv
+
+      - name: Enable vcpkg integration
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" integrate install
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build (Release x64)
+        run: |
+          msbuild rinetd.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:VcpkgTriplet=x64-windows
+
+      - name: Check build
+        run: |
+          $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$env:PATH"
+          if (-not (Test-Path -Path "x64\Release\rinetd.exe")) { throw "rinetd.exe not found" }
+          & "x64\Release\rinetd.exe" --version
