@@ -8,6 +8,10 @@ This implementation maintains backward compatibility with the original rinetd co
 
 Released under the terms of the GNU General Public License, version 2 or later.
 
+### Note
+
+**Windows** build fails at the moment, pull requests fixing this would be appreciated.
+
 ## About
 
 This program efficiently redirects (proxy) TCP and UDP connections from one IP address/port combination to another. It is useful when operating virtual servers, firewalls, and similar network infrastructure.

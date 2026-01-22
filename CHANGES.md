@@ -1,4 +1,4 @@
-## Version 2.0 (2026/01/09)
+## Version 2.0 (2026-01-24)
 
 **Major rewrite as rinetd-uv**
 
@@ -9,10 +9,11 @@
  * Zero-copy buffer forwarding for improved performance
  * Comprehensive code cleanup: removed unused functions and legacy code
  * Fixed SIGPIPE handling via libuv
- * Updated documentation: single-source markdown with auto-generated man page and HTML
  * Backward compatible with original rinetd configuration files
  * Modern C99 codebase with improved error handling
+ * Async logging
  * Large test suite covering many different scenarios
+ * Updated documentation: single-source markdown with auto-generated man page and HTML
  * **Include directive support:**
    - New `include` directive allows splitting configuration across multiple files
    - Supports wildcard patterns (e.g., `include conf.d/*.conf`)
@@ -42,6 +43,7 @@
    - Support for windows named pipes could be added (as libuv has such capability)
  * **INCOMPATIBILITY** Renamed configuration option: `pidlogfile` → `pidfile`
  * **INCOMPATIBILITY** Changed date format in log file
+ * **INCOMPATIBILITY** Windows build fails (due to lack of `#ifdef _WIN32` here and there)
 
 ## Version 0.73 (2021/02/19)
 
