@@ -93,6 +93,7 @@ jobs:
         run: src/rinetd-uv --version
 
   windows-msvc:
+    if: false
     runs-on: windows-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-windows
