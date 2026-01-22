@@ -1401,14 +1401,24 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     /* Determine which socket and the other socket */
     Socket *socket, *other_socket;
     uv_stream_t *other_stream;
-    if ((uv_stream_t*)&cnx->local_uv_handle.tcp == stream) {
+
+    /* Get proper stream pointers based on handle type */
+    uv_stream_t *local_stream = (cnx->local_handle_type == UV_TCP)
+        ? (uv_stream_t*)&cnx->local_uv_handle.tcp
+        : (uv_stream_t*)&cnx->local_uv_handle.pipe;
+
+    uv_stream_t *remote_stream = (cnx->remote_handle_type == UV_TCP)
+        ? (uv_stream_t*)&cnx->remote_uv_handle.tcp
+        : (uv_stream_t*)&cnx->remote_uv_handle.pipe;
+
+    if (stream == local_stream) {
         socket = &cnx->local;
         other_socket = &cnx->remote;
-        other_stream = (uv_stream_t*)&cnx->remote_uv_handle.tcp;
+        other_stream = remote_stream;
     } else {
         socket = &cnx->remote;
         other_socket = &cnx->local;
-        other_stream = (uv_stream_t*)&cnx->local_uv_handle.tcp;
+        other_stream = local_stream;
     }
 
     if (nread < 0) {
@@ -1499,7 +1509,13 @@ static void tcp_write_cb(uv_write_t *req, int status)
         logErrorConn(cnx, "write error: %s\n", uv_strerror(status));
         /* Determine which socket failed based on handle */
         Socket *socket, *other_socket;
-        if (req->handle == (uv_stream_t*)&cnx->local_uv_handle.tcp) {
+
+        /* Get proper stream pointer based on handle type */
+        uv_stream_t *local_stream = (cnx->local_handle_type == UV_TCP)
+            ? (uv_stream_t*)&cnx->local_uv_handle.tcp
+            : (uv_stream_t*)&cnx->local_uv_handle.pipe;
+
+        if (req->handle == local_stream) {
             socket = &cnx->local;
             other_socket = &cnx->remote;
         } else {
