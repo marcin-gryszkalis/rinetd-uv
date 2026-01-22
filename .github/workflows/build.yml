@@ -95,7 +95,6 @@ jobs:
   windows-msvc:
     runs-on: windows-latest
     env:
-      VCPKG_ROOT: ${{ runner.temp }}\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
     defaults:
       run:
@@ -104,10 +103,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
+      - name: Determine vcpkg path
+        id: vcpkg-path
+        run: |
+          $root = Join-Path "${{ runner.temp }}" "vcpkg"
+          "VCPKG_ROOT=$root" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          "root=$root" | Out-File -FilePath $Env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Restore vcpkg cache
         uses: actions/cache@0c45773b623bea8c8e75f6c82a4f6ba4ff96e66c # v4.0.2
         with:
-          path: ${{ env.VCPKG_ROOT }}
+          path: ${{ steps.vcpkg-path.outputs.root }}
           key: vcpkg-${{ runner.os }}-${{ env.VCPKG_DEFAULT_TRIPLET }}-${{ hashFiles('rinetd.vcxproj', '.github/workflows/build.yml') }}
           restore-keys: |
             vcpkg-${{ runner.os }}-${{ env.VCPKG_DEFAULT_TRIPLET }}-
