@@ -1977,9 +1977,10 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         /* Existing connection - mark as recently used */
         lru_touch(srv, cnx);
 
-        /* Refresh timeout */
+        /* Refresh timeout (note: uv_timer_again is a no-op with repeat=0) */
         cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
-        uv_timer_again(&cnx->timeout_timer);
+        uv_timer_stop(&cnx->timeout_timer);
+        uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
 
         /* Update statistics */
         cnx->remote.totalBytesIn += nread;
