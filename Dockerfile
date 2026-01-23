@@ -29,7 +29,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # Clone and build rinetd-uv from GitHub HEAD
 WORKDIR /build
 RUN git clone --depth 1 https://github.com/marcin-gryszkalis/rinetd-uv.git . \
-    && ./bootstrap \
+    && autoreconf -fiv \
     && ./configure --prefix=/usr --sysconfdir=/etc CFLAGS="-O2 -DNDEBUG" \
     && make
 
