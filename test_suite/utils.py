@@ -404,7 +404,7 @@ def recv_until_close(sock):
             break
     return b''.join(chunks)
 
-def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None, udp_sock=None):
     """
     Run a single transfer and verify data integrity.
 
@@ -419,6 +419,8 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
         chunk_size: Size of each chunk
         seed: Random seed for data generation
         deadline: time.time() value - if reached, return immediately without transfer
+        udp_sock: Optional pre-created UDP socket for reuse (avoids source port
+                  randomization which would create new rinetd sessions)
 
     Returns:
         (success, message) tuple
@@ -429,23 +431,34 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
 
     if listen_proto == "udp":
         data = generate_random_data(size)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(DEFAULT_TIMEOUT)
+        own_socket = udp_sock is None
+        s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            if own_socket:
+                s.settimeout(DEFAULT_TIMEOUT)
             sent_bytes = 0
             received_data = b""
             while sent_bytes < size:
                 to_send = min(size - sent_bytes, chunk_size)
-                s.sendto(data[sent_bytes:sent_bytes+to_send], listen_addr)
+                try:
+                    s.sendto(data[sent_bytes:sent_bytes+to_send], listen_addr)
+                except OSError as e:
+                    return False, f"UDP send failed at offset {sent_bytes}: {e}"
                 try:
                     chunk, _ = s.recvfrom(65535)
                     received_data += chunk
                 except socket.timeout:
-                    return False, "UDP timeout"
+                    return False, f"UDP timeout waiting for echo at offset {sent_bytes}/{size}"
+                except OSError as e:
+                    return False, f"UDP recv failed at offset {sent_bytes}: {e}"
                 sent_bytes += to_send
 
             if received_data != data:
-                return False, "UDP data mismatch"
+                return False, f"UDP data mismatch (got {len(received_data)} bytes, expected {len(data)})"
             return True, None
+        finally:
+            if own_socket:
+                s.close()
     else:
         # TCP/Unix: simple sequential send-then-receive (no threads needed)
         family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
@@ -680,7 +693,7 @@ def run_download_transfer(listen_proto, listen_addr, size, chunk_size, seed, dea
         return True, None
 
 
-def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None, udp_sock=None):
     """
     Run an upload transfer with SHA256 verification.
 
@@ -701,6 +714,7 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
         chunk_size: Size of each send chunk
         seed: Random seed for data generation
         deadline: time.time() value - if reached, return immediately
+        udp_sock: Optional pre-created UDP socket for reuse
 
     Returns:
         (success, message) tuple
@@ -710,8 +724,11 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
 
     if listen_proto == "udp":
         # UDP: per-packet SHA256 verification (stateless protocol)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(DEFAULT_TIMEOUT)
+        own_socket = udp_sock is None
+        s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            if own_socket:
+                s.settimeout(DEFAULT_TIMEOUT)
 
             stream = SeededRandomStream(seed, size)
             bytes_sent = 0
@@ -726,14 +743,16 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
                 # Send data + hash as single packet
                 try:
                     s.sendto(data + data_hash, listen_addr)
-                except Exception as e:
+                except OSError as e:
                     return False, f"Failed to send at offset {bytes_sent}: {e}"
 
                 # Receive server's computed hash
                 try:
                     response, _ = s.recvfrom(64)  # 32 bytes expected
                 except socket.timeout:
-                    return False, f"UDP timeout at offset {bytes_sent}"
+                    return False, f"UDP timeout at offset {bytes_sent}/{size}"
+                except OSError as e:
+                    return False, f"UDP recv failed at offset {bytes_sent}: {e}"
 
                 if len(response) < 32:
                     return False, f"Short response at offset {bytes_sent}: got {len(response)}, expected 32"
@@ -747,6 +766,9 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
                 bytes_sent += len(data)
 
             return True, None
+        finally:
+            if own_socket:
+                s.close()
 
     # TCP/Unix: rolling hash protocol
     HASH_CHUNK_SIZE = 65536  # Server's fixed hash boundary size
@@ -809,7 +831,7 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
         return True, None
 
 
-def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None):
+def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=None, udp_sock=None):
     """
     Run a download transfer with SHA256 verification.
 
@@ -831,6 +853,7 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
         chunk_size: Size of each chunk
         seed: Random seed for data verification
         deadline: time.time() value - if reached, return immediately
+        udp_sock: Optional pre-created UDP socket for reuse
 
     Returns:
         (success, message) tuple
@@ -840,8 +863,11 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
 
     if listen_proto == "udp":
         # UDP: per-packet SHA256 verification (stateless protocol)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.settimeout(DEFAULT_TIMEOUT)
+        own_socket = udp_sock is None
+        s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            if own_socket:
+                s.settimeout(DEFAULT_TIMEOUT)
             bytes_received = 0
 
             while bytes_received < size:
@@ -850,14 +876,16 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
                 request = f"{bytes_received} {to_recv} {seed}\n".encode()
                 try:
                     s.sendto(request, listen_addr)
-                except Exception as e:
+                except OSError as e:
                     return False, f"Failed to send request at offset {bytes_received}: {e}"
 
                 # Receive data + sha256 (chunk_size + 32 bytes)
                 try:
                     response, _ = s.recvfrom(to_recv + 32 + 100)  # Extra buffer for safety
                 except socket.timeout:
-                    return False, f"UDP timeout at offset {bytes_received}"
+                    return False, f"UDP timeout at offset {bytes_received}/{size}"
+                except OSError as e:
+                    return False, f"UDP recv failed at offset {bytes_received}: {e}"
 
                 if len(response) < to_recv + 32:
                     return False, f"Short response at offset {bytes_received}: got {len(response)}, expected {to_recv + 32}"
@@ -880,6 +908,9 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
                 bytes_received += len(data)
 
             return True, None
+        finally:
+            if own_socket:
+                s.close()
 
     # TCP/Unix: rolling hash protocol
     family = socket.AF_INET if isinstance(listen_addr, tuple) else socket.AF_UNIX
@@ -932,6 +963,10 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
     """
     Repeat transfers until duration is reached, with specified transfer mode.
 
+    For UDP: reuses a single socket across all transfers to maintain the same
+    source port. This prevents rinetd from creating a new backend connection
+    for each transfer (which would exhaust file descriptors).
+
     Args:
         mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
     """
@@ -943,11 +978,25 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
         "download_sha256": run_download_sha256_transfer,
     }.get(mode, run_transfer)
 
-    start_time = time.time()
-    count = 0
-    while time.time() - start_time < duration:
-        success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed)
-        if not success:
-            return False, f"Transfer {count} failed: {msg}"
-        count += 1
-    return True, f"Completed {count} transfers"
+    # For UDP, create a shared socket to reuse across all transfers
+    # (same source port = same rinetd connection = no FD exhaustion)
+    udp_sock = None
+    if listen_proto == "udp":
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp_sock.settimeout(DEFAULT_TIMEOUT)
+
+    try:
+        start_time = time.time()
+        count = 0
+        while time.time() - start_time < duration:
+            if udp_sock:
+                success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed, udp_sock=udp_sock)
+            else:
+                success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed)
+            if not success:
+                return False, f"Transfer {count} failed: {msg}"
+            count += 1
+        return True, f"Completed {count} transfers"
+    finally:
+        if udp_sock:
+            udp_sock.close()
