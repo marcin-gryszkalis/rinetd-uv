@@ -111,7 +111,7 @@ Since UDP is a connectionless protocol, a timeout is necessary or forwarding con
 
 This rule will forward all data received on UDP port 8000 to host 10.1.1.2 on UDP port 53, and will close the connection after no data is received on the UDP port for 3600 seconds.
 
-**Note:** rinetd-uv limits UDP connections to 1000 concurrent outgoing connections per forwarding rule to prevent file descriptor exhaustion. When this limit is reached, the oldest (least recently used) connection is automatically closed to make room for new connections. This is particularly important for high-volume UDP proxies (e.g., DNS).
+**Note:** rinetd-uv limits UDP connections to 5000 concurrent outgoing connections per forwarding rule (configurable via `max-udp-connections`) to prevent file descriptor exhaustion. When this limit is reached, the oldest (least recently used) connection is automatically closed to make room for new connections. This is particularly important for high-volume UDP proxies (e.g., DNS).
 
 ### Source Address Option
 
@@ -325,6 +325,32 @@ pool-trim-delay 60000
 - **High traffic servers:** `pool-min-free 256` `pool-max-free 4096` - Pre-allocated capacity for sustained load
 - **Memory-constrained:** `pool-max-free 64` `pool-trim-delay 10000` - Aggressive memory reclamation
 
+### Listen Backlog
+
+The TCP/Unix socket listen backlog determines how many pending connections can queue before the OS starts rejecting new ones.
+
+```
+listen-backlog 256
+```
+
+**Range:** 1 to 65535
+**Default:** 128
+
+Higher values are useful for servers that handle connection bursts. Lower values are appropriate for low-traffic or resource-constrained environments.
+
+### Maximum UDP Connections
+
+The maximum number of concurrent UDP connections (backend sockets) per forwarding rule. When this limit is reached, the oldest (least recently used) connection is automatically evicted.
+
+```
+max-udp-connections 10000
+```
+
+**Range:** 1 to 1000000
+**Default:** 5000
+
+Each UDP connection uses a file descriptor, so ensure your system's `ulimit -n` is set high enough to accommodate the configured limit multiplied by the number of UDP forwarding rules.
+
 ### Logging
 
 **rinetd-uv** is able to produce a log file in either of two formats: tab-delimited and web server-style "common log format".
@@ -493,6 +519,13 @@ pool-trim-delay 60000
 # Automatically re-resolves backend hostnames at specified intervals
 # Set to 0 to disable, or override per-rule with [dns-refresh=N]
 dns-refresh 600
+
+# Listen backlog (1-65535, default: 128)
+# Higher values allow more pending connections during bursts
+listen-backlog 128
+
+# Maximum UDP connections per forwarding rule (1-1000000, default: 5000)
+max-udp-connections 5000
 
 # Global Access Control:
 # You may specify global allow and deny rules here.

@@ -70,7 +70,7 @@ static char *stripQuotes(char const *str);
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | include-directive)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-spec - connect-spec (-? server-options)?
@@ -224,6 +224,24 @@ pool-trim-delay  =  "pool-trim-delay" - < number >
     poolTrimDelay = atoi(yytext);
     if (poolTrimDelay < 100 || poolTrimDelay > 300000) {
         logError("invalid pool-trim-delay value %d at line %d (must be 100-300000 ms)\n", poolTrimDelay, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+listen-backlog  =  "listen-backlog" - < number >
+{
+    listenBacklog = atoi(yytext);
+    if (listenBacklog < 1 || listenBacklog > 65535) {
+        logError("invalid listen-backlog value %d at line %d (must be 1-65535)\n", listenBacklog, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+max-udp-connections  =  "max-udp-connections" - < number >
+{
+    maxUdpConnections = atoi(yytext);
+    if (maxUdpConnections < 1 || maxUdpConnections > 1000000) {
+        logError("invalid max-udp-connections value %d at line %d (must be 1-1000000)\n", maxUdpConnections, yy->currentLine);
         PARSE_ERROR;
     }
 }

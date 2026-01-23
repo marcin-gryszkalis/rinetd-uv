@@ -16,10 +16,10 @@
 /* Constants */
 
 static int const RINETD_DEFAULT_BUFFER_SIZE = 65536;
-static int const RINETD_LISTEN_BACKLOG = 128;
+static int const RINETD_DEFAULT_LISTEN_BACKLOG = 128;
 static int const RINETD_DEFAULT_UDP_TIMEOUT = 10;
 static int const RINETD_DEFAULT_DNS_REFRESH_PERIOD = 600;
-static int const RINETD_MAX_UDP_CONNECTIONS = 5000;
+static int const RINETD_DEFAULT_MAX_UDP_CONNECTIONS = 5000;
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
 static int const RINETD_DEFAULT_POOL_MIN_FREE = 64;
 static int const RINETD_DEFAULT_POOL_MAX_FREE = 1024;
@@ -44,6 +44,8 @@ extern int globalDnsRefreshPeriod;
 extern int poolMinFree;
 extern int poolMaxFree;
 extern int poolTrimDelay;
+extern int listenBacklog;
+extern int maxUdpConnections;
 
 /* libuv event loop */
 extern uv_loop_t *main_loop;

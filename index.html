@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-20" />
+  <meta name="dcterms.date" content="2026-01-24" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-20</p>
+<p class="date">2026-01-24</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -243,12 +243,12 @@ the <em>timeout</em> option:</p>
 <p>This rule will forward all data received on UDP port 8000 to host
 10.1.1.2 on UDP port 53, and will close the connection after no data is
 received on the UDP port for 3600 seconds.</p>
-<p><strong>Note:</strong> rinetd-uv limits UDP connections to 1000
-concurrent outgoing connections per forwarding rule to prevent file
-descriptor exhaustion. When this limit is reached, the oldest (least
-recently used) connection is automatically closed to make room for new
-connections. This is particularly important for high-volume UDP proxies
-(e.g., DNS).</p>
+<p><strong>Note:</strong> rinetd-uv limits UDP connections to 5000
+concurrent outgoing connections per forwarding rule (configurable via
+<code>max-udp-connections</code>) to prevent file descriptor exhaustion.
+When this limit is reached, the oldest (least recently used) connection
+is automatically closed to make room for new connections. This is
+particularly important for high-volume UDP proxies (e.g., DNS).</p>
 <h3 id="source-address-option">Source Address Option</h3>
 <p>A forwarding rule option allows binding to a specific local address
 when sending data to the other end. This is done using the <em>src</em>
@@ -471,6 +471,24 @@ servers:</strong> <code>pool-min-free 16</code>
 load - <strong>Memory-constrained:</strong>
 <code>pool-max-free 64</code> <code>pool-trim-delay 10000</code> -
 Aggressive memory reclamation</p>
+<h3 id="listen-backlog">Listen Backlog</h3>
+<p>The TCP/Unix socket listen backlog determines how many pending
+connections can queue before the OS starts rejecting new ones.</p>
+<pre><code>listen-backlog 256</code></pre>
+<p><strong>Range:</strong> 1 to 65535 <strong>Default:</strong> 128</p>
+<p>Higher values are useful for servers that handle connection bursts.
+Lower values are appropriate for low-traffic or resource-constrained
+environments.</p>
+<h3 id="maximum-udp-connections">Maximum UDP Connections</h3>
+<p>The maximum number of concurrent UDP connections (backend sockets)
+per forwarding rule. When this limit is reached, the oldest (least
+recently used) connection is automatically evicted.</p>
+<pre><code>max-udp-connections 10000</code></pre>
+<p><strong>Range:</strong> 1 to 1000000 <strong>Default:</strong>
+5000</p>
+<p>Each UDP connection uses a file descriptor, so ensure your system’s
+<code>ulimit -n</code> is set high enough to accommodate the configured
+limit multiplied by the number of UDP forwarding rules.</p>
 <h3 id="logging">Logging</h3>
 <p><strong>rinetd-uv</strong> is able to produce a log file in either of
 two formats: tab-delimited and web server-style “common log format”.</p>
@@ -634,6 +652,13 @@ pool-trim-delay 60000
 # Set to 0 to disable, or override per-rule with [dns-refresh=N]
 dns-refresh 600
 
+# Listen backlog (1-65535, default: 128)
+# Higher values allow more pending connections during bursts
+listen-backlog 128
+
+# Maximum UDP connections per forwarding rule (1-1000000, default: 5000)
+max-udp-connections 5000
+
 # Global Access Control:
 # You may specify global allow and deny rules here.
 # Only ip addresses are matched, hostnames cannot be specified here.
@@ -677,11 +702,11 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb31"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb33"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
 <p>Or simply:</p>
-<div class="sourceCode" id="cb32"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+<div class="sourceCode" id="cb34"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple

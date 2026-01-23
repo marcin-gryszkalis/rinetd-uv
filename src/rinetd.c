@@ -78,6 +78,8 @@ int globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
 int poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
 int poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
 int poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
+int listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
+int maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
 static RinetdOptions options = {
     .conf_file = RINETD_CONFIG_FILE,
@@ -294,6 +296,15 @@ static void clearConfiguration(void)
 
 static void readConfiguration(char const *file)
 {
+    /* Reset configurable values to defaults before re-parsing (for SIGHUP) */
+    bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
+    globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
+    poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
+    poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
+    poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
+    listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
+    maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
+
     /* Parse the configuration file. */
     parseConfiguration(file);
 
@@ -586,7 +597,7 @@ static void startServerListening(ServerInfo *srv)
 
         /* Start listening for connections */
         ret = uv_listen((uv_stream_t*)&srv->uv_handle.pipe,
-                        RINETD_LISTEN_BACKLOG, unix_server_accept_cb);
+                        listenBacklog, unix_server_accept_cb);
         if (ret != 0) {
             logError("uv_listen() failed for Unix socket: %s\n", uv_strerror(ret));
             exit(1);
@@ -615,7 +626,7 @@ static void startServerListening(ServerInfo *srv)
 
         /* Start listening for connections */
         ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp,
-                        RINETD_LISTEN_BACKLOG, tcp_server_accept_cb);
+                        listenBacklog, tcp_server_accept_cb);
         if (ret != 0) {
             logError("uv_listen() failed: %s\n", uv_strerror(ret));
             exit(1);
@@ -1991,7 +2002,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     }
 
     /* New connection - check if we've reached the limit */
-    if (srv->udp_connection_count >= RINETD_MAX_UDP_CONNECTIONS) {
+    if (srv->udp_connection_count >= maxUdpConnections) {
         /* Close oldest connection to make room */
         close_oldest_udp_connection((ServerInfo*)srv);
     }
