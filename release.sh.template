@@ -1,0 +1,98 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_NAME="rinetd-uv"
+VERSION="@@VERSION@@"
+VERSION_MAJOR="@@VERSION_MAJOR@@"
+VERSION_MINOR="@@VERSION_MINOR@@"
+TAG="@@TAG@@"
+DOCKER_IMAGE="marcingryszkalis/rinetd-uv"
+START_STEP="${1:-0}"
+RELEASE_NOTES=$(cat <<'RELEASE_NOTES_EOF'
+@@RELEASE_NOTES@@
+RELEASE_NOTES_EOF
+)
+
+step() {
+    if [ "$1" -lt "$START_STEP" ]; then
+        echo "--- Skipping step $1: $2 ---"
+        return 1
+    fi
+    echo ""
+    echo "=== Step $1: $2 ==="
+    echo ""
+}
+
+echo "Releasing $APP_NAME $VERSION (starting from step $START_STEP)"
+echo "Press Ctrl-C to abort..."
+for i in $(seq 10 -1 1); do
+    printf "\r%d... " "$i"
+    sleep 1
+done
+echo ""
+
+if step 2 "Update VERSION file"; then
+    echo "$VERSION" > VERSION
+fi
+
+if step 4 "Regenerate documentation"; then
+    make docs
+fi
+
+if step 5 "Regenerate build system"; then
+    git clean -fX
+    autoreconf -fvi
+    grep AC_INIT configure | head -1
+fi
+
+if step 6 "Build and test"; then
+    ./configure
+    make clean
+    make
+    src/$APP_NAME --version | grep "$VERSION"
+# @@BEGIN:tests@@
+    venv/bin/pytest test_suite/
+# @@END:tests@@
+fi
+
+if step 7 "Create distribution tarballs"; then
+    make dist
+    make distcheck
+fi
+
+if step 8 "Commit release"; then
+    git add VERSION CHANGES.md DOCUMENTATION.md $APP_NAME.8 index.html $APP_NAME.conf
+    git commit -m "release $VERSION"
+fi
+
+if step 9 "Tag release"; then
+    git tag -a "$TAG" -m "$APP_NAME $VERSION"
+fi
+
+if step 11 "Push to remote"; then
+    git push origin main
+    git push origin --tags
+fi
+
+# @@BEGIN:docker@@
+if step 12 "Build and push Docker image"; then
+    docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        --tag "$DOCKER_IMAGE:$VERSION" \
+        --tag "$DOCKER_IMAGE:$VERSION_MINOR" \
+        --tag "$DOCKER_IMAGE:$VERSION_MAJOR" \
+        --tag "$DOCKER_IMAGE:latest" \
+        --push .
+fi
+# @@END:docker@@
+
+if step 13 "Create GitHub release"; then
+    gh release create "$TAG" \
+        --title "$APP_NAME $VERSION" \
+        --notes "$RELEASE_NOTES" \
+        "${APP_NAME}-${VERSION}.tar.gz" \
+        "${APP_NAME}-${VERSION}.tar.zst"
+fi
+
+echo ""
+echo "=== Release $APP_NAME $VERSION complete ==="
