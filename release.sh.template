@@ -2,11 +2,11 @@
 set -euo pipefail
 
 APP_NAME="rinetd-uv"
+DOCKER_IMAGE="marcingryszkalis/rinetd-uv"
 VERSION="@@VERSION@@"
 VERSION_MAJOR="@@VERSION_MAJOR@@"
 VERSION_MINOR="@@VERSION_MINOR@@"
 TAG="@@TAG@@"
-DOCKER_IMAGE="marcingryszkalis/rinetd-uv"
 START_STEP="${1:-0}"
 RELEASE_NOTES=$(cat <<'RELEASE_NOTES_EOF'
 @@RELEASE_NOTES@@
@@ -88,6 +88,7 @@ fi
 
 if step 13 "Create GitHub release"; then
     gh release create "$TAG" \
+        --draft \
         --title "$APP_NAME $VERSION" \
         --notes "$RELEASE_NOTES" \
         "${APP_NAME}-${VERSION}.tar.gz" \
