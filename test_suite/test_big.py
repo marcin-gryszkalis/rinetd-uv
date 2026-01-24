@@ -67,6 +67,9 @@ def recv_download_data(sock, size, seed=42, progress_interval=100*1024*1024):
     bytes_received = 0
     start_time = time.time()
     last_report = 0
+    # Pre-generate expected bytes in CHUNK_SIZE blocks to avoid randbytes
+    # alignment issues (randbytes is not splittable at non-4-byte boundaries)
+    expect_buf = b''
 
     while bytes_received < size:
         to_recv = min(CHUNK_SIZE, size - bytes_received)
@@ -76,10 +79,13 @@ def recv_download_data(sock, size, seed=42, progress_interval=100*1024*1024):
 
         hasher.update(data)
 
-        # Verify data matches expected
-        expected = rng.randbytes(len(data))
-        if data != expected:
+        # Generate expected data in aligned chunks as needed
+        while len(expect_buf) < len(data):
+            expect_buf += rng.randbytes(CHUNK_SIZE)
+
+        if data != expect_buf[:len(data)]:
             return False, f"Data mismatch at byte {bytes_received}", None
+        expect_buf = expect_buf[len(data):]
 
         bytes_received += len(data)
 
@@ -245,12 +251,14 @@ def test_big_tcp_echo(rinetd, tcp_echo_server, size):
         t = threading.Thread(target=sender, args=(s, size, seed))
         t.start()
 
-        # Receive in main thread
+        # Receive in main thread - generate expected data in CHUNK_SIZE blocks
+        # to avoid randbytes alignment issues (not splittable at non-4-byte boundaries)
         rng = random.Random(seed)
         hasher = hashlib.sha256()
         bytes_received = 0
         last_report = 0
         progress_interval = 100 * 1024 * 1024
+        expect_buf = b''
 
         while bytes_received < size:
             to_recv = min(CHUNK_SIZE, size - bytes_received)
@@ -259,8 +267,10 @@ def test_big_tcp_echo(rinetd, tcp_echo_server, size):
                 break
 
             hasher.update(data)
-            expected = rng.randbytes(len(data))
-            assert data == expected, f"Data mismatch at byte {bytes_received}"
+            while len(expect_buf) < len(data):
+                expect_buf += rng.randbytes(CHUNK_SIZE)
+            assert data == expect_buf[:len(data)], f"Data mismatch at byte {bytes_received}"
+            expect_buf = expect_buf[len(data):]
             bytes_received += len(data)
 
             if bytes_received - last_report >= progress_interval:
@@ -352,6 +362,7 @@ def test_big_multiple_concurrent(rinetd, tcp_upload_server, tcp_download_server)
 
                 rng = random.Random(seed)
                 bytes_received = 0
+                expect_buf = b''
                 while bytes_received < size:
                     to_recv = min(CHUNK_SIZE, size - bytes_received)
                     data = s.recv(to_recv)
@@ -359,10 +370,12 @@ def test_big_multiple_concurrent(rinetd, tcp_upload_server, tcp_download_server)
                         results[f"download_{worker_id}"] = (False, f"Disconnected at {bytes_received}")
                         return
 
-                    expected = rng.randbytes(len(data))
-                    if data != expected:
+                    while len(expect_buf) < len(data):
+                        expect_buf += rng.randbytes(CHUNK_SIZE)
+                    if data != expect_buf[:len(data)]:
                         results[f"download_{worker_id}"] = (False, f"Mismatch at {bytes_received}")
                         return
+                    expect_buf = expect_buf[len(data):]
                     bytes_received += len(data)
 
                 results[f"download_{worker_id}"] = (bytes_received == size, bytes_received)
