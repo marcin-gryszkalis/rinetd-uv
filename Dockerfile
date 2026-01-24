@@ -72,3 +72,4 @@ CMD ["-f", "-c", "/etc/rinetd-uv.conf"]
 LABEL org.opencontainers.image.title="rinetd-uv"
 LABEL org.opencontainers.image.description="TCP/UDP port redirector using libuv"
 LABEL org.opencontainers.image.source="https://github.com/marcin-gryszkalis/rinetd-uv"
+LABEL org.opencontainers.image.licenses=MIT
