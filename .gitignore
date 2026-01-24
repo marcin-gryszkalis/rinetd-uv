@@ -26,3 +26,7 @@ rinetd-uv.log
 
 __pycache__
 
+release.sh
+rinetd-uv*tar.gz
+rinetd-uv*tar.zst
+
