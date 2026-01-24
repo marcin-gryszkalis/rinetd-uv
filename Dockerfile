@@ -23,6 +23,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     pkg-config \
     libuv1-dev \
     git \
+    peg \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -40,7 +41,7 @@ FROM debian:trixie-slim
 
 # Install runtime dependencies only
 # netbase provides /etc/services for resolving service names (http, https, etc.)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libuv1 \
     netbase \
     && rm -rf /var/lib/apt/lists/*
