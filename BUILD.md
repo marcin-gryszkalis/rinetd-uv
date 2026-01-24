@@ -246,7 +246,7 @@ sudo make uninstall
 make dist
 ```
 
-This creates `rinetd-uv-{VERSION}.tar.gz` and `rinetd-uv-{VERSION}.tar.bz2`.
+This creates `rinetd-uv-{VERSION}.tar.gz` and `rinetd-uv-{VERSION}.tar.zst`.
 
 ### Distribution Check
 
