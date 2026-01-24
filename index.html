@@ -168,10 +168,14 @@ the following syntax:</p>
 <code>/etc/rinetd-uv.conf</code>, unless another file is specified using
 the <code>-c</code> command line option.</p>
 <h3 id="run-with-docker">Run with Docker</h3>
-<p>Example:</p>
+<h4 id="from-public-registry">From public registry</h4>
 <div class="sourceCode" id="cb3"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> pull marcingryszkalis/rinetd-uv</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv</span></code></pre></div>
+<h4 id="local-build">Local build</h4>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
 <h2 id="options">OPTIONS</h2>
 <dl>
 <dt><strong>-f</strong></dt>
@@ -702,11 +706,11 @@ allow 10.0.0.*
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb33"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
-<p>Or simply:</p>
 <div class="sourceCode" id="cb34"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<p>Or simply:</p>
+<div class="sourceCode" id="cb35"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP socket. This rules out FTP (which uses multiple

@@ -1,4 +1,4 @@
-## Version 2.0 (2026-01-24)
+## Version 2.0.0 (2026-01-24)
 
 **Major rewrite as rinetd-uv**
 
@@ -14,6 +14,7 @@
  * Async logging
  * Large test suite covering many different scenarios
  * Updated documentation: single-source markdown with auto-generated man page and HTML
+ * Dockerfile provided and images published
  * **Include directive support:**
    - New `include` directive allows splitting configuration across multiple files
    - Supports wildcard patterns (e.g., `include conf.d/*.conf`)
