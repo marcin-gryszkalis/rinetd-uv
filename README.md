@@ -31,6 +31,7 @@ This program efficiently redirects (proxy) TCP and UDP connections from one IP a
 - [DOCUMENTATION.md](DOCUMENTATION.md) - Complete user documentation
 - [BUILD.md](BUILD.md) - Build requirements and instructions
 - [CHANGES.md](CHANGES.md) - Changelog
+- [SECURITY.md](CHANGES.md) - Security
 - **Man page**: `man rinetd-uv` (after installation)
 
 ## Differences from Original rinetd
