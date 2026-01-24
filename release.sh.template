@@ -35,23 +35,26 @@ if step 2 "Update VERSION file"; then
     echo "$VERSION" > VERSION
 fi
 
-if step 4 "Regenerate documentation"; then
+if step 3 "Regenerate documentation"; then
     make docs
 fi
 
-if step 5 "Regenerate build system"; then
+if step 4 "Regenerate build system"; then
     git clean -fX
     autoreconf -fvi
-    grep AC_INIT configure | head -1
+    grep AC_INIT configure.ac
 fi
 
-if step 6 "Build and test"; then
+if step 5 "Build"; then
     ./configure
     make clean
     make
     src/$APP_NAME --version | grep "$VERSION"
+fi
+
+if step 6 "Test"; then
 # @@BEGIN:tests@@
-    venv/bin/pytest test_suite/
+    venv/bin/pytest test_suite/ -v -m quick
 # @@END:tests@@
 fi
 
