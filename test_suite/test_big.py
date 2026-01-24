@@ -120,6 +120,9 @@ def test_big_tcp_upload(rinetd, tcp_upload_server, size):
         s.settimeout(DEFAULT_TIMEOUT)  # 1 hour timeout
         s.connect(('127.0.0.1', rinetd_port))
 
+        # Send size header (server protocol requires "<size>\n" before data)
+        s.sendall(f"{size}\n".encode())
+
         # Send all data
         send_upload_data(s, size)
 
@@ -311,6 +314,9 @@ def test_big_multiple_concurrent(rinetd, tcp_upload_server, tcp_download_server)
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024)
                 s.settimeout(DEFAULT_TIMEOUT)
                 s.connect(('127.0.0.1', upload_port))
+
+                # Send size header (server protocol requires "<size>\n" before data)
+                s.sendall(f"{size}\n".encode())
 
                 rng = random.Random(worker_id)
                 bytes_sent = 0
