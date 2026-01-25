@@ -93,8 +93,8 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
         pytest.skip("1-byte chunks with large sizes cause OOM (no flow control)")
 
     # UDP with high parallelism causes packet loss (inherent UDP limitation)
-    if listen_proto == "udp" and parallelism > 5:
-        pytest.skip("UDP with high parallelism causes packet loss")
+    # if listen_proto == "udp" and parallelism > 5:
+    #    pytest.skip("UDP with high parallelism causes packet loss")
 
     # UDP has a maximum datagram size (65535 total, ~65507 payload)
     if listen_proto == "udp" and chunk_size > 65507:
