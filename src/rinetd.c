@@ -979,7 +979,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         /* Use 60 second delay before first keepalive probe */
         ret = uv_tcp_keepalive(&cnx->remote_uv_handle.tcp, 1, 60);
         if (ret != 0) {
-            logError("uv_tcp_keepalive (remote) error: %s\n", uv_strerror(ret));
+            logErrorConn(cnx, "uv_tcp_keepalive (remote) error: %s\n", uv_strerror(ret));
             /* Continue anyway - keepalive is optional */
         }
     }
@@ -1015,7 +1015,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
-            logError("malloc failed for Unix connect request\n");
+            logErrorConn(cnx, "malloc failed for Unix connect request\n");
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1055,7 +1055,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
                               srv->sourceAddrInfo->ai_addr, 0);
             if (ret != 0) {
-                logError("bind (source) error: %s\n", uv_strerror(ret));
+                logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
                 /* Continue anyway - binding is optional */
             }
         }
@@ -1063,7 +1063,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         /* Connect to backend (async) */
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
-            logError("malloc failed for connect request\n");
+            logErrorConn(cnx, "malloc failed for connect request\n");
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1075,7 +1075,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
                              srv->toAddrInfo->ai_addr, tcp_connect_cb);
         if (ret != 0) {
-            logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
+            logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
@@ -1175,7 +1175,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     /* Accept the connection */
     int ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.pipe);
     if (ret != 0) {
-        logError("uv_accept (Unix) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_accept (Unix) error: %s\n", uv_strerror(ret));
         cnx->remote_handle_closing = 1;
         uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
         return;
@@ -1221,7 +1221,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
-            logError("malloc failed for Unix connect request\n");
+            logErrorConn(cnx, "malloc failed for Unix connect request\n");
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1264,12 +1264,12 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
                               srv->sourceAddrInfo->ai_addr, 0);
             if (ret != 0)
-                logError("bind (source) error: %s\n", uv_strerror(ret));
+                logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
         }
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
-            logError("malloc failed for TCP connect request\n");
+            logErrorConn(cnx, "malloc failed for TCP connect request\n");
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1281,7 +1281,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
                              srv->toAddrInfo->ai_addr, tcp_connect_cb);
         if (ret != 0) {
-            logError("uv_tcp_connect error: %s\n", uv_strerror(ret));
+            logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
@@ -1525,7 +1525,7 @@ static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf)
     /* Create write request with buffer info */
     WriteReq *wreq = (WriteReq*)malloc(sizeof(WriteReq));
     if (!wreq) {
-        logError("malloc failed for WriteReq\n");
+        logErrorConn(cnx, "malloc failed for WriteReq\n");
         buffer_pool_free(buf->base, buf->len);
         handleClose(cnx, socket, other_socket);
         return;
@@ -1669,7 +1669,7 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     /* Create send request with buffer info */
     UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
     if (!sreq) {
-        logError("malloc failed for UdpSendReq\n");
+        logErrorConn(cnx, "malloc failed for UdpSendReq\n");
         buffer_pool_free(data, alloc_size);
         return;
     }
@@ -1711,7 +1711,7 @@ static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len, in
     /* Create send request with buffer info */
     UdpSendReq *sreq = (UdpSendReq*)malloc(sizeof(UdpSendReq));
     if (!sreq) {
-        logError("malloc failed for UdpSendReq\n");
+        logErrorConn(cnx, "malloc failed for UdpSendReq\n");
         buffer_pool_free(data, alloc_size);
         return;
     }
@@ -2099,7 +2099,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     int ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb,
                              srv->serverTimeout * 1000, 0);
     if (ret != 0) {
-        logError("uv_timer_start error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(ret));
         buffer_pool_free(buf->base, buf->len);
         return;
     }
@@ -2132,7 +2132,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         ret = uv_udp_bind(&cnx->local_uv_handle.udp, (struct sockaddr *)&any_addr, 0);
     }
     if (ret != 0)
-        logError("UDP bind error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "UDP bind error: %s\n", uv_strerror(ret));
 
     set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.udp);
 
@@ -2145,7 +2145,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     ret = uv_udp_recv_start(&cnx->local_uv_handle.udp,
                             alloc_buffer_udp_server_cb, udp_local_recv_cb);
     if (ret != 0) {
-        logError("uv_udp_recv_start (local) error: %s\n", uv_strerror(ret));
+        logErrorConn(cnx, "uv_udp_recv_start (local) error: %s\n", uv_strerror(ret));
         handleClose(cnx, &cnx->local, &cnx->remote);
         buffer_pool_free(buf->base, buf->len);
         return;
