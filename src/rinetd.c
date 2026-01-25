@@ -1376,8 +1376,14 @@ static void shutdown_cb(uv_shutdown_t *req, int status)
     if (!cnx)
         return;
 
-    if (status < 0 && status != UV_ECANCELED) {
+    if (status < 0 && status != UV_ECANCELED && status != UV_ENOTCONN) {
         logErrorConn(cnx, "shutdown error: %s\n", uv_strerror(status));
+    }
+
+    /* On error (especially ENOTCONN on FreeBSD Unix sockets), force both EOFs */
+    if (status < 0 && status != UV_ECANCELED) {
+        cnx->local_read_eof = 1;
+        cnx->remote_read_eof = 1;
     }
 
     /* Shutdown complete - check if we can fully close now */
