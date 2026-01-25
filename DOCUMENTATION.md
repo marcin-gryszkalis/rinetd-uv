@@ -38,14 +38,34 @@ The configuration file is found in the file `/etc/rinetd-uv.conf`, unless anothe
 
 ```bash
 docker pull marcingryszkalis/rinetd-uv
-docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv
+
+docker run --rm marcingryszkalis/rinetd-uv:latest --version
+
+docker run \
+   --name rinetd-uv \
+   --user nobody \
+   --ulimit nofile=65000 \
+   --publish 8080:8080 \
+   --publish 5353:5353/udp \
+   --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro \
+   marcingryszkalis/rinetd-uv
 ```
 
 #### Local build
 
 ```bash
 docker build -t rinetd-uv .
-docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
+
+docker run --rm rinetd-uv --version
+
+docker run \
+    --name rinetd-uv \
+    --user nobody \
+    --ulimit nofile=65000 \
+    --publish 8080:8080 \
+    --publish 5353:5353/udp \
+    --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro \
+    rinetd-uv
 ```
 
 ## OPTIONS
@@ -688,13 +708,18 @@ There are many parameters that needs to be adjusted in case of demanding environ
     - net.ipv4.tcp_mtu_probing
     - net.ipv4.ip_local_port_range
 * FreeBSD
+    - kern.ipc.maxpipekva -- for unix sockets
     - kern.ipc.nmbclusters
     - kern.ipc.nmbjumbop
     - net.inet.ip.portrange.*
-    - net.inet.tcp.fast_finwait2_recycle
-    - kern.ipc.maxpipekva -- for unix sockets
     - net.inet.tcp.always_keepalive
+    - net.inet.tcp.cc.*
+    - net.inet.tcp.fast_finwait2_recycle
+    - net.inet.tcp.minmss
+    - net.inet.tcp.mssdflt
     - net.inet.tcp.rfc1323
+    - net.inet.tcp.syncache.*
+    - net.link.ifqmaxlen
 
 ## LICENSE
 
@@ -722,7 +747,7 @@ Thanks are due to Bill Davidsen, Libor Pechachek, Sascha Ziemann, the Apache Gro
 
 ## LLM
 
-This implementation was created with support of assorted LLM agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was always reviewed by human.
+This implementation (rinetd-uv since version 2.0.0) was created with support of assorted LLM models and agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was always reviewed by human.
 
 ## SEE ALSO
 
@@ -733,5 +758,7 @@ This implementation was created with support of assorted LLM agents (Claude Opus
 
 ### Additional Documentation
 
-- [[BUILD.md]] - Build requirements and instructions
-- [[TCP-UDP_MIXED_MODE.md]] - Technical analysis of mixed-mode limitations
+- [BUILD.md](BUILD.md) - Build requirements and instructions
+- [SECURITY.md](SECURITY.md) - Security policy
+- [CHANGES.md](CHANGES.md) - Changelog
+- [TCP-UDP_MIXED_MODE.md](TCP-UDP_MIXED_MODE.md) - Technical analysis of mixed-mode limitations

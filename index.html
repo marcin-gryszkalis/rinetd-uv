@@ -174,11 +174,31 @@ the <code>-c</code> command line option.</p>
 </ul>
 <div class="sourceCode" id="cb3"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> pull marcingryszkalis/rinetd-uv</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv</span></code></pre></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--rm</span> marcingryszkalis/rinetd-uv:latest <span class="at">--version</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="dt">\</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>   <span class="at">--name</span> rinetd-uv <span class="dt">\</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>   <span class="at">--user</span> nobody <span class="dt">\</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>   <span class="at">--ulimit</span> nofile=65000 <span class="dt">\</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>   <span class="at">--publish</span> 8080:8080 <span class="dt">\</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>   <span class="at">--publish</span> 5353:5353/udp <span class="dt">\</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>   <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro <span class="dt">\</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>   marcingryszkalis/rinetd-uv</span></code></pre></div>
 <h4 id="local-build">Local build</h4>
 <div class="sourceCode" id="cb4"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> rinetd-uv .</span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv</span></code></pre></div>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">--rm</span> rinetd-uv <span class="at">--version</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="dt">\</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">--name</span> rinetd-uv <span class="dt">\</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">--user</span> nobody <span class="dt">\</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">--ulimit</span> nofile=65000 <span class="dt">\</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">--publish</span> 8080:8080 <span class="dt">\</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">--publish</span> 5353:5353/udp <span class="dt">\</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro <span class="dt">\</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    rinetd-uv</span></code></pre></div>
 <h2 id="options">OPTIONS</h2>
 <dl>
 <dt><strong>-f</strong></dt>
@@ -775,8 +795,89 @@ sizes (64 KB - 128 KB) for better throughput - Using smaller buffer
 sizes (2 KB - 8 KB) when memory is constrained - Tuning
 <code>pool-min-free</code> to match typical concurrent connection count
 - Setting <code>pool-trim-delay</code> lower (10-30 seconds) for
-memory-constrained systems - Monitoring active connections and adjusting
-buffer size accordingly</p>
+memory-constrained systems</p>
+<h3 id="operating-system-optimization">Operating system
+optimization</h3>
+<p>There are assorted system-level settings that may affect rinetd-uv
+behavior, especially for higher loads (thousands connections per second
+or high bandwidth).</p>
+<h4 id="open-files">Open files</h4>
+<p>Many of UDP-related scenarios require increasing limit of open files:
+* local limit (<code>ulimit -n</code>) * global/kernel limit - Linux:
+fs.file-max and fs.nr_open - FreeBSD: kern.maxfiles and
+kern.maxfilesperproc</p>
+<h4 id="max-network-buffer-size">Max network buffer size</h4>
+<p>Rinetd-uv sets both buffer sizes (send and receive, known as
+SO_SNDBUF and SO_RCVBUF) to twice the value of <code>buffersize</code>
+configuration variable (2 x 64KB by default). You may try to increase
+this value if required but operating system limits and behavior may
+affect possibility to manipulate that.</p>
+<ul>
+<li>FreeBSD - refer to <strong>tuning(7)</strong> man page for details
+<ul>
+<li>kern.ipc.maxsockbuf</li>
+<li>net.inet.tcp.sendbuf_max</li>
+<li>net.inet.tcp.recvbuf_max</li>
+<li>net.inet.tcp.sendbuf_auto – Send buffer autotuning</li>
+<li>net.inet.tcp.recvbuf_auto – Receive buffer autotuning</li>
+<li>net.inet.tcp.sendspace</li>
+<li>net.inet.tcp.recvspace</li>
+</ul></li>
+</ul>
+<h4 id="backlog">Backlog</h4>
+<p>While it’s possible to configure baclog queue length with
+<code>backlog</code> configuration option - there are system level
+limits as well:</p>
+<ul>
+<li>Linux
+<ul>
+<li>net.core.somaxconn</li>
+<li>net.core.netdev_max_backlog</li>
+<li>net.ipv4.tcp_max_syn_backlog</li>
+</ul></li>
+<li>FreeBSD
+<ul>
+<li>kern.ipc.soacceptqueue</li>
+<li>kern.ipc.somaxconn – legacy name</li>
+</ul></li>
+</ul>
+<h4 id="other-tuning">Other tuning</h4>
+<p>There are many parameters that needs to be adjusted in case of
+demanding environment and specific use cases. Check applicable
+documentation. Below you can find some tunables that should be
+checked:</p>
+<ul>
+<li>Linux
+<ul>
+<li>net.ipv4.tcp_keepalive_*</li>
+<li>net.ipv4.tcp_mtu_probing</li>
+<li>net.ipv4.tcp_tw_reuse</li>
+<li>net.ipv4.tcp_max_tw_buckets</li>
+<li>net.core.rmem_*</li>
+<li>net.core.wmem_*</li>
+<li>net.ipv4.tcp_rmem</li>
+<li>net.ipv4.tcp_wmem</li>
+<li>net.ipv4.udp_rmem_min</li>
+<li>net.ipv4.udp_wmem_min</li>
+<li>net.ipv4.tcp_mtu_probing</li>
+<li>net.ipv4.ip_local_port_range</li>
+</ul></li>
+<li>FreeBSD
+<ul>
+<li>kern.ipc.maxpipekva – for unix sockets</li>
+<li>kern.ipc.nmbclusters</li>
+<li>kern.ipc.nmbjumbop</li>
+<li>net.inet.ip.portrange.*</li>
+<li>net.inet.tcp.always_keepalive</li>
+<li>net.inet.tcp.cc.*</li>
+<li>net.inet.tcp.fast_finwait2_recycle</li>
+<li>net.inet.tcp.minmss</li>
+<li>net.inet.tcp.mssdflt</li>
+<li>net.inet.tcp.rfc1323</li>
+<li>net.inet.tcp.syncache.*</li>
+<li>net.link.ifqmaxlen</li>
+</ul></li>
+</ul>
 <h2 id="license">LICENSE</h2>
 <p>Copyright (c) 1997, 1998, 1999, Thomas Boutell and Boutell.Com,
 Inc.</p>
@@ -799,9 +900,9 @@ boutell@boutell.com</p>
 Apache Group, and many others who have contributed advice and/or source
 code to this and other free software projects.</p>
 <h2 id="llm">LLM</h2>
-<p>This implementation was created with support of assorted LLM agents
-(Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was
-always reviewed by human.</p>
+<p>This implementation (rinetd-uv since version 2.0.0) was created with
+support of assorted LLM models and agents (Claude Opus, Claude Sonnet,
+Gemini, GPT). The architecure and code was always reviewed by human.</p>
 <h2 id="see-also">SEE ALSO</h2>
 <h3 id="links">Links</h3>
 <ul>
@@ -810,9 +911,12 @@ always reviewed by human.</p>
 </ul>
 <h3 id="additional-documentation">Additional Documentation</h3>
 <ul>
-<li>[[BUILD.md]] - Build requirements and instructions</li>
-<li>[[TCP-UDP_MIXED_MODE.md]] - Technical analysis of mixed-mode
-limitations</li>
+<li><a href="BUILD.md">BUILD.md</a> - Build requirements and
+instructions</li>
+<li><a href="SECURITY.md">SECURITY.md</a> - Security policy</li>
+<li><a href="CHANGES.md">CHANGES.md</a> - Changelog</li>
+<li><a href="TCP-UDP_MIXED_MODE.md">TCP-UDP_MIXED_MODE.md</a> -
+Technical analysis of mixed-mode limitations</li>
 </ul>
 </body>
 </html>
