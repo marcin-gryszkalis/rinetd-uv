@@ -164,9 +164,10 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
         if listen_proto == "tcp":
             assert wait_for_port(listen_port)
         else:
-            time.sleep(0.2) # UDP
+            time.sleep(0.5)  # UDP needs more time on some platforms (FreeBSD)
     else:
-        time.sleep(0.2) # Unix
+        time.sleep(0.5)  # Unix
+
         assert os.path.exists(listen_path)
 
     # Generate random data with a seed for reproducibility
