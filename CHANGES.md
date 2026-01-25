@@ -1,3 +1,10 @@
+## Version 2.0.1 (2026-01-25)
+
+**FreeBSD compatibility fixes**
+
+ * add setup of socket buffers (SO_SNDBUF/SO_RCVBUF) - applies to large UDP datagrams
+ * on FreeBSD, calling shutdown() on a Unix socket after the peer closes returns ENOTCONN
+
 ## Version 2.0.0 (2026-01-24)
 
 **Major rewrite as rinetd-uv**
