@@ -38,14 +38,33 @@ The configuration file is found in the file `/etc/rinetd-uv.conf`, unless anothe
 
 ```bash
 docker pull marcingryszkalis/rinetd-uv
-docker run --rm --name rinetd-uv --ulimit nofile=65000 --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv
+
+docker run --rm marcingryszkalis/rinetd-uv:latest --version
+
+docker run \
+   --rm \
+   --name rinetd-uv \
+   --ulimit nofile=65000 \
+   --publish 127.0.0.1:8080:8080 \
+   --publish 127.0.0.1:53535:53535/udp \
+   --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro \
+   marcingryszkalis/rinetd-uv
 ```
 
 #### Local build
 
 ```bash
 docker build --build-arg VERSION=$(cat VERSION) -t rinetd-uv .
-docker run --rm --name rinetd-uv --ulimit nofile=65000 --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
+
+docker run --rm rinetd-uv --version
+
+docker run \
+    --name rinetd-uv \
+    --ulimit nofile=65000 \
+    --publish 127.0.0.1:8080:8080 \
+    --publish 127.0.0.1:53535:53535/udp \
+    --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro \
+    rinetd-uv
 ```
 
 ## OPTIONS
@@ -631,7 +650,75 @@ For high-performance deployments, consider:
 - Using smaller buffer sizes (2 KB - 8 KB) when memory is constrained
 - Tuning `pool-min-free` to match typical concurrent connection count
 - Setting `pool-trim-delay` lower (10-30 seconds) for memory-constrained systems
-- Monitoring active connections and adjusting buffer size accordingly
+
+### Operating system optimization
+
+There are assorted system-level settings that may affect rinetd-uv behavior, especially for higher loads (thousands connections per second or high bandwidth).
+
+#### Open files
+
+Many of UDP-related scenarios require increasing limit of open files:
+* local limit (`ulimit -n`)
+* global/kernel limit
+    - Linux: fs.file-max and fs.nr_open
+    - FreeBSD: kern.maxfiles and kern.maxfilesperproc
+
+#### Max network buffer size
+
+Rinetd-uv sets both buffer sizes (send and receive, known as SO_SNDBUF and SO_RCVBUF) to twice the value of `buffersize` configuration variable (2 x 64KB by default).
+You may try to increase this value if required but operating system limits and behavior may affect possibility to manipulate that.
+
+* FreeBSD - refer to **tuning(7)** man page for details
+    - kern.ipc.maxsockbuf
+    - net.inet.tcp.sendbuf_max
+    - net.inet.tcp.recvbuf_max
+    - net.inet.tcp.sendbuf_auto -- Send buffer autotuning
+    - net.inet.tcp.recvbuf_auto -- Receive buffer autotuning
+    - net.inet.tcp.sendspace
+    - net.inet.tcp.recvspace
+
+#### Backlog
+
+While it's possible to configure baclog queue length with `backlog` configuration option - there are system level limits as well:
+
+* Linux
+    - net.core.somaxconn
+    - net.core.netdev_max_backlog
+    - net.ipv4.tcp_max_syn_backlog
+* FreeBSD
+    - kern.ipc.soacceptqueue
+    - kern.ipc.somaxconn -- legacy name
+
+#### Other tuning
+
+There are many parameters that needs to be adjusted in case of demanding environment and specific use cases. Check applicable documentation. Below you can find some tunables that should be checked:
+
+* Linux
+    - net.ipv4.tcp_keepalive_*
+    - net.ipv4.tcp_mtu_probing
+    - net.ipv4.tcp_tw_reuse
+    - net.ipv4.tcp_max_tw_buckets
+    - net.core.rmem_*
+    - net.core.wmem_*
+    - net.ipv4.tcp_rmem
+    - net.ipv4.tcp_wmem
+    - net.ipv4.udp_rmem_min
+    - net.ipv4.udp_wmem_min
+    - net.ipv4.tcp_mtu_probing
+    - net.ipv4.ip_local_port_range
+* FreeBSD
+    - kern.ipc.maxpipekva -- for unix sockets
+    - kern.ipc.nmbclusters
+    - kern.ipc.nmbjumbop
+    - net.inet.ip.portrange.*
+    - net.inet.tcp.always_keepalive
+    - net.inet.tcp.cc.*
+    - net.inet.tcp.fast_finwait2_recycle
+    - net.inet.tcp.minmss
+    - net.inet.tcp.mssdflt
+    - net.inet.tcp.rfc1323
+    - net.inet.tcp.syncache.*
+    - net.link.ifqmaxlen
 
 ## LICENSE
 
@@ -659,7 +746,7 @@ Thanks are due to Bill Davidsen, Libor Pechachek, Sascha Ziemann, the Apache Gro
 
 ## LLM
 
-This implementation was created with support of assorted LLM agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was always reviewed by human.
+This implementation (rinetd-uv since version 2.0.0) was created with support of assorted LLM models and agents (Claude Opus, Claude Sonnet, Gemini, GPT). The architecure and code was always reviewed by human.
 
 ## SEE ALSO
 
@@ -670,5 +757,7 @@ This implementation was created with support of assorted LLM agents (Claude Opus
 
 ### Additional Documentation
 
-- [[BUILD.md]] - Build requirements and instructions
-- [[TCP-UDP_MIXED_MODE.md]] - Technical analysis of mixed-mode limitations
+- [BUILD.md](BUILD.md) - Build requirements and instructions
+- [SECURITY.md](SECURITY.md) - Security policy
+- [CHANGES.md](CHANGES.md) - Changelog
+- [TCP-UDP_MIXED_MODE.md](TCP-UDP_MIXED_MODE.md) - Technical analysis of mixed-mode limitations

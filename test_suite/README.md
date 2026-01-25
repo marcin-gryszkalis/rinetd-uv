@@ -6,6 +6,10 @@
 - Valgrind (optional, for memory leak detection)
 - `rinetd-uv` binary (built from source or available in PATH)
 
+## Operating system limits
+
+Running full test suite may require tuning OS-level parameters. Check **Operating system optimization** section in `DOCUMENTATION.md`.
+
 ## Setup
 
 1. Create a virtual environment:

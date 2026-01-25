@@ -887,6 +887,8 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.tcp, &fd);
     cnx->local.fd = fd;
 
+    set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.tcp);
+
     /* Enable TCP keepalive on backend connection if configured */
     if (cnx->server && cnx->server->keepalive) {
         /* Use 60 second delay before first keepalive probe */
@@ -1011,8 +1013,6 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
 
-        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
-
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logError("malloc failed for Unix connect request\n");
@@ -1059,8 +1059,6 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
                 /* Continue anyway - binding is optional */
             }
         }
-
-        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.tcp);
 
         /* Connect to backend (async) */
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
@@ -1120,6 +1118,8 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     uv_os_fd_t fd;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.pipe, &fd);
     cnx->local.fd = fd;
+
+    set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
 
     /* Start reading from local (backend) - pipe is a stream, tcp_read_cb works */
     int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.pipe,
@@ -1219,8 +1219,6 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_uv_handle.pipe.data = cnx;
         cnx->local.family = AF_UNIX;
 
-        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
-
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logError("malloc failed for Unix connect request\n");
@@ -1268,8 +1266,6 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             if (ret != 0)
                 logError("bind (source) error: %s\n", uv_strerror(ret));
         }
-
-        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.tcp);
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
