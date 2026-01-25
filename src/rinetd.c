@@ -505,10 +505,31 @@ static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t
 
 static void set_socket_buffer_sizes(uv_handle_t *handle)
 {
-    int size = bufferSize;
-    uv_send_buffer_size(handle, &size);
-    size = bufferSize;
-    uv_recv_buffer_size(handle, &size);
+    /*
+     * Linux kernel doubles the requested buffer size and returns the doubled value.
+     * Other platforms (FreeBSD, macOS) set exactly what's requested.
+     * To get consistent behavior, request 2x on non-Linux platforms.
+     * see: man socket(7)
+     */
+#ifdef __linux__
+    int requested = bufferSize;
+#else
+    int requested = bufferSize * 2;
+#endif
+
+    int send_size = requested;
+    int ret = uv_send_buffer_size(handle, &send_size);
+    if (ret != 0)
+        logError("uv_send_buffer_size failed: %s\n", uv_strerror(ret));
+    else if (send_size < bufferSize)
+        logError("send buffer size %d less than requested %d\n", send_size, bufferSize);
+
+    int recv_size = requested;
+    ret = uv_recv_buffer_size(handle, &recv_size);
+    if (ret != 0)
+        logError("uv_recv_buffer_size failed: %s\n", uv_strerror(ret));
+    else if (recv_size < bufferSize)
+        logError("recv buffer size %d less than requested %d\n", recv_size, bufferSize);
 }
 
 /* libuv signal handler callback */
