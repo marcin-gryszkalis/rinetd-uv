@@ -401,8 +401,9 @@ default value is 9216 on modern versions.</p>
 <p><strong>Range:</strong> 1024 to 1048576 bytes (1 KB to 1 MB)
 <strong>Default:</strong> 65536 bytes (64 KB)</p>
 <p><strong>Recommendations:</strong> - <strong>DNS proxy (small
-packets):</strong> <code>buffersize 2048</code> - Reduces memory usage -
-<strong>HTTP proxy (medium packets):</strong>
+packets):</strong> <code>buffersize 4096</code> - Reduces memory usage
+(standard DNS packets are limited to 512 bytes but EDNS0 extension
+allows up to 4KB) - <strong>HTTP proxy (medium packets):</strong>
 <code>buffersize 32768</code> - Balanced performance - <strong>High
 throughput:</strong> <code>buffersize 131072</code> - Maximum
 performance (if memory allows) - <strong>Memory-constrained

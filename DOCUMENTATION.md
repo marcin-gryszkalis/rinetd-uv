@@ -277,7 +277,7 @@ buffersize 32768
 **Default:** 65536 bytes (64 KB)
 
 **Recommendations:**
-- **DNS proxy (small packets):** `buffersize 2048` - Reduces memory usage
+- **DNS proxy (small packets):** `buffersize 4096` - Reduces memory usage (standard DNS packets are limited to 512 bytes but EDNS0 extension allows up to 4KB)
 - **HTTP proxy (medium packets):** `buffersize 32768` - Balanced performance
 - **High throughput:** `buffersize 131072` - Maximum performance (if memory allows)
 - **Memory-constrained systems:** `buffersize 4096` - Minimum practical size

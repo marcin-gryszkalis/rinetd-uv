@@ -346,11 +346,13 @@ buffersize 32768
 65536 bytes (64 KB)
 .PP
 \f[B]Recommendations:\f[R] \- \f[B]DNS proxy (small packets):\f[R]
-\f[CR]buffersize 2048\f[R] \- Reduces memory usage \- \f[B]HTTP proxy
-(medium packets):\f[R] \f[CR]buffersize 32768\f[R] \- Balanced
-performance \- \f[B]High throughput:\f[R] \f[CR]buffersize 131072\f[R]
-\- Maximum performance (if memory allows) \- \f[B]Memory\-constrained
-systems:\f[R] \f[CR]buffersize 4096\f[R] \- Minimum practical size
+\f[CR]buffersize 4096\f[R] \- Reduces memory usage (standard DNS packets
+are limited to 512 bytes but EDNS0 extension allows up to 4KB) \-
+\f[B]HTTP proxy (medium packets):\f[R] \f[CR]buffersize 32768\f[R] \-
+Balanced performance \- \f[B]High throughput:\f[R]
+\f[CR]buffersize 131072\f[R] \- Maximum performance (if memory allows)
+\- \f[B]Memory\-constrained systems:\f[R] \f[CR]buffersize 4096\f[R] \-
+Minimum practical size
 .PP
 The buffer size multiplied by the number of concurrent connections
 determines total memory usage.
