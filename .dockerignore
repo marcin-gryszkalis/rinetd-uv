@@ -1,6 +1,5 @@
-# Git
-.git
-.gitignore
+# Git and hidden files
+.*
 
 # Build artifacts
 *.o
@@ -31,7 +30,14 @@ test/
 *.pid
 
 # Other
-.dockerignore
 Dockerfile
 *.md
+!DOCUMENTATION.md
 !README.md
+!SECURITY.md
+!TCP-UDP_MIXED_MODE.md
+!UDP-TIMEOUT-ARCH.md
+make-release.py
+pytest.ini
+release.sh.template
+rinetd-uv.conf

@@ -38,14 +38,14 @@ The configuration file is found in the file `/etc/rinetd-uv.conf`, unless anothe
 
 ```bash
 docker pull marcingryszkalis/rinetd-uv
-docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv
+docker run --rm --name rinetd-uv --ulimit nofile=65000 --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv
 ```
 
 #### Local build
 
 ```bash
-docker build -t rinetd-uv .
-docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
+docker build --build-arg VERSION=$(cat VERSION) -t rinetd-uv .
+docker run --rm --name rinetd-uv --ulimit nofile=65000 --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
 ```
 
 ## OPTIONS

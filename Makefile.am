@@ -3,7 +3,7 @@ AUTOMAKE_OPTIONS = foreign dist-zstd
 
 SUBDIRS = src
 
-EXTRA_DIST = bootstrap COPYING CHANGES.md README.md DOCUMENTATION.md BUILD.md \
+EXTRA_DIST = bootstrap LICENSE CHANGES.md README.md DOCUMENTATION.md BUILD.md \
 	TCP-UDP_MIXED_MODE.md \
 	index.html rinetd.vcxproj generate-manpage.sh generate-html.sh generate-conf.sh \
 	$(man_MANS) $(sysconf_DATA)
@@ -51,4 +51,3 @@ docs-conf: rinetd-uv.conf
 
 # This is for Travis CI; we don't have a testsuite yet.
 test:
-

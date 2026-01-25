@@ -4,16 +4,17 @@
 # Multi-stage build: build stage + minimal runtime stage
 #
 # Build:
-#   docker build -t rinetd-uv .
+#   docker build --build-arg VERSION=$(cat VERSION) -t rinetd-uv .
 #
 # Run:
-#   docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
+#   docker run --rm --name rinetd-uv --ulimit nofile=65000 --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro rinetd-uv
 #
 
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM debian:trixie AS builder
+FROM debian:trixie-slim AS base
+FROM base AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
@@ -22,37 +23,39 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     automake \
     pkg-config \
     libuv1-dev \
-    git \
     peg \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and build rinetd-uv from GitHub HEAD
 WORKDIR /build
-RUN git clone --depth 1 https://github.com/marcin-gryszkalis/rinetd-uv.git . \
-    && autoreconf -fiv \
-    && ./configure --prefix=/usr --sysconfdir=/etc CFLAGS="-O2 -DNDEBUG" \
+COPY . .
+RUN autoreconf -fiv \
+    && ./configure --prefix=/usr --sysconfdir=/etc CFLAGS="-O2 -DNDEBUG -Wall -Wextra -Werror" LDFLAGS="-s" \
     && make
 
 # =============================================================================
 # Runtime stage
 # =============================================================================
-FROM debian:trixie-slim
+FROM base
+ARG VERSION=2.0.0
 
 # Install runtime dependencies only
 # netbase provides /etc/services for resolving service names (http, https, etc.)
+# Prepare runtime files to be modified by nobody
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libuv1 \
     netbase \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && touch /var/log/rinetd-uv.log /var/run/rinetd-uv.pid \
+ && chown nobody:nogroup /var/log/rinetd-uv.log /var/run/rinetd-uv.pid
 
 # Copy built binary from builder stage
 COPY --from=builder /build/src/rinetd-uv /usr/sbin/rinetd-uv
+# Copy documentation
+COPY --from=builder /build/LICENSE /build/*.md /
 
-# Optional: create user for running rinetd-uv
-# one can specify --user option to docker run
-# RUN useradd -r -s /bin/false rinetd-uv
-# USER rinetd-uv
+# Run as nobody:nogroup (uid=gid=65534)
+USER nobody
 
 # Optional: expose ports
 # one can specify --publish option to docker run
@@ -70,7 +73,9 @@ ENTRYPOINT ["/usr/sbin/rinetd-uv"]
 CMD ["-f", "-c", "/etc/rinetd-uv.conf"]
 
 # Labels
+LABEL org.opencontainers.image.authors="Marcin Gryszkalis <mg@fork.pl>"
 LABEL org.opencontainers.image.title="rinetd-uv"
 LABEL org.opencontainers.image.description="TCP/UDP port redirector using libuv"
 LABEL org.opencontainers.image.source="https://github.com/marcin-gryszkalis/rinetd-uv"
-LABEL org.opencontainers.image.licenses=MIT
+LABEL org.opencontainers.image.licenses="GPL-2.0-only"
+LABEL org.opencontainers.image.version="$VERSION"
