@@ -66,6 +66,7 @@ docker build \-\-build\-arg VERSION=$(cat VERSION) \-t rinetd\-uv .
 docker run \-\-rm rinetd\-uv \-\-version
 
 docker run \[rs]
+    \-\-rm \[rs]
     \-\-name rinetd\-uv \[rs]
     \-\-ulimit nofile=65000 \[rs]
     \-\-publish 127.0.0.1:8080:8080 \[rs]
