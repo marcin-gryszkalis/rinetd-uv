@@ -34,6 +34,8 @@ The configuration file is found in the file `/etc/rinetd-uv.conf`, unless anothe
 
 #### From public registry
 
+ * https://hub.docker.com/r/marcingryszkalis/rinetd-uv
+
 ```bash
 docker pull marcingryszkalis/rinetd-uv
 docker run -d --name rinetd-uv --user nobody --ulimit nofile=65000 --publish 8080:8080 --publish 5353:5353/udp --volume ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv

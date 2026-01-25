@@ -169,6 +169,9 @@ the following syntax:</p>
 the <code>-c</code> command line option.</p>
 <h3 id="run-with-docker">Run with Docker</h3>
 <h4 id="from-public-registry">From public registry</h4>
+<ul>
+<li>https://hub.docker.com/r/marcingryszkalis/rinetd-uv</li>
+</ul>
 <div class="sourceCode" id="cb3"><pre
 class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> pull marcingryszkalis/rinetd-uv</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> run <span class="at">-d</span> <span class="at">--name</span> rinetd-uv <span class="at">--user</span> nobody <span class="at">--ulimit</span> nofile=65000 <span class="at">--publish</span> 8080:8080 <span class="at">--publish</span> 5353:5353/udp <span class="at">--volume</span> ./rinetd-uv.conf:/etc/rinetd-uv.conf:ro marcingryszkalis/rinetd-uv</span></code></pre></div>
