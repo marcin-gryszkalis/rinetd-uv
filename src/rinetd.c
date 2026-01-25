@@ -164,22 +164,55 @@ int main(int argc, char *argv[])
     }
 
     /* Set up signal handlers using libuv */
+    int ret;
 #ifndef _WIN32
     /* SIGPIPE - ignore (start with no-op callback) */
-    uv_signal_init(main_loop, &sigpipe_handle);
-    uv_signal_start(&sigpipe_handle, signal_cb, SIGPIPE);
+    ret = uv_signal_init(main_loop, &sigpipe_handle);
+    if (ret != 0) {
+        logError("uv_signal_init (SIGPIPE) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
+    ret = uv_signal_start(&sigpipe_handle, signal_cb, SIGPIPE);
+    if (ret != 0) {
+        logError("uv_signal_start (SIGPIPE) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
 
     /* SIGHUP - reload configuration */
-    uv_signal_init(main_loop, &sighup_handle);
-    uv_signal_start(&sighup_handle, signal_cb, SIGHUP);
+    ret = uv_signal_init(main_loop, &sighup_handle);
+    if (ret != 0) {
+        logError("uv_signal_init (SIGHUP) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
+    ret = uv_signal_start(&sighup_handle, signal_cb, SIGHUP);
+    if (ret != 0) {
+        logError("uv_signal_start (SIGHUP) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
 #endif
 
     /* SIGINT and SIGTERM - graceful shutdown */
-    uv_signal_init(main_loop, &sigint_handle);
-    uv_signal_start(&sigint_handle, signal_cb, SIGINT);
+    ret = uv_signal_init(main_loop, &sigint_handle);
+    if (ret != 0) {
+        logError("uv_signal_init (SIGINT) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
+    ret = uv_signal_start(&sigint_handle, signal_cb, SIGINT);
+    if (ret != 0) {
+        logError("uv_signal_start (SIGINT) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
 
-    uv_signal_init(main_loop, &sigterm_handle);
-    uv_signal_start(&sigterm_handle, signal_cb, SIGTERM);
+    ret = uv_signal_init(main_loop, &sigterm_handle);
+    if (ret != 0) {
+        logError("uv_signal_init (SIGTERM) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
+    ret = uv_signal_start(&sigterm_handle, signal_cb, SIGTERM);
+    if (ret != 0) {
+        logError("uv_signal_start (SIGTERM) failed: %s\n", uv_strerror(ret));
+        exit(1);
+    }
 
     /* Initialize UDP hash table for O(1) connection lookup */
     init_udp_hash_table();
@@ -496,10 +529,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status);
 static void unix_server_accept_cb(uv_stream_t *server, int status);
 static void unix_connect_cb(uv_connect_t *req, int status);
 
-static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
-                               const uv_buf_t *buf,
-                               const struct sockaddr *addr,
-                               unsigned flags);
+static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags);
 static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 
@@ -550,9 +580,7 @@ static void signal_cb(uv_signal_t *handle, int signum)
 static void dns_refresh_timer_cb(uv_timer_t *timer)
 {
     ServerInfo *srv = (ServerInfo *)timer->data;
-    logDebug("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n",
-            srv->fromHost, getPort(srv->fromAddrInfo),
-            srv->toHost, srv->dns_refresh_period);
+    logDebug("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n", srv->fromHost, getPort(srv->fromAddrInfo), srv->toHost, srv->dns_refresh_period);
     startAsyncDnsResolution(srv);
 }
 
@@ -609,8 +637,7 @@ static void startServerListening(ServerInfo *srv)
                 if (srv->socketMode != 0) umask(old_umask);
                 exit(1);
             }
-            ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len,
-                                UV_PIPE_NO_TRUNCATE);
+            ret = uv_pipe_bind2(&srv->uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE);
         } else {
             ret = uv_pipe_bind(&srv->uv_handle.pipe, srv->fromUnixPath);
         }
@@ -627,8 +654,7 @@ static void startServerListening(ServerInfo *srv)
         set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.pipe);
 
         /* Start listening for connections */
-        ret = uv_listen((uv_stream_t*)&srv->uv_handle.pipe,
-                        listenBacklog, unix_server_accept_cb);
+        ret = uv_listen((uv_stream_t*)&srv->uv_handle.pipe, listenBacklog, unix_server_accept_cb);
         if (ret != 0) {
             logError("uv_listen() failed for Unix socket: %s\n", uv_strerror(ret));
             exit(1);
@@ -658,8 +684,7 @@ static void startServerListening(ServerInfo *srv)
         set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.tcp);
 
         /* Start listening for connections */
-        ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp,
-                        listenBacklog, tcp_server_accept_cb);
+        ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp, listenBacklog, tcp_server_accept_cb);
         if (ret != 0) {
             logError("uv_listen() failed: %s\n", uv_strerror(ret));
             exit(1);
@@ -689,8 +714,7 @@ static void startServerListening(ServerInfo *srv)
         set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.udp);
 
         /* Start receiving datagrams */
-        ret = uv_udp_recv_start(&srv->uv_handle.udp,
-                                alloc_buffer_udp_server_cb, udp_server_recv_cb);
+        ret = uv_udp_recv_start(&srv->uv_handle.udp, alloc_buffer_udp_server_cb, udp_server_recv_cb);
         if (ret != 0) {
             logError("uv_udp_recv_start() failed: %s\n", uv_strerror(ret));
             exit(1);
@@ -710,16 +734,13 @@ static void startServerListening(ServerInfo *srv)
         if (ret == 0) {
             srv->dns_refresh_timer.data = srv;
             srv->dns_timer_initialized = 1;
-            ret = uv_timer_start(&srv->dns_refresh_timer, dns_refresh_timer_cb,
-                                srv->dns_refresh_period * 1000,
-                                srv->dns_refresh_period * 1000);
+            ret = uv_timer_start(&srv->dns_refresh_timer, dns_refresh_timer_cb, srv->dns_refresh_period * 1000, srv->dns_refresh_period * 1000);
             if (ret != 0) {
                 logError("uv_timer_start() failed for DNS refresh: %s\n", uv_strerror(ret));
                 uv_close((uv_handle_t*)&srv->dns_refresh_timer, NULL);
                 srv->dns_timer_initialized = 0;
             } else {
-                logDebug("DNS refresh enabled for %s -> %s (interval: %ds)\n",
-                        srv->fromHost, srv->toHost, srv->dns_refresh_period);
+                logDebug("DNS refresh enabled for %s -> %s (interval: %ds)\n", srv->fromHost, srv->toHost, srv->dns_refresh_period);
             }
         } else {
             logError("uv_timer_init() failed for DNS refresh: %s\n", uv_strerror(ret));
@@ -865,8 +886,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
                 shouldEnableDnsRefresh(srv)) {
-                logDebug("Backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
-                        srv->consecutive_failures, srv->toHost);
+                logDebug("Backend failures (%d) reached threshold for %s, triggering DNS refresh\n", srv->consecutive_failures, srv->toHost);
                 startAsyncDnsResolution(srv);
             }
         }
@@ -900,8 +920,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     /* Start reading from local (backend) */
-    int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.tcp,
-                            alloc_buffer_cb, tcp_read_cb);
+    int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.tcp, alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_read_start (local) error: %s\n", uv_strerror(ret));
         /* Close both handles - local read failed, remote never started */
@@ -910,8 +929,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     /* NOW start reading from remote (client) - backend is connected */
-    ret = uv_read_start((uv_stream_t*)&cnx->remote_uv_handle.tcp,
-                        alloc_buffer_cb, tcp_read_cb);
+    ret = uv_read_start((uv_stream_t*)&cnx->remote_uv_handle.tcp, alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_read_start (remote) error: %s\n", uv_strerror(ret));
         /* Stop reading on local handle since remote read failed */
@@ -942,13 +960,18 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         return;
 
     /* Initialize remote handle (client connection) */
-    uv_tcp_init(main_loop, &cnx->remote_uv_handle.tcp);
+    int ret = uv_tcp_init(main_loop, &cnx->remote_uv_handle.tcp);
+    if (ret != 0) {
+        logError("uv_tcp_init error: %s\n", uv_strerror(ret));
+        free(cnx);
+        return;
+    }
     cnx->remote_handle_type = UV_TCP;
     cnx->remote_handle_initialized = 1;
     cnx->remote_uv_handle.tcp.data = cnx;
 
     /* Accept the connection */
-    int ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.tcp);
+    ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.tcp);
     if (ret != 0) {
         logError("uv_accept error: %s\n", uv_strerror(ret));
         cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
@@ -961,8 +984,13 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     /* Get remote address immediately after accept */
     struct sockaddr_storage addr;
     int addrlen = sizeof(addr);
-    uv_tcp_getpeername(&cnx->remote_uv_handle.tcp,
-                       (struct sockaddr*)&addr, &addrlen);
+    ret = uv_tcp_getpeername(&cnx->remote_uv_handle.tcp, (struct sockaddr*)&addr, &addrlen);
+    if (ret != 0) {
+        logError("uv_tcp_getpeername error: %s\n", uv_strerror(ret));
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+        return;
+    }
     cnx->remoteAddress = addr;
     cnx->server = srv;  /* Needed for checkConnectionAllowed */
 
@@ -1008,7 +1036,13 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     /* Connect to backend - either TCP or Unix socket */
     if (srv->toUnixPath) {
         /* Backend is Unix socket */
-        uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        if (ret != 0) {
+            logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            return;
+        }
         cnx->local_handle_type = UV_NAMED_PIPE;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
@@ -1036,24 +1070,26 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
                 uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
                 return;
             }
-            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
-                             abstract_name, name_len,
-                             UV_PIPE_NO_TRUNCATE, unix_connect_cb);
+            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
-                            srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
-        uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        if (ret != 0) {
+            logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            return;
+        }
         cnx->local_handle_type = UV_TCP;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
 
         /* Bind to source address if specified */
         if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
-                              srv->sourceAddrInfo->ai_addr, 0);
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
             if (ret != 0) {
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
                 /* Continue anyway - binding is optional */
@@ -1072,8 +1108,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
-                             srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
@@ -1122,8 +1157,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
 
     /* Start reading from local (backend) - pipe is a stream, tcp_read_cb works */
-    int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.pipe,
-                            alloc_buffer_cb, tcp_read_cb);
+    int ret = uv_read_start((uv_stream_t*)&cnx->local_uv_handle.pipe, alloc_buffer_cb, tcp_read_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_read_start (local unix) error: %s\n", uv_strerror(ret));
         handleClose(cnx, &cnx->local, &cnx->remote);
@@ -1167,13 +1201,18 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         return;
 
     /* Initialize remote handle (client connection) - it's a Unix pipe */
-    uv_pipe_init(main_loop, &cnx->remote_uv_handle.pipe, 0);
+    int ret = uv_pipe_init(main_loop, &cnx->remote_uv_handle.pipe, 0);
+    if (ret != 0) {
+        logError("uv_pipe_init error: %s\n", uv_strerror(ret));
+        free(cnx);
+        return;
+    }
     cnx->remote_handle_type = UV_NAMED_PIPE;
     cnx->remote_handle_initialized = 1;
     cnx->remote_uv_handle.pipe.data = cnx;
 
     /* Accept the connection */
-    int ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.pipe);
+    ret = uv_accept(server, (uv_stream_t*)&cnx->remote_uv_handle.pipe);
     if (ret != 0) {
         logErrorConn(cnx, "uv_accept (Unix) error: %s\n", uv_strerror(ret));
         cnx->remote_handle_closing = 1;
@@ -1213,7 +1252,13 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     /* Connect to backend - either TCP or Unix */
     if (srv->toUnixPath) {
         /* Backend is Unix socket */
-        uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
+        if (ret != 0) {
+            logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            return;
+        }
         cnx->local_handle_type = UV_NAMED_PIPE;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
@@ -1243,16 +1288,19 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
                 uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
                 return;
             }
-            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe,
-                             abstract_name, name_len,
-                             UV_PIPE_NO_TRUNCATE, unix_connect_cb);
+            uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe,
-                            srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
-        uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
+        if (ret != 0) {
+            logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            cnx->remote_handle_closing = 1;
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+            return;
+        }
         cnx->local_handle_type = UV_TCP;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
@@ -1261,8 +1309,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 
         /* Bind to source address if specified */
         if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp,
-                              srv->sourceAddrInfo->ai_addr, 0);
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
             if (ret != 0)
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
         }
@@ -1278,8 +1325,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp,
-                             srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
@@ -1293,8 +1339,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 }
 
 /* Buffer allocation callback for UDP server sockets */
-static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size,
-                                       uv_buf_t *buf)
+static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
 {
     (void)handle;
     (void)suggested_size;
@@ -1309,8 +1354,7 @@ static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_siz
 }
 
 /* Buffer allocation callback for libuv reads (connections) */
-static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size,
-                            uv_buf_t *buf)
+static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf)
 {
     (void)handle;  /* Unused - we don't need connection info to allocate */
     (void)suggested_size;  /* Use configured bufferSize instead */
@@ -1651,10 +1695,7 @@ static void handle_close_cb(uv_handle_t *handle)
 /* Forward declarations for UDP */
 static void udp_send_cb(uv_udp_send_t *req, int status);
 static void udp_timeout_cb(uv_timer_t *timer);
-static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
-                              const uv_buf_t *buf,
-                              const struct sockaddr *addr,
-                              unsigned flags);
+static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags);
 
 /* UDP send to backend - takes ownership of buffer */
 static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, int alloc_size)
@@ -1684,8 +1725,7 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     /* Set up buffer for sending */
     uv_buf_t wrbuf = uv_buf_init(data, data_len);
 
-    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1,
-                          cnx->server->toAddrInfo->ai_addr, udp_send_cb);
+    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1, cnx->server->toAddrInfo->ai_addr, udp_send_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
@@ -1726,8 +1766,7 @@ static void udp_send_to_client(ConnectionInfo *cnx, char *data, int data_len, in
     /* Set up buffer for sending */
     uv_buf_t wrbuf = uv_buf_init(data, data_len);
 
-    int ret = uv_udp_send(&sreq->req, &srv->uv_handle.udp, &wrbuf, 1,
-                          (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
+    int ret = uv_udp_send(&sreq->req, &srv->uv_handle.udp, &wrbuf, 1, (struct sockaddr*)&cnx->remoteAddress, udp_send_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_send (to client) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
@@ -1761,8 +1800,7 @@ static void udp_send_cb(uv_udp_send_t *req, int status)
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
                 shouldEnableDnsRefresh(srv)) {
-                logDebug("UDP backend failures (%d) reached threshold for %s, triggering DNS refresh\n",
-                        srv->consecutive_failures, srv->toHost);
+                logDebug("UDP backend failures (%d) reached threshold for %s, triggering DNS refresh\n", srv->consecutive_failures, srv->toHost);
                 startAsyncDnsResolution(srv);
             }
         }
@@ -1845,8 +1883,7 @@ static void init_udp_hash_table(void)
 }
 
 /* Lookup UDP connection in hash table by server and remote address */
-static ConnectionInfo *lookup_udp_connection(ServerInfo const *srv,
-                                             struct sockaddr_storage const *addr)
+static ConnectionInfo *lookup_udp_connection(ServerInfo const *srv, struct sockaddr_storage const *addr)
 {
     if (!udp_hash_table) return NULL;
 
@@ -1970,10 +2007,7 @@ static void udp_timeout_cb(uv_timer_t *timer)
 }
 
 /* UDP local (backend) receive callback */
-static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
-                              const uv_buf_t *buf,
-                              const struct sockaddr *addr,
-                              unsigned flags)
+static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags)
 {
     (void)addr;  /* Unused - we already know the backend */
     (void)flags;
@@ -2000,10 +2034,7 @@ static void udp_local_recv_cb(uv_udp_t *handle, ssize_t nread,
 }
 
 /* UDP server receive callback */
-static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
-                               const uv_buf_t *buf,
-                               const struct sockaddr *addr,
-                               unsigned flags)
+static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags)
 {
     (void)flags;
 
@@ -2026,9 +2057,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
     /* Convert to sockaddr_storage for hashing */
     struct sockaddr_storage addr_storage;
-    memcpy(&addr_storage, addr,
-           addr->sa_family == AF_INET ? sizeof(struct sockaddr_in) :
-                                         sizeof(struct sockaddr_in6));
+    memcpy(&addr_storage, addr, addr->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
 
     /* O(1) hash lookup instead of O(n) list scan */
     ConnectionInfo *cnx = lookup_udp_connection(srv, &addr_storage);
@@ -2040,7 +2069,9 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
         /* Refresh timeout (note: uv_timer_again is a no-op with repeat=0) */
         cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
         uv_timer_stop(&cnx->timeout_timer);
-        uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
+        int timer_ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
+        if (timer_ret != 0)
+            logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(timer_ret));
 
         /* Update statistics */
         cnx->remote.totalBytesIn += nread;
@@ -2094,19 +2125,32 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     cnx->remote_handle_initialized = 0;
 
     /* Initialize timeout timer */
-    uv_timer_init(main_loop, &cnx->timeout_timer);
+    int ret = uv_timer_init(main_loop, &cnx->timeout_timer);
+    if (ret != 0) {
+        logErrorConn(cnx, "uv_timer_init error: %s\n", uv_strerror(ret));
+        buffer_pool_free(buf->base, buf->len);
+        free(cnx);
+        return;
+    }
     cnx->timeout_timer.data = cnx;
-    int ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb,
-                             srv->serverTimeout * 1000, 0);
+    ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(ret));
+        uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
         buffer_pool_free(buf->base, buf->len);
         return;
     }
     cnx->timer_initialized = 1;
 
     /* Create local UDP socket for backend */
-    uv_udp_init(main_loop, &cnx->local_uv_handle.udp);
+    ret = uv_udp_init(main_loop, &cnx->local_uv_handle.udp);
+    if (ret != 0) {
+        logErrorConn(cnx, "uv_udp_init error: %s\n", uv_strerror(ret));
+        cnx->timer_closing = 1;
+        uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
+        buffer_pool_free(buf->base, buf->len);
+        return;
+    }
     cnx->local_handle_type = UV_UDP;
     cnx->local_handle_initialized = 1;
     cnx->local_uv_handle.udp.data = cnx;
@@ -2117,8 +2161,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 
     /* Bind socket - required to get fd for buffer size setting */
     if (srv->sourceAddrInfo) {
-        ret = uv_udp_bind(&cnx->local_uv_handle.udp,
-                          srv->sourceAddrInfo->ai_addr, 0);
+        ret = uv_udp_bind(&cnx->local_uv_handle.udp, srv->sourceAddrInfo->ai_addr, 0);
     } else {
         struct sockaddr_storage any_addr;
         memset(&any_addr, 0, sizeof(any_addr));
@@ -2142,8 +2185,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     cnx->local.fd = local_fd;
 
     /* Start receiving on local socket */
-    ret = uv_udp_recv_start(&cnx->local_uv_handle.udp,
-                            alloc_buffer_udp_server_cb, udp_local_recv_cb);
+    ret = uv_udp_recv_start(&cnx->local_uv_handle.udp, alloc_buffer_udp_server_cb, udp_local_recv_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_recv_start (local) error: %s\n", uv_strerror(ret));
         handleClose(cnx, &cnx->local, &cnx->remote);
@@ -2281,8 +2323,7 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv)
 {
     char addressText[NI_MAXHOST];
-    getnameinfo((struct sockaddr *)addr, sizeof(*addr),
-        addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
+    getnameinfo((struct sockaddr *)addr, sizeof(*addr), addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
 
     /* 1. Check global allow rules. If there are no
         global allow rules, it's presumed OK at
@@ -2315,8 +2356,7 @@ static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, Serve
     for (int j = 0; j < srv->rulesCount; ++j) {
         if (allRules[srv->rulesStart + j].type == allowRule) {
             good = 0;
-            if (match(addressText,
-                allRules[srv->rulesStart + j].pattern)) {
+            if (match(addressText, allRules[srv->rulesStart + j].pattern)) {
                 good = 1;
                 break;
             }
