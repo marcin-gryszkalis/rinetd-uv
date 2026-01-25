@@ -147,6 +147,8 @@ class UdpEchoServer(BaseEchoServer):
     def run(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
             self.sock.bind((self.host, self.port))
             self.actual_port = self.sock.getsockname()[1]
             self.ready.set()

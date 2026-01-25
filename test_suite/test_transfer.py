@@ -18,109 +18,111 @@ TRANSFER_SIZES = [
 def test_tcp_transfer(rinetd, tcp_echo_server, size):
     """Test TCP to TCP forwarding with various sizes."""
     rinetd_port = get_free_port()
-    
+
     # Configure rinetd: bind_addr bind_port connect_addr connect_port
     rules = [
         f"0.0.0.0 {rinetd_port} {tcp_echo_server.host} {tcp_echo_server.actual_port}"
     ]
-    
+
     rinetd(rules)
     assert wait_for_port(rinetd_port), "rinetd did not open port"
-    
+
     # Generate data
     data = generate_random_data(size)
     expected_checksum = calculate_checksum(data)
-    
+
     # Connect to rinetd
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(5)
         s.connect(('127.0.0.1', rinetd_port))
-        
+
         # Send data
         send_all(s, data)
-        
+
         # Receive echo
         received = recv_all(s, size)
-        
+
     assert len(received) == size
     assert calculate_checksum(received) == expected_checksum
 
-@pytest.mark.parametrize("size", [1, 1024, 60000]) # UDP has size limits per packet usually
+@pytest.mark.parametrize("size", [1, 1024, 60000])  # on FreeBSD it requires `sysctl net.inet.udp.maxdgram=64000` (as root)
 def test_udp_transfer(rinetd, udp_echo_server, size):
     """Test UDP to UDP forwarding."""
     rinetd_port = get_free_port()
-    
+
     # Configure rinetd for UDP: bind_addr bind_port/udp connect_addr connect_port/udp
     rules = [
         f"0.0.0.0 {rinetd_port}/udp {udp_echo_server.host} {udp_echo_server.actual_port}/udp"
     ]
-    
+
     rinetd(rules)
-    # UDP doesn't "listen" in the same way, so wait_for_port might not work as expected for UDP 
+    # UDP doesn't "listen" in the same way, so wait_for_port might not work as expected for UDP
     # unless we check if we can send to it. But rinetd should be up quickly.
     time.sleep(0.5)
-    
+
     data = generate_random_data(size)
-    
+
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
         s.settimeout(2)
         s.sendto(data, ('127.0.0.1', rinetd_port))
-        
+
         received, _ = s.recvfrom(65535)
-        
+
     assert len(received) == size
     assert received == data
 
 def test_unix_to_tcp(rinetd, tcp_echo_server, tmp_path):
     """Test Unix socket (bind) to TCP (connect) forwarding."""
     socket_path = str(tmp_path / "rinetd.sock")
-    
+
     # Configure rinetd: unix:/path ... connect_addr connect_port
     rules = [
         f"unix:{socket_path} {tcp_echo_server.host} {tcp_echo_server.actual_port}"
     ]
-    
+
     rinetd(rules)
     time.sleep(0.5)
     assert os.path.exists(socket_path)
-    
+
     size = 1024
     data = generate_random_data(size)
-    
+
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.settimeout(5)
         s.connect(socket_path)
-        
+
         send_all(s, data)
-        
+
         received = recv_all(s, size)
-        
+
     assert len(received) == size
     assert received == data
 
 def test_tcp_to_unix(rinetd, unix_echo_server):
     """Test TCP (bind) to Unix socket (connect) forwarding."""
     rinetd_port = get_free_port()
-    
+
     # Configure rinetd: bind_addr bind_port unix:/path
     rules = [
         f"0.0.0.0 {rinetd_port} unix:{unix_echo_server.path}"
     ]
-    
+
     rinetd(rules)
     assert wait_for_port(rinetd_port)
-    
+
     size = 1024
     data = generate_random_data(size)
-    
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(5)
         s.connect(('127.0.0.1', rinetd_port))
-        
+
         send_all(s, data)
-        
+
         received = recv_all(s, size)
-        
+
     assert len(received) == size
     assert received == data
 
