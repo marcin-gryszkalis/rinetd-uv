@@ -1,3 +1,13 @@
+## Version 2.0.2 (2026-01-25)
+
+**Socket buffer size unification**
+
+ * call `uv_*_buffer_size` to make sure socket buffers are large enough (no assumption about defaults)
+ * test suite - symmetric changes on socket buffers
+ * test suite - disable limit on parallel UDP tests
+ * documentation - add **Operating system optimization** section
+ * docker - optimized build, cleanup
+
 ## Version 2.0.1 (2026-01-25)
 
 **FreeBSD compatibility fixes**
