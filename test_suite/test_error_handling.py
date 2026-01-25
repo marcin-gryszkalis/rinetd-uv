@@ -57,7 +57,9 @@ def test_backend_becomes_available(rinetd, tmp_path):
         with socket.create_connection(('127.0.0.1', rinetd_port), timeout=2) as s:
             s.settimeout(2)
             s.sendall(b"test")
-            s.recv(1024)
+            data = s.recv(1024)
+            if not data:  # EOF - connection closed by rinetd
+                failed = True
     except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, socket.timeout, OSError):
         failed = True
 
@@ -115,7 +117,9 @@ def test_backend_goes_down_and_recovers(rinetd):
             with socket.create_connection(('127.0.0.1', rinetd_port), timeout=2) as s:
                 s.settimeout(2)
                 s.sendall(b"test2")
-                s.recv(1024)
+                data = s.recv(1024)
+                if not data:  # EOF - connection closed by rinetd
+                    failed = True
         except (ConnectionRefusedError, ConnectionResetError, BrokenPipeError, socket.timeout, OSError):
             failed = True
 
