@@ -2092,15 +2092,24 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
     cnx->local.protocol = IPPROTO_UDP;
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
-    /* Bind to source if specified */
+    /* Bind socket - required to get fd for buffer size setting */
     if (srv->sourceAddrInfo) {
         ret = uv_udp_bind(&cnx->local_uv_handle.udp,
                           srv->sourceAddrInfo->ai_addr, 0);
-        if (ret != 0) {
-            logError("UDP bind (source) error: %s\n", uv_strerror(ret));
-            /* Continue anyway */
+    } else {
+        struct sockaddr_storage any_addr;
+        memset(&any_addr, 0, sizeof(any_addr));
+        if (srv->toAddrInfo->ai_family == AF_INET6) {
+            struct sockaddr_in6 *a = (struct sockaddr_in6 *)&any_addr;
+            a->sin6_family = AF_INET6;
+        } else {
+            struct sockaddr_in *a = (struct sockaddr_in *)&any_addr;
+            a->sin_family = AF_INET;
         }
+        ret = uv_udp_bind(&cnx->local_uv_handle.udp, (struct sockaddr *)&any_addr, 0);
     }
+    if (ret != 0)
+        logError("UDP bind error: %s\n", uv_strerror(ret));
 
     set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.udp);
 
