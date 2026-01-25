@@ -265,6 +265,8 @@ unix:/var/run/restricted.sock 192.168.1.100 8080/tcp [mode=0660]
 
 The buffer size used for I/O operations can be configured globally. This affects memory usage and performance characteristics.
 
+If it's expected that large UDP datagrams are to be processed make sure that `buffersize` is large enough to fit whole datagram (theoretical maximum datagram size is 64KB). Note that on FreeBSD it is required to set sysctl `net.inet.udp.maxdgram=65535` because default value is 9216 on modern versions.
+
 ```
 buffersize 32768
 ```

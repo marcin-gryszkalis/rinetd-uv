@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-24" />
+  <meta name="dcterms.date" content="2026-01-25" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-24</p>
+<p class="date">2026-01-25</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -389,6 +389,11 @@ declares they are covered, report a bug in case you need it.</li>
 <h3 id="buffer-size">Buffer Size</h3>
 <p>The buffer size used for I/O operations can be configured globally.
 This affects memory usage and performance characteristics.</p>
+<p>If it’s expected that large UDP datagrams are to be processed make
+sure that <code>buffersize</code> is large enough to fit whole datagram
+(theoretical maximum datagram size is 64KB). Note that on FreeBSD it is
+required to set sysctl <code>net.inet.udp.maxdgram=65535</code> because
+default value is 9216 on modern versions.</p>
 <pre><code>buffersize 32768</code></pre>
 <p><strong>Range:</strong> 1024 to 1048576 bytes (1 KB to 1 MB)
 <strong>Default:</strong> 65536 bytes (64 KB)</p>

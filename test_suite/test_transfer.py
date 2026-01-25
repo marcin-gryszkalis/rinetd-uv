@@ -45,7 +45,7 @@ def test_tcp_transfer(rinetd, tcp_echo_server, size):
     assert len(received) == size
     assert calculate_checksum(received) == expected_checksum
 
-@pytest.mark.parametrize("size", [1, 1024, 60000])  # on FreeBSD it requires `sysctl net.inet.udp.maxdgram=64000` (as root)
+@pytest.mark.parametrize("size", [1, 1024, 60000])  # on FreeBSD it requires `sysctl net.inet.udp.maxdgram=65535` (as root)
 def test_udp_transfer(rinetd, udp_echo_server, size):
     """Test UDP to UDP forwarding."""
     rinetd_port = get_free_port()

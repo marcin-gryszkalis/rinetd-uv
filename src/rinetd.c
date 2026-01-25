@@ -503,6 +503,14 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
 static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 static void alloc_buffer_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 
+static void set_socket_buffer_sizes(uv_handle_t *handle)
+{
+    int size = bufferSize;
+    uv_send_buffer_size(handle, &size);
+    size = bufferSize;
+    uv_recv_buffer_size(handle, &size);
+}
+
 /* libuv signal handler callback */
 static void signal_cb(uv_signal_t *handle, int signum)
 {
@@ -595,6 +603,8 @@ static void startServerListening(ServerInfo *srv)
             exit(1);
         }
 
+        set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.pipe);
+
         /* Start listening for connections */
         ret = uv_listen((uv_stream_t*)&srv->uv_handle.pipe,
                         listenBacklog, unix_server_accept_cb);
@@ -624,6 +634,8 @@ static void startServerListening(ServerInfo *srv)
             exit(1);
         }
 
+        set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.tcp);
+
         /* Start listening for connections */
         ret = uv_listen((uv_stream_t*)&srv->uv_handle.tcp,
                         listenBacklog, tcp_server_accept_cb);
@@ -652,6 +664,8 @@ static void startServerListening(ServerInfo *srv)
             logError("uv_udp_bind() failed for %s:%d: %s\n", srv->fromHost, getPort(srv->fromAddrInfo), uv_strerror(ret));
             exit(1);
         }
+
+        set_socket_buffer_sizes((uv_handle_t *)&srv->uv_handle.udp);
 
         /* Start receiving datagrams */
         ret = uv_udp_recv_start(&srv->uv_handle.udp,
@@ -919,6 +933,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         return;
     }
 
+    set_socket_buffer_sizes((uv_handle_t *)&cnx->remote_uv_handle.tcp);
+
     /* Get remote address immediately after accept */
     struct sockaddr_storage addr;
     int addrlen = sizeof(addr);
@@ -974,6 +990,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
 
+        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
+
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logError("malloc failed for Unix connect request\n");
@@ -1020,6 +1038,8 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
                 /* Continue anyway - binding is optional */
             }
         }
+
+        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.tcp);
 
         /* Connect to backend (async) */
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
@@ -1140,6 +1160,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         return;
     }
 
+    set_socket_buffer_sizes((uv_handle_t *)&cnx->remote_uv_handle.pipe);
+
     /* Extract fd for Socket struct */
     uv_os_fd_t remote_fd;
     uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.pipe, &remote_fd);
@@ -1175,6 +1197,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
         cnx->local.family = AF_UNIX;
+
+        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.pipe);
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
@@ -1223,6 +1247,8 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             if (ret != 0)
                 logError("bind (source) error: %s\n", uv_strerror(ret));
         }
+
+        set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.tcp);
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
@@ -2075,6 +2101,8 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread,
             /* Continue anyway */
         }
     }
+
+    set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.udp);
 
     /* Extract fd */
     uv_os_fd_t local_fd;
