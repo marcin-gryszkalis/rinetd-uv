@@ -433,6 +433,9 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
         data = generate_random_data(size)
         own_socket = udp_sock is None
         s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
+
         try:
             if own_socket:
                 s.settimeout(DEFAULT_TIMEOUT)
@@ -726,6 +729,9 @@ def run_upload_sha256_transfer(listen_proto, listen_addr, size, chunk_size, seed
         # UDP: per-packet SHA256 verification (stateless protocol)
         own_socket = udp_sock is None
         s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
+
         try:
             if own_socket:
                 s.settimeout(DEFAULT_TIMEOUT)
@@ -865,6 +871,9 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
         # UDP: per-packet SHA256 verification (stateless protocol)
         own_socket = udp_sock is None
         s = udp_sock if udp_sock else socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
+
         try:
             if own_socket:
                 s.settimeout(DEFAULT_TIMEOUT)
@@ -984,6 +993,9 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
     if listen_proto == "udp":
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp_sock.settimeout(DEFAULT_TIMEOUT)
+        udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
+        udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
+
 
     try:
         start_time = time.time()

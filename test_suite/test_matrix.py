@@ -97,7 +97,7 @@ def test_transfer_matrix(rinetd, tcp_echo_server, udp_echo_server, unix_echo_ser
     #    pytest.skip("UDP with high parallelism causes packet loss")
 
     # UDP has a maximum datagram size (65535 total, ~65507 payload)
-    if listen_proto == "udp" and chunk_size > 65507:
+    if (listen_proto == "udp" or connect_proto == "udp") and chunk_size > 65507:
         chunk_size = 65507
 
     # Setup rinetd ports/paths
