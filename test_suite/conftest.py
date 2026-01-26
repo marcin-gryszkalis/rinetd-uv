@@ -271,6 +271,27 @@ def rinetd(request, rinetd_path, tmp_path):
         if stderr_output:
             print(f"\n[rinetd stderr]:\n{stderr_output}")
 
+        # Stderr error checking - verify rinetd didn't log any errors or warnings
+        # Skip for tests marked with @pytest.mark.expect_rinetd_errors
+        if not request.node.get_closest_marker("expect_rinetd_errors"):
+            # Some errors are benign in test scenarios:
+            # - "connection reset by peer" happens when connections close quickly
+            # - "broken pipe" happens when peer closes before we finish writing
+            benign_errors = [
+                "connection reset by peer",
+                "broken pipe",
+            ]
+            error_lines = []
+            for line in stderr_output.splitlines():
+                # Check for error or warning messages (log format: "timestamp rinetd-uv error/warning: msg")
+                if " error:" in line or " warning:" in line:
+                    # Skip benign errors that occur in normal test scenarios
+                    if any(benign in line.lower() for benign in benign_errors):
+                        continue
+                    error_lines.append(line)
+            if error_lines:
+                pytest.fail(f"rinetd logged unexpected errors/warnings:\n" + "\n".join(error_lines))
+
         # Valgrind error checking - only for tests not explicitly handling valgrind themselves
         # (test_leaks.py handles valgrind output directly)
         if using_valgrind and "test_memory_leaks" not in request.node.name:

@@ -9,6 +9,7 @@ from .utils import get_free_port, wait_for_port, generate_random_data
 from .servers import TcpEchoServer
 
 
+@pytest.mark.expect_rinetd_errors
 def test_backend_unavailable_at_start(rinetd):
     """
     Test behavior when backend is not available at connection time.
@@ -37,6 +38,7 @@ def test_backend_unavailable_at_start(rinetd):
                 raise ConnectionResetError("Connection closed by peer")
 
 
+@pytest.mark.expect_rinetd_errors
 def test_backend_becomes_available(rinetd, tmp_path):
     """
     Test that connections succeed once backend becomes available.
@@ -81,6 +83,7 @@ def test_backend_becomes_available(rinetd, tmp_path):
         backend.stop()
 
 
+@pytest.mark.expect_rinetd_errors
 def test_backend_goes_down_and_recovers(rinetd):
     """
     Test behavior when backend goes down and comes back up.
@@ -232,6 +235,7 @@ def test_half_close_handling(rinetd, tcp_echo_server):
         # Empty or nothing is expected after shutdown
 
 
+@pytest.mark.expect_rinetd_errors
 def test_connection_timeout_backend_slow(rinetd, tmp_path):
     """
     Test behavior when backend is slow to accept connections.
