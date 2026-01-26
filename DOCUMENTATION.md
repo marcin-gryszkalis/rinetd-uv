@@ -670,56 +670,57 @@ Rinetd-uv sets both buffer sizes (send and receive, known as SO_SNDBUF and SO_RC
 You may try to increase this value if required but operating system limits and behavior may affect possibility to manipulate that.
 
 * FreeBSD - refer to **tuning(7)** man page for details
-    - kern.ipc.maxsockbuf
-    - net.inet.tcp.sendbuf_max
-    - net.inet.tcp.recvbuf_max
-    - net.inet.tcp.sendbuf_auto -- Send buffer autotuning
-    - net.inet.tcp.recvbuf_auto -- Receive buffer autotuning
-    - net.inet.tcp.sendspace
-    - net.inet.tcp.recvspace
+    - `kern.ipc.maxsockbuf`
+    - `net.inet.udp.maxdgram`
+    - `net.inet.tcp.sendbuf_max`
+    - `net.inet.tcp.recvbuf_max`
+    - `net.inet.tcp.sendbuf_auto` -- Send buffer autotuning
+    - `net.inet.tcp.recvbuf_auto` -- Receive buffer autotuning
+    - `net.inet.tcp.sendspace`
+    - `net.inet.tcp.recvspace`
 
 #### Backlog
 
 While it's possible to configure baclog queue length with `backlog` configuration option - there are system level limits as well:
 
 * Linux
-    - net.core.somaxconn
-    - net.core.netdev_max_backlog
-    - net.ipv4.tcp_max_syn_backlog
+    - `net.core.somaxconn`
+    - `net.core.netdev_max_backlog`
+    - `net.ipv4.tcp_max_syn_backlog`
 * FreeBSD
-    - kern.ipc.soacceptqueue
-    - kern.ipc.somaxconn -- legacy name
+    - `kern.ipc.soacceptqueue`
+    - `kern.ipc.somaxconn` -- legacy name
 
 #### Other tuning
 
 There are many parameters that needs to be adjusted in case of demanding environment and specific use cases. Check applicable documentation. Below you can find some tunables that should be checked:
 
 * Linux
-    - net.ipv4.tcp_keepalive_*
-    - net.ipv4.tcp_mtu_probing
-    - net.ipv4.tcp_tw_reuse
-    - net.ipv4.tcp_max_tw_buckets
-    - net.core.rmem_*
-    - net.core.wmem_*
-    - net.ipv4.tcp_rmem
-    - net.ipv4.tcp_wmem
-    - net.ipv4.udp_rmem_min
-    - net.ipv4.udp_wmem_min
-    - net.ipv4.tcp_mtu_probing
-    - net.ipv4.ip_local_port_range
+    - `net.ipv4.tcp_keepalive_*`
+    - `net.ipv4.tcp_mtu_probing`
+    - `net.ipv4.tcp_tw_reuse`
+    - `net.ipv4.tcp_max_tw_buckets`
+    - `net.core.rmem_*`
+    - `net.core.wmem_*`
+    - `net.ipv4.tcp_rmem`
+    - `net.ipv4.tcp_wmem`
+    - `net.ipv4.udp_rmem_min`
+    - `net.ipv4.udp_wmem_min`
+    - `net.ipv4.tcp_mtu_probing`
+    - `net.ipv4.ip_local_port_range`
 * FreeBSD
-    - kern.ipc.maxpipekva -- for unix sockets
-    - kern.ipc.nmbclusters
-    - kern.ipc.nmbjumbop
-    - net.inet.ip.portrange.*
-    - net.inet.tcp.always_keepalive
-    - net.inet.tcp.cc.*
-    - net.inet.tcp.fast_finwait2_recycle
-    - net.inet.tcp.minmss
-    - net.inet.tcp.mssdflt
-    - net.inet.tcp.rfc1323
-    - net.inet.tcp.syncache.*
-    - net.link.ifqmaxlen
+    - `kern.ipc.maxpipekva` -- for unix sockets
+    - `kern.ipc.nmbclusters`
+    - `kern.ipc.nmbjumbop`
+    - `net.inet.ip.portrange.*`
+    - `net.inet.tcp.always_keepalive`
+    - `net.inet.tcp.cc.*`
+    - `net.inet.tcp.fast_finwait2_recycle`
+    - `net.inet.tcp.minmss`
+    - `net.inet.tcp.mssdflt`
+    - `net.inet.tcp.rfc1323`
+    - `net.inet.tcp.syncache.*`
+    - `net.link.ifqmaxlen`
 
 ## LICENSE
 

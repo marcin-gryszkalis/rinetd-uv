@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-25" />
+  <meta name="dcterms.date" content="2026-01-26" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-25</p>
+<p class="date">2026-01-26</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -815,13 +815,15 @@ affect possibility to manipulate that.</p>
 <ul>
 <li>FreeBSD - refer to <strong>tuning(7)</strong> man page for details
 <ul>
-<li>kern.ipc.maxsockbuf</li>
-<li>net.inet.tcp.sendbuf_max</li>
-<li>net.inet.tcp.recvbuf_max</li>
-<li>net.inet.tcp.sendbuf_auto – Send buffer autotuning</li>
-<li>net.inet.tcp.recvbuf_auto – Receive buffer autotuning</li>
-<li>net.inet.tcp.sendspace</li>
-<li>net.inet.tcp.recvspace</li>
+<li><code>kern.ipc.maxsockbuf</code></li>
+<li><code>net.inet.udp.maxdgram</code></li>
+<li><code>net.inet.tcp.sendbuf_max</code></li>
+<li><code>net.inet.tcp.recvbuf_max</code></li>
+<li><code>net.inet.tcp.sendbuf_auto</code> – Send buffer autotuning</li>
+<li><code>net.inet.tcp.recvbuf_auto</code> – Receive buffer
+autotuning</li>
+<li><code>net.inet.tcp.sendspace</code></li>
+<li><code>net.inet.tcp.recvspace</code></li>
 </ul></li>
 </ul>
 <h4 id="backlog">Backlog</h4>
@@ -831,14 +833,14 @@ limits as well:</p>
 <ul>
 <li>Linux
 <ul>
-<li>net.core.somaxconn</li>
-<li>net.core.netdev_max_backlog</li>
-<li>net.ipv4.tcp_max_syn_backlog</li>
+<li><code>net.core.somaxconn</code></li>
+<li><code>net.core.netdev_max_backlog</code></li>
+<li><code>net.ipv4.tcp_max_syn_backlog</code></li>
 </ul></li>
 <li>FreeBSD
 <ul>
-<li>kern.ipc.soacceptqueue</li>
-<li>kern.ipc.somaxconn – legacy name</li>
+<li><code>kern.ipc.soacceptqueue</code></li>
+<li><code>kern.ipc.somaxconn</code> – legacy name</li>
 </ul></li>
 </ul>
 <h4 id="other-tuning">Other tuning</h4>
@@ -849,33 +851,33 @@ checked:</p>
 <ul>
 <li>Linux
 <ul>
-<li>net.ipv4.tcp_keepalive_*</li>
-<li>net.ipv4.tcp_mtu_probing</li>
-<li>net.ipv4.tcp_tw_reuse</li>
-<li>net.ipv4.tcp_max_tw_buckets</li>
-<li>net.core.rmem_*</li>
-<li>net.core.wmem_*</li>
-<li>net.ipv4.tcp_rmem</li>
-<li>net.ipv4.tcp_wmem</li>
-<li>net.ipv4.udp_rmem_min</li>
-<li>net.ipv4.udp_wmem_min</li>
-<li>net.ipv4.tcp_mtu_probing</li>
-<li>net.ipv4.ip_local_port_range</li>
+<li><code>net.ipv4.tcp_keepalive_*</code></li>
+<li><code>net.ipv4.tcp_mtu_probing</code></li>
+<li><code>net.ipv4.tcp_tw_reuse</code></li>
+<li><code>net.ipv4.tcp_max_tw_buckets</code></li>
+<li><code>net.core.rmem_*</code></li>
+<li><code>net.core.wmem_*</code></li>
+<li><code>net.ipv4.tcp_rmem</code></li>
+<li><code>net.ipv4.tcp_wmem</code></li>
+<li><code>net.ipv4.udp_rmem_min</code></li>
+<li><code>net.ipv4.udp_wmem_min</code></li>
+<li><code>net.ipv4.tcp_mtu_probing</code></li>
+<li><code>net.ipv4.ip_local_port_range</code></li>
 </ul></li>
 <li>FreeBSD
 <ul>
-<li>kern.ipc.maxpipekva – for unix sockets</li>
-<li>kern.ipc.nmbclusters</li>
-<li>kern.ipc.nmbjumbop</li>
-<li>net.inet.ip.portrange.*</li>
-<li>net.inet.tcp.always_keepalive</li>
-<li>net.inet.tcp.cc.*</li>
-<li>net.inet.tcp.fast_finwait2_recycle</li>
-<li>net.inet.tcp.minmss</li>
-<li>net.inet.tcp.mssdflt</li>
-<li>net.inet.tcp.rfc1323</li>
-<li>net.inet.tcp.syncache.*</li>
-<li>net.link.ifqmaxlen</li>
+<li><code>kern.ipc.maxpipekva</code> – for unix sockets</li>
+<li><code>kern.ipc.nmbclusters</code></li>
+<li><code>kern.ipc.nmbjumbop</code></li>
+<li><code>net.inet.ip.portrange.*</code></li>
+<li><code>net.inet.tcp.always_keepalive</code></li>
+<li><code>net.inet.tcp.cc.*</code></li>
+<li><code>net.inet.tcp.fast_finwait2_recycle</code></li>
+<li><code>net.inet.tcp.minmss</code></li>
+<li><code>net.inet.tcp.mssdflt</code></li>
+<li><code>net.inet.tcp.rfc1323</code></li>
+<li><code>net.inet.tcp.syncache.*</code></li>
+<li><code>net.link.ifqmaxlen</code></li>
 </ul></li>
 </ul>
 <h2 id="license">LICENSE</h2>
