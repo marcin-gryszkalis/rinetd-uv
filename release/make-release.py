@@ -9,7 +9,7 @@ import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(SCRIPT_DIR, "release.sh.template")
-CHANGES_PATH = os.path.join(SCRIPT_DIR, "CHANGES.md")
+CHANGES_PATH = os.path.join(SCRIPT_DIR, "../CHANGES.md")
 OUTPUT_PATH = os.path.join(SCRIPT_DIR, "release.sh")
 
 
