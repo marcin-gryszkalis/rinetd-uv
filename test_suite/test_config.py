@@ -2,7 +2,8 @@ import pytest
 import socket
 import os
 import time
-from .utils import get_free_port, wait_for_port
+import subprocess
+from .utils import get_free_port, wait_for_port, create_rinetd_conf
 
 def test_allow_rule(rinetd, tcp_echo_server):
     """Test 'allow' rule."""
@@ -166,23 +167,232 @@ def test_keepalive(rinetd, tcp_echo_server):
         assert s.recv(4) == b"test"
 
 def test_include_directive(rinetd, tcp_echo_server, tmp_path):
-    """Test include directive."""
+    """Test basic single file include."""
     rinetd_port = get_free_port()
     include_file = str(tmp_path / "included.conf")
-    
+
     with open(include_file, 'w') as f:
         f.write(f"0.0.0.0 {rinetd_port} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n")
-        
+
     rules = [
         f"include \"{include_file}\""
     ]
-    
+
     rinetd(rules)
     assert wait_for_port(rinetd_port)
-    
+
     with socket.create_connection(('127.0.0.1', rinetd_port), timeout=2) as s:
         s.send(b"test")
         assert s.recv(4) == b"test"
+
+
+def test_include_wildcard(rinetd, tcp_echo_server, tmp_path):
+    """Test wildcard pattern include (include *.conf)."""
+    port1 = get_free_port()
+    port2 = get_free_port()
+    port3 = get_free_port()
+
+    # Create a subdirectory with multiple config files
+    include_dir = tmp_path / "includes"
+    include_dir.mkdir()
+
+    # Create multiple config files to be included
+    (include_dir / "server1.conf").write_text(
+        f"0.0.0.0 {port1} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+    )
+    (include_dir / "server2.conf").write_text(
+        f"0.0.0.0 {port2} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+    )
+    (include_dir / "server3.conf").write_text(
+        f"0.0.0.0 {port3} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+    )
+
+    rules = [
+        f"include \"{include_dir}/*.conf\""
+    ]
+
+    rinetd(rules)
+
+    # All three ports should be listening
+    for port in [port1, port2, port3]:
+        assert wait_for_port(port), f"Port {port} should be open"
+        with socket.create_connection(('127.0.0.1', port), timeout=2) as s:
+            s.send(b"test")
+            assert s.recv(4) == b"test"
+
+
+def test_include_nested(rinetd, tcp_echo_server, tmp_path):
+    """Test nested includes (3 levels: A -> B -> C)."""
+    port1 = get_free_port()
+    port2 = get_free_port()
+    port3 = get_free_port()
+
+    # Create level 3 (deepest)
+    level3 = tmp_path / "level3.conf"
+    level3.write_text(f"0.0.0.0 {port3} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n")
+
+    # Create level 2 (includes level 3)
+    level2 = tmp_path / "level2.conf"
+    level2.write_text(
+        f"0.0.0.0 {port2} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+        f"include \"{level3}\"\n"
+    )
+
+    # Create level 1 (includes level 2)
+    level1 = tmp_path / "level1.conf"
+    level1.write_text(
+        f"0.0.0.0 {port1} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+        f"include \"{level2}\"\n"
+    )
+
+    rules = [
+        f"include \"{level1}\""
+    ]
+
+    rinetd(rules)
+
+    # All three ports should be listening
+    for port in [port1, port2, port3]:
+        assert wait_for_port(port), f"Port {port} should be open"
+        with socket.create_connection(('127.0.0.1', port), timeout=2) as s:
+            s.send(b"test")
+            assert s.recv(4) == b"test"
+
+
+def test_include_circular_detection(rinetd_path, tmp_path):
+    """Test circular include detection (A -> B -> A should fail)."""
+    port1 = get_free_port()
+    port2 = get_free_port()
+
+    file_a = tmp_path / "circular_a.conf"
+    file_b = tmp_path / "circular_b.conf"
+
+    # A includes B
+    file_a.write_text(
+        f"0.0.0.0 {port1} 127.0.0.1 9999\n"
+        f"include \"{file_b}\"\n"
+    )
+
+    # B includes A (circular)
+    file_b.write_text(
+        f"0.0.0.0 {port2} 127.0.0.1 9998\n"
+        f"include \"{file_a}\"\n"
+    )
+
+    # Start rinetd directly (not using fixture as we expect failure)
+    proc = subprocess.Popen(
+        [rinetd_path, "-c", str(file_a), "-f"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    try:
+        stdout, stderr = proc.communicate(timeout=2.0)
+        # Process should exit with error
+        assert proc.returncode != 0, "rinetd should fail with circular include"
+        assert "circular include" in stderr.lower(), f"Expected 'circular include' error, got: {stderr}"
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        pytest.fail("rinetd should have failed quickly with circular include error")
+
+
+def test_include_max_depth(rinetd_path, tmp_path):
+    """Test maximum include depth limit (default is 10, try 11 levels)."""
+    # Create 11 levels of nested includes (exceeds max depth of 10)
+    files = []
+    for i in range(11, 0, -1):
+        f = tmp_path / f"deep_{i:02d}.conf"
+        files.append(f)
+
+    # Write files from deepest to shallowest
+    for i, f in enumerate(files):
+        port = get_free_port()
+        if i == 0:
+            # Deepest file - no include
+            f.write_text(f"0.0.0.0 {port} 127.0.0.1 9999\n")
+        else:
+            # Include the previous (deeper) file
+            f.write_text(
+                f"0.0.0.0 {port} 127.0.0.1 9999\n"
+                f"include \"{files[i-1]}\"\n"
+            )
+
+    # Start with the shallowest file (which starts the chain of 11 includes)
+    main_file = files[-1]
+
+    proc = subprocess.Popen(
+        [rinetd_path, "-c", str(main_file), "-f"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    try:
+        stdout, stderr = proc.communicate(timeout=2.0)
+        # Process should exit with error
+        assert proc.returncode != 0, "rinetd should fail with max depth exceeded"
+        assert "maximum include depth" in stderr.lower() or "max" in stderr.lower(), \
+            f"Expected max depth error, got: {stderr}"
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        pytest.fail("rinetd should have failed quickly with max depth error")
+
+
+def test_include_relative_path(rinetd, tcp_echo_server, tmp_path):
+    """Test relative path resolution (paths relative to including file)."""
+    port1 = get_free_port()
+    port2 = get_free_port()
+
+    # Create subdirectory structure
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+
+    # Child config in subdirectory
+    child = subdir / "child.conf"
+    child.write_text(f"0.0.0.0 {port2} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n")
+
+    # Parent config uses relative path to include child
+    parent = tmp_path / "parent.conf"
+    parent.write_text(
+        f"0.0.0.0 {port1} {tcp_echo_server.host} {tcp_echo_server.actual_port}\n"
+        f"include \"subdir/child.conf\"\n"
+    )
+
+    rules = [
+        f"include \"{parent}\""
+    ]
+
+    rinetd(rules)
+
+    # Both ports should be listening
+    for port in [port1, port2]:
+        assert wait_for_port(port), f"Port {port} should be open"
+        with socket.create_connection(('127.0.0.1', port), timeout=2) as s:
+            s.send(b"test")
+            assert s.recv(4) == b"test"
+
+
+@pytest.mark.expect_rinetd_errors
+def test_include_no_match_warning(rinetd, tcp_echo_server, tmp_path):
+    """Test that non-matching wildcard pattern logs warning but continues."""
+    rinetd_port = get_free_port()
+
+    rules = [
+        f"0.0.0.0 {rinetd_port} {tcp_echo_server.host} {tcp_echo_server.actual_port}",
+        f"include \"{tmp_path}/nonexistent/*.conf\"",  # No files match
+    ]
+
+    # rinetd should start despite no files matching the pattern
+    rinetd(rules)
+    assert wait_for_port(rinetd_port)
+
+    with socket.create_connection(('127.0.0.1', rinetd_port), timeout=2) as s:
+        s.send(b"test")
+        assert s.recv(4) == b"test"
+
 
 def test_dns_refresh(rinetd, tcp_echo_server):
     """Test dns-refresh directive."""
