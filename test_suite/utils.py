@@ -968,7 +968,7 @@ def run_download_sha256_transfer(listen_proto, listen_addr, size, chunk_size, se
         return True, None
 
 
-def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, seed, duration, mode="echo"):
+def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, seed, duration, mode="echo", barrier=None):
     """
     Repeat transfers until duration is reached, with specified transfer mode.
 
@@ -978,6 +978,9 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
 
     Args:
         mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
+        barrier: Optional threading.Barrier - if provided, all threads wait at
+                 the barrier after probe phase before starting high-volume transfers.
+                 This ensures all paths are warmed up before load begins.
     """
     transfer_fn = {
         "echo": run_transfer,
@@ -996,6 +999,45 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
         udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
         udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
 
+        # Probe phase: send a small packet to warm up the connection path.
+        # This ensures rinetd has created the UDP association and the backend
+        # is ready before we send large data. Without this, the first large
+        # packets from parallel clients can be lost due to timing issues.
+        # Note: download_sha256 doesn't need probe (server sends after request).
+        if mode != "download_sha256":
+            max_probe_retries = 5
+            for attempt in range(max_probe_retries):
+                try:
+                    if mode == "upload_sha256":
+                        # upload_sha256 server expects <data><sha256_of_data>
+                        probe_data = b"PROBE"
+                        probe_hash = hashlib.sha256(probe_data).digest()
+                        udp_sock.sendto(probe_data + probe_hash, listen_addr)
+                        response, _ = udp_sock.recvfrom(64)
+                        # Server responds with computed hash (32 bytes)
+                        if len(response) == 32:
+                            break  # Path is ready
+                    else:
+                        # echo mode: send data, expect same data back
+                        probe_data = b"PROBE"
+                        udp_sock.sendto(probe_data, listen_addr)
+                        response, _ = udp_sock.recvfrom(64)
+                        if response == probe_data:
+                            break  # Path is ready
+                except socket.timeout:
+                    if attempt == max_probe_retries - 1:
+                        return False, f"UDP probe failed: path not ready after {max_probe_retries} retries"
+                    continue
+
+    # Wait at barrier after probe phase - ensures all threads have warmed up
+    # their connection paths before any thread starts high-volume transfers.
+    # This prevents early threads from overwhelming the system while others
+    # are still completing their probes.
+    if barrier is not None:
+        try:
+            barrier.wait(timeout=30)
+        except Exception as e:
+            return False, f"Barrier wait failed: {e}"
 
     try:
         start_time = time.time()
