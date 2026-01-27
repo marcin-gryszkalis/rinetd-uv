@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-26" />
+  <meta name="dcterms.date" content="2026-01-27" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-26</p>
+<p class="date">2026-01-27</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -824,6 +824,11 @@ affect possibility to manipulate that.</p>
 autotuning</li>
 <li><code>net.inet.tcp.sendspace</code></li>
 <li><code>net.inet.tcp.recvspace</code></li>
+<li><code>net.local.stream.recvspace</code> – unix sockets</li>
+<li><code>net.local.stream.sendspace</code></li>
+<li><code>net.local.dgram.maxdgram</code> – unix datagram sockets, not
+supported yet</li>
+<li><code>net.local.dgram.recvspace</code></li>
 </ul></li>
 </ul>
 <h4 id="backlog">Backlog</h4>

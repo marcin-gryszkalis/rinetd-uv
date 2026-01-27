@@ -678,6 +678,10 @@ You may try to increase this value if required but operating system limits and b
     - `net.inet.tcp.recvbuf_auto` -- Receive buffer autotuning
     - `net.inet.tcp.sendspace`
     - `net.inet.tcp.recvspace`
+    - `net.local.stream.recvspace` -- unix sockets
+    - `net.local.stream.sendspace`
+    - `net.local.dgram.maxdgram` -- unix datagram sockets, not supported yet
+    - `net.local.dgram.recvspace`
 
 #### Backlog
 
