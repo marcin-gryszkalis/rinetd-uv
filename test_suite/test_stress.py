@@ -9,10 +9,10 @@ from .utils import (
     random_transfer_params, get_file_limit
 )
 
-INACTIVE_WAIT = 30
+INACTIVE_WAIT = 60
 
 # Duration can be overridden via environment variable
-DEFAULT_STRESS_DURATION = 60  # 1 minute default
+DEFAULT_STRESS_DURATION = 120  # 1 minute default
 QUICK_STRESS_DURATION = 10    # 10 seconds for quick tests
 
 # Grace period after deadline for in-progress transfers to complete

@@ -10,6 +10,7 @@ import threading
 import resource
 
 DEFAULT_TIMEOUT = 120
+BARRIER_TIMEOUT = 60
 
 def get_file_limit():
     """
@@ -1035,7 +1036,7 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
     # are still completing their probes.
     if barrier is not None:
         try:
-            barrier.wait(timeout=30)
+            barrier.wait(timeout=BARRIER_TIMEOUT)
         except Exception as e:
             return False, f"Barrier wait failed: {e}"
 
@@ -1077,7 +1078,7 @@ from .servers import (
 )
 
 
-def create_backend_server(protocol, mode, socket_path=None):
+def create_backend_server(protocol, mode, socket_path=None, host='127.0.0.1'):
     """
     Factory function to create the appropriate backend server.
 
@@ -1085,6 +1086,7 @@ def create_backend_server(protocol, mode, socket_path=None):
         protocol: "tcp", "udp", or "unix"
         mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
         socket_path: Required for unix protocol
+        host: IP address to bind to for TCP/UDP (default: 127.0.0.1)
 
     Returns:
         Server instance (not started)
@@ -1116,7 +1118,8 @@ def create_backend_server(protocol, mode, socket_path=None):
             raise ValueError("socket_path required for unix protocol")
         return server_class(socket_path)
     else:
-        return server_class()
+        # TCP/UDP servers accept (host, port) - pass dedicated host IP
+        return server_class(host=host)
 
 
 def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
@@ -1147,7 +1150,7 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
         servers_ready_barrier: Barrier to signal servers are ready (for main to start rinetd)
         rinetd_ready_barrier: Barrier to wait for rinetd to be ready (before starting transfers)
         shared_rules: List to store rinetd rule (shared with main thread)
-        shared_listen_info: List to store (proto, port/path) tuples (shared with main thread)
+        shared_listen_info: List to store (proto, port/path, ip) tuples (shared with main thread)
 
     Returns:
         dict with keys:
@@ -1164,20 +1167,25 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
         "message": "",
         "listen_port": None,
         "listen_path": None,
+        "listen_ip": None,
         "backend_port": None,
         "backend_path": None,
+        "backend_ip": None,
         "rinetd_rule": "",
     }
 
     server = None
     try:
-        # Create backend server
+        # Create backend server with dedicated IP to avoid port conflicts
         if connect_proto == "unix":
             backend_path = str(tmp_path / f"backend_{pair_id}.sock")
             server = create_backend_server(connect_proto, mode, backend_path)
             result["backend_path"] = backend_path
         else:
-            server = create_backend_server(connect_proto, mode)
+            # Use dedicated backend IP: 127.2.X.Y (separate range from listen IPs 127.1.X.Y)
+            backend_ip = f"127.2.{pair_id >> 8}.{pair_id & 0xFF}"
+            server = create_backend_server(connect_proto, mode, host=backend_ip)
+            result["backend_ip"] = backend_ip
 
         # Start server and wait for it to be ready
         server.start()
@@ -1196,21 +1204,30 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
             listen_path = str(tmp_path / f"listen_{pair_id}.sock")
             result["listen_path"] = listen_path
         else:
-            listen_port = get_free_port()
+            # Use dedicated loopback IP address for this pair to avoid port conflicts
+            # The 127.0.0.0/8 range is all loopback, giving us 16M unique addresses
+            # This eliminates port allocation race conditions entirely!
+            # Format: 127.1.X.Y where pair_id = X*256 + Y
+            listen_ip = f"127.1.{pair_id >> 8}.{pair_id & 0xFF}"
+            # Use a fixed port since each pair has unique IP
+            listen_port = 5000
             result["listen_port"] = listen_port
+            result["listen_ip"] = listen_ip
 
         # Build rinetd rule
         if listen_proto == "unix":
             listen_spec = f"unix:{result['listen_path']}"
         else:
-            listen_spec = f"0.0.0.0 {result['listen_port']}"
+            # Use dedicated IP address for this pair (eliminates port conflicts)
+            listen_spec = f"{result['listen_ip']} {result['listen_port']}"
             if listen_proto == "udp":
                 listen_spec += "/udp"
 
         if connect_proto == "unix":
             connect_spec = f"unix:{result['backend_path']}"
         else:
-            connect_spec = f"127.0.0.1 {result['backend_port']}"
+            # Use dedicated backend IP (eliminates port conflicts on backend side)
+            connect_spec = f"{result['backend_ip']} {result['backend_port']}"
             if connect_proto == "udp":
                 connect_spec += "/udp"
 
@@ -1221,13 +1238,14 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
         shared_rules[pair_id] = result["rinetd_rule"]
         shared_listen_info[pair_id] = (
             listen_proto,
-            result["listen_port"] or result["listen_path"]
+            result["listen_port"] or result["listen_path"],
+            result.get("listen_ip")  # IP address for TCP/UDP (None for unix)
         )
 
         # Phase 1: Signal that server is ready and rule is built
         # Main thread will collect rules and start rinetd after this barrier
         try:
-            servers_ready_barrier.wait(timeout=30)
+            servers_ready_barrier.wait(timeout=BARRIER_TIMEOUT)
         except threading.BrokenBarrierError:
             result["message"] = "Servers ready barrier broken - another pair failed"
             return result
@@ -1235,7 +1253,7 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
         # Phase 2: Wait for rinetd to be ready
         # Main thread will signal this after rinetd is started and ports are verified
         try:
-            rinetd_ready_barrier.wait(timeout=30)
+            rinetd_ready_barrier.wait(timeout=BARRIER_TIMEOUT)
         except threading.BrokenBarrierError:
             result["message"] = "rinetd ready barrier broken - rinetd failed to start"
             return result
@@ -1244,7 +1262,8 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
         if listen_proto == "unix":
             listen_addr = result["listen_path"]
         else:
-            listen_addr = ("127.0.0.1", result["listen_port"])
+            # Use the dedicated IP address allocated for this pair
+            listen_addr = (result["listen_ip"], result["listen_port"])
 
         # Run transfers
         transfer_fn = {
@@ -1323,7 +1342,7 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
 
     results = [None] * num_pairs
     rules = [None] * num_pairs
-    listen_info = [None] * num_pairs  # Store (proto, port/path) for verification
+    listen_info = [None] * num_pairs  # Store (proto, port/path, ip) for verification
 
     def run_pair_wrapper(pair_id, config):
         """Wrapper to run a pair and store results."""
@@ -1353,7 +1372,7 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
 
         # Phase 1: Wait for all servers to be ready
         try:
-            servers_ready_barrier.wait(timeout=30)
+            servers_ready_barrier.wait(timeout=BARRIER_TIMEOUT)
         except threading.BrokenBarrierError:
             # Some pair failed during setup - abort
             rinetd_ready_barrier.abort()
@@ -1365,7 +1384,7 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
         # (especially important when starting many servers simultaneously)
         time.sleep(0.2)
 
-        # Start rinetd with all rules
+        # Prepare and start rinetd
         valid_rules = [r for r in rules if r]
         if not valid_rules:
             rinetd_ready_barrier.abort()
@@ -1375,11 +1394,15 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
 
         # Verify rinetd is ready by checking all listen ports/paths
         rinetd_ok = True
-        for proto, addr in listen_info:
+        for item in listen_info:
+            if item is None:
+                continue
+            proto, addr, ip = item
             if addr is None:
                 continue
             if proto == "tcp":
-                if not wait_for_port(addr, timeout=10):
+                # Use dedicated IP address for port check
+                if not wait_for_port(addr, host=ip, timeout=10):
                     rinetd_ok = False
                     break
             elif proto == "unix":
@@ -1392,7 +1415,7 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
                     rinetd_ok = False
                     break
             else:
-                # UDP - small delay
+                # UDP - small delay (can't easily verify UDP is listening)
                 time.sleep(0.3)
 
         if not rinetd_ok:
@@ -1401,7 +1424,7 @@ def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
 
         # Phase 2: Signal that rinetd is ready - pairs can start transfers
         try:
-            rinetd_ready_barrier.wait(timeout=30)
+            rinetd_ready_barrier.wait(timeout=BARRIER_TIMEOUT)
         except threading.BrokenBarrierError:
             return [{"success": False, "message": "rinetd ready barrier failed"} for _ in range(num_pairs)]
 
