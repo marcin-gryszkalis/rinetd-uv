@@ -147,8 +147,9 @@ class UdpEchoServer(BaseEchoServer):
     def run(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 128 * 1024)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 128 * 1024)
+            # Large buffers to handle burst of parallel clients sending 64KB each
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 * 1024 * 1024)
             self.sock.bind((self.host, self.port))
             self.actual_port = self.sock.getsockname()[1]
             self.ready.set()
@@ -567,8 +568,8 @@ class UdpDownloadSha256Server(BaseEchoServer):
     def run(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 * 1024 * 1024)
             self.sock.bind((self.host, self.port))
             self.actual_port = self.sock.getsockname()[1]
             self.ready.set()
@@ -635,8 +636,8 @@ class UdpUploadSha256Server(BaseEchoServer):
     def run(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 * 1024 * 1024)
             self.sock.bind((self.host, self.port))
             self.actual_port = self.sock.getsockname()[1]
             self.ready.set()

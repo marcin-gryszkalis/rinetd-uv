@@ -1054,3 +1054,363 @@ def run_repeated_transfers_mode(listen_proto, listen_addr, size, chunk_size, see
     finally:
         if udp_sock:
             udp_sock.close()
+
+
+# =============================================================================
+# Client-Server Pair Architecture
+# =============================================================================
+# Each pair consists of:
+#   - A dedicated backend server
+#   - A dedicated rinetd rule (listen port → server port)
+#   - A client that transfers data through rinetd
+#   - A barrier to synchronize server readiness with client start
+#
+# This eliminates server contention - each client has its own server.
+
+from .servers import (
+    TcpEchoServer, UdpEchoServer, UnixEchoServer,
+    TcpUploadServer, TcpDownloadServer,
+    TcpUploadSha256Server, TcpDownloadSha256Server,
+    UdpUploadSha256Server, UdpDownloadSha256Server,
+    UnixUploadServer, UnixDownloadServer,
+    UnixUploadSha256Server, UnixDownloadSha256Server,
+)
+
+
+def create_backend_server(protocol, mode, socket_path=None):
+    """
+    Factory function to create the appropriate backend server.
+
+    Args:
+        protocol: "tcp", "udp", or "unix"
+        mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
+        socket_path: Required for unix protocol
+
+    Returns:
+        Server instance (not started)
+    """
+    server_map = {
+        ("tcp", "echo"): TcpEchoServer,
+        ("tcp", "upload"): TcpUploadServer,
+        ("tcp", "download"): TcpDownloadServer,
+        ("tcp", "upload_sha256"): TcpUploadSha256Server,
+        ("tcp", "download_sha256"): TcpDownloadSha256Server,
+        ("udp", "echo"): UdpEchoServer,
+        ("udp", "upload_sha256"): UdpUploadSha256Server,
+        ("udp", "download_sha256"): UdpDownloadSha256Server,
+        ("unix", "echo"): UnixEchoServer,
+        ("unix", "upload"): UnixUploadServer,
+        ("unix", "download"): UnixDownloadServer,
+        ("unix", "upload_sha256"): UnixUploadSha256Server,
+        ("unix", "download_sha256"): UnixDownloadSha256Server,
+    }
+
+    key = (protocol, mode)
+    if key not in server_map:
+        raise ValueError(f"No server for protocol={protocol}, mode={mode}")
+
+    server_class = server_map[key]
+
+    if protocol == "unix":
+        if not socket_path:
+            raise ValueError("socket_path required for unix protocol")
+        return server_class(socket_path)
+    else:
+        return server_class()
+
+
+def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
+                           seed, duration, tmp_path, pair_id,
+                           servers_ready_barrier, rinetd_ready_barrier,
+                           shared_rules, shared_listen_info):
+    """
+    Run a single client-server pair with two-phase barrier synchronization.
+
+    This function:
+    1. Creates and starts a dedicated backend server
+    2. Stores rule in shared_rules (for main thread to start rinetd)
+    3. Waits at servers_ready_barrier (syncs with main thread)
+    4. Waits at rinetd_ready_barrier (syncs with main thread after rinetd is ready)
+    5. Runs transfers for the specified duration
+    6. Stops the server and returns results
+
+    Args:
+        listen_proto: Protocol for rinetd listener ("tcp", "udp", "unix")
+        connect_proto: Protocol for backend connection ("tcp", "udp", "unix")
+        mode: Transfer mode ("echo", "upload", "download", "upload_sha256", "download_sha256")
+        size: Transfer size in bytes
+        chunk_size: Chunk size for transfers
+        seed: Random seed for data generation
+        duration: How long to run transfers (seconds)
+        tmp_path: Temporary directory for unix sockets
+        pair_id: Unique identifier for this pair (for socket paths)
+        servers_ready_barrier: Barrier to signal servers are ready (for main to start rinetd)
+        rinetd_ready_barrier: Barrier to wait for rinetd to be ready (before starting transfers)
+        shared_rules: List to store rinetd rule (shared with main thread)
+        shared_listen_info: List to store (proto, port/path) tuples (shared with main thread)
+
+    Returns:
+        dict with keys:
+            - "success": bool
+            - "message": str
+            - "listen_port": int or None
+            - "listen_path": str or None
+            - "backend_port": int or None
+            - "backend_path": str or None
+            - "rinetd_rule": str
+    """
+    result = {
+        "success": False,
+        "message": "",
+        "listen_port": None,
+        "listen_path": None,
+        "backend_port": None,
+        "backend_path": None,
+        "rinetd_rule": "",
+    }
+
+    server = None
+    try:
+        # Create backend server
+        if connect_proto == "unix":
+            backend_path = str(tmp_path / f"backend_{pair_id}.sock")
+            server = create_backend_server(connect_proto, mode, backend_path)
+            result["backend_path"] = backend_path
+        else:
+            server = create_backend_server(connect_proto, mode)
+
+        # Start server and wait for it to be ready
+        server.start()
+        if not server.wait_ready(timeout=10):
+            result["message"] = "Backend server failed to start"
+            return result
+
+        # Get backend address
+        if connect_proto == "unix":
+            result["backend_path"] = server.path
+        else:
+            result["backend_port"] = server.actual_port
+
+        # Allocate listen port/path
+        if listen_proto == "unix":
+            listen_path = str(tmp_path / f"listen_{pair_id}.sock")
+            result["listen_path"] = listen_path
+        else:
+            listen_port = get_free_port()
+            result["listen_port"] = listen_port
+
+        # Build rinetd rule
+        if listen_proto == "unix":
+            listen_spec = f"unix:{result['listen_path']}"
+        else:
+            listen_spec = f"0.0.0.0 {result['listen_port']}"
+            if listen_proto == "udp":
+                listen_spec += "/udp"
+
+        if connect_proto == "unix":
+            connect_spec = f"unix:{result['backend_path']}"
+        else:
+            connect_spec = f"127.0.0.1 {result['backend_port']}"
+            if connect_proto == "udp":
+                connect_spec += "/udp"
+
+        result["rinetd_rule"] = f"{listen_spec} {connect_spec}"
+
+        # Store rule and listen info in shared structures BEFORE barrier
+        # Main thread needs these to start rinetd
+        shared_rules[pair_id] = result["rinetd_rule"]
+        shared_listen_info[pair_id] = (
+            listen_proto,
+            result["listen_port"] or result["listen_path"]
+        )
+
+        # Phase 1: Signal that server is ready and rule is built
+        # Main thread will collect rules and start rinetd after this barrier
+        try:
+            servers_ready_barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            result["message"] = "Servers ready barrier broken - another pair failed"
+            return result
+
+        # Phase 2: Wait for rinetd to be ready
+        # Main thread will signal this after rinetd is started and ports are verified
+        try:
+            rinetd_ready_barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            result["message"] = "rinetd ready barrier broken - rinetd failed to start"
+            return result
+
+        # After second barrier: rinetd is confirmed running, start transfers
+        if listen_proto == "unix":
+            listen_addr = result["listen_path"]
+        else:
+            listen_addr = ("127.0.0.1", result["listen_port"])
+
+        # Run transfers
+        transfer_fn = {
+            "echo": run_transfer,
+            "upload": run_upload_transfer,
+            "download": run_download_transfer,
+            "upload_sha256": run_upload_sha256_transfer,
+            "download_sha256": run_download_sha256_transfer,
+        }.get(mode, run_transfer)
+
+        # For UDP, create a socket to reuse
+        udp_sock = None
+        if listen_proto == "udp":
+            udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_sock.settimeout(DEFAULT_TIMEOUT)
+            udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)
+            udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 * 1024 * 1024)
+
+        try:
+            start_time = time.time()
+            count = 0
+            while time.time() - start_time < duration:
+                if udp_sock:
+                    success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed, udp_sock=udp_sock)
+                else:
+                    success, msg = transfer_fn(listen_proto, listen_addr, size, chunk_size, seed)
+                if not success:
+                    result["message"] = f"Transfer {count} failed: {msg}"
+                    return result
+                count += 1
+
+            result["success"] = True
+            result["message"] = f"Completed {count} transfers"
+        finally:
+            if udp_sock:
+                udp_sock.close()
+
+    except Exception as e:
+        result["message"] = f"Exception: {e}"
+    finally:
+        if server:
+            server.stop()
+
+    return result
+
+
+def run_parallel_pairs(pairs_config, rinetd_starter, duration, tmp_path):
+    """
+    Run multiple client-server pairs in parallel with two-phase synchronization.
+
+    Flow:
+        1. All pairs create their backend servers
+        2. servers_ready_barrier: all servers ready → main thread starts rinetd
+        3. Main thread starts rinetd and verifies it's ready
+        4. rinetd_ready_barrier: rinetd ready → all pairs start transfers
+        5. All pairs run transfers for duration
+        6. Collect and return results
+
+    Args:
+        pairs_config: List of dicts, each with keys:
+            - listen_proto, connect_proto, mode, size, chunk_size, seed
+        rinetd_starter: Callable that takes list of rules and starts rinetd
+        duration: How long to run transfers (seconds)
+        tmp_path: Temporary directory for unix sockets
+
+    Returns:
+        List of result dicts from each pair
+    """
+    import concurrent.futures
+
+    num_pairs = len(pairs_config)
+
+    # Two-phase barriers: N pairs + 1 main thread
+    servers_ready_barrier = threading.Barrier(num_pairs + 1)
+    rinetd_ready_barrier = threading.Barrier(num_pairs + 1)
+
+    results = [None] * num_pairs
+    rules = [None] * num_pairs
+    listen_info = [None] * num_pairs  # Store (proto, port/path) for verification
+
+    def run_pair_wrapper(pair_id, config):
+        """Wrapper to run a pair and store results."""
+        result = run_client_server_pair(
+            listen_proto=config["listen_proto"],
+            connect_proto=config["connect_proto"],
+            mode=config["mode"],
+            size=config["size"],
+            chunk_size=config["chunk_size"],
+            seed=config["seed"],
+            duration=duration,
+            tmp_path=tmp_path,
+            pair_id=pair_id,
+            servers_ready_barrier=servers_ready_barrier,
+            rinetd_ready_barrier=rinetd_ready_barrier,
+            shared_rules=rules,
+            shared_listen_info=listen_info,
+        )
+        return result
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_pairs) as executor:
+        # Submit all pairs
+        futures = {
+            executor.submit(run_pair_wrapper, i, config): i
+            for i, config in enumerate(pairs_config)
+        }
+
+        # Phase 1: Wait for all servers to be ready
+        try:
+            servers_ready_barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            # Some pair failed during setup - abort
+            rinetd_ready_barrier.abort()
+            for future in futures:
+                future.cancel()
+            return [{"success": False, "message": "Setup failed"} for _ in range(num_pairs)]
+
+        # Small grace period to ensure all servers have fully bound their ports
+        # (especially important when starting many servers simultaneously)
+        time.sleep(0.2)
+
+        # Start rinetd with all rules
+        valid_rules = [r for r in rules if r]
+        if not valid_rules:
+            rinetd_ready_barrier.abort()
+            return [{"success": False, "message": "No valid rules"} for _ in range(num_pairs)]
+
+        rinetd_starter(valid_rules)
+
+        # Verify rinetd is ready by checking all listen ports/paths
+        rinetd_ok = True
+        for proto, addr in listen_info:
+            if addr is None:
+                continue
+            if proto == "tcp":
+                if not wait_for_port(addr, timeout=10):
+                    rinetd_ok = False
+                    break
+            elif proto == "unix":
+                # Wait for unix socket to exist
+                for _ in range(50):
+                    if os.path.exists(addr):
+                        break
+                    time.sleep(0.1)
+                else:
+                    rinetd_ok = False
+                    break
+            else:
+                # UDP - small delay
+                time.sleep(0.3)
+
+        if not rinetd_ok:
+            rinetd_ready_barrier.abort()
+            return [{"success": False, "message": "rinetd failed to start"} for _ in range(num_pairs)]
+
+        # Phase 2: Signal that rinetd is ready - pairs can start transfers
+        try:
+            rinetd_ready_barrier.wait(timeout=30)
+        except threading.BrokenBarrierError:
+            return [{"success": False, "message": "rinetd ready barrier failed"} for _ in range(num_pairs)]
+
+        # Collect results
+        for future in concurrent.futures.as_completed(futures):
+            pair_id = futures[future]
+            try:
+                results[pair_id] = future.result()
+            except Exception as e:
+                results[pair_id] = {"success": False, "message": f"Exception: {e}"}
+
+    return results

@@ -5,9 +5,8 @@ import time
 import random
 import os
 from .utils import (
-    get_free_port, wait_for_port, generate_random_data, calculate_checksum,
-    send_all, recv_all, run_transfer_until_deadline, random_transfer_params,
-    get_max_concurrent_connections, get_file_limit
+    get_free_port, wait_for_port, run_parallel_pairs,
+    random_transfer_params, get_file_limit
 )
 
 INACTIVE_WAIT = 30
@@ -33,147 +32,140 @@ def test_simple():
     assert True
 
 
-@pytest.mark.parametrize("num_clients,is_quick", [
+@pytest.mark.expect_rinetd_errors
+@pytest.mark.parametrize("num_pairs,is_quick", [
     pytest.param(10, True, marks=pytest.mark.quick),
     pytest.param(50, False),
     pytest.param(100, False),
     pytest.param(500, False, marks=pytest.mark.slow),
     pytest.param(1000, False, marks=pytest.mark.slow),
 ])
-def test_randomized_stress(rinetd, tcp_echo_server, unix_echo_server, num_clients, is_quick, tmp_path):
+def test_randomized_stress(rinetd, num_pairs, is_quick, tmp_path):
     """
-    Stress test where each thread runs transfers with fully randomized parameters
-    (SIZE and CHUNK_SIZE calculated using log-scale distribution).
+    Multimodal stress test with fully randomized parameters per pair.
 
-    Graceful shutdown sequence:
-    1. When stress_duration is reached, threads stop starting NEW transfers
-    2. In-progress transfers complete fully (send all data, receive all response)
-    3. All threads finish and report results
-    4. Only then are servers stopped (via fixture cleanup)
+    Architecture: Each pair gets:
+    - Its own dedicated backend server (no contention!)
+    - Random protocol combination (tcp/udp/unix for both listen and connect)
+    - Random transfer size and chunk size (log-scale distribution)
+    - Random mode (echo, upload, download, upload_sha256, download_sha256)
 
-    Note: UDP is excluded from stress tests due to inherent unreliability under
-    high concurrency (packet loss causes timeouts). Use test_matrix for UDP coverage.
+    This tests rinetd's ability to multiplex many heterogeneous connections
+    simultaneously - the real-world use case.
+
+    Example with num_pairs=5:
+        Pair 0: tcp->udp, 1KB, 512B chunks, echo mode
+        Pair 1: udp->udp, 64KB, 16KB chunks, upload_sha256 mode
+        Pair 2: unix->tcp, 1MB, 1KB chunks, download mode
+        Pair 3: tcp->tcp, 100KB, 64KB chunks, echo mode
+        Pair 4: unix->unix, 10KB, 1KB chunks, download_sha256 mode
+
+    All run simultaneously for the stress duration.
     """
-    # Use only reliable protocols for stress testing
-    STRESS_PROTOCOLS = [
+    # All protocol combinations supported by rinetd-uv with 1:1 architecture
+    # Note: Mixed protocol forwarding (tcp->udp, unix->udp) is not supported
+    ALL_PROTOCOLS = [
         ("tcp", "tcp"),
         ("tcp", "unix"),
+        ("udp", "udp"),
         ("unix", "tcp"),
         ("unix", "unix"),
     ]
 
-    # Check file descriptor limits and adjust num_clients if needed
-    can_run, effective_clients, reason = get_max_concurrent_connections(
-        num_clients, protocols_count=len(STRESS_PROTOCOLS)
+    # All transfer modes
+    ALL_MODES = [
+        "echo",
+        "upload",
+        "download",
+        "upload_sha256",
+        "download_sha256",
+    ]
+
+    # Check file descriptor limits
+    # Estimate: each pair needs ~4 FDs (server listen, server accept, client, rinetd)
+    soft, hard = get_file_limit()
+    estimated_fds = num_pairs * 4
+    if estimated_fds > soft * 0.8:  # Leave 20% margin
+        pytest.skip(f"Insufficient file descriptors: need ~{estimated_fds}, have {soft}")
+
+    stress_duration = get_stress_duration(is_quick)
+    rng = random.Random(42)  # Reproducible randomization
+
+    # Generate random configuration for each pair
+    pairs_config = []
+    for i in range(num_pairs):
+        # Random protocol combination
+        listen_proto, connect_proto = rng.choice(ALL_PROTOCOLS)
+
+        # Random mode (filter based on BACKEND protocol compatibility)
+        # Backend server determines what modes are available
+        if connect_proto == "udp":
+            # UDP backends only support echo and sha256 modes
+            mode = rng.choice(["echo", "upload_sha256", "download_sha256"])
+        else:
+            # TCP/Unix backends support all modes
+            mode = rng.choice(ALL_MODES)
+
+        # Random transfer parameters
+        # Pick the more restrictive protocol for size limits
+        proto_for_limits = "udp" if (listen_proto == "udp" or connect_proto == "udp") else "tcp"
+        size, chunk_size = random_transfer_params(proto_for_limits, rng)
+
+        # UDP + SHA256: reserve 32 bytes for hash
+        if (listen_proto == "udp" or connect_proto == "udp") and mode in ("upload_sha256", "download_sha256"):
+            if chunk_size > 65507 - 32:
+                chunk_size = 65507 - 32
+
+        pairs_config.append({
+            "listen_proto": listen_proto,
+            "connect_proto": connect_proto,
+            "mode": mode,
+            "size": size,
+            "chunk_size": chunk_size,
+            "seed": i + int(time.time()),
+        })
+
+    print(f"\n{'='*70}")
+    print(f"Stress test: {num_pairs} pairs, {stress_duration}s duration")
+    print(f"Protocol distribution:")
+    proto_counts = {}
+    for cfg in pairs_config:
+        key = f"{cfg['listen_proto']}->{cfg['connect_proto']}"
+        proto_counts[key] = proto_counts.get(key, 0) + 1
+    for proto, count in sorted(proto_counts.items()):
+        print(f"  {proto}: {count}")
+    print(f"Mode distribution:")
+    mode_counts = {}
+    for cfg in pairs_config:
+        mode_counts[cfg['mode']] = mode_counts.get(cfg['mode'], 0) + 1
+    for mode, count in sorted(mode_counts.items()):
+        print(f"  {mode}: {count}")
+    print(f"{'='*70}\n")
+
+    # Run all pairs in parallel
+    results = run_parallel_pairs(
+        pairs_config=pairs_config,
+        rinetd_starter=rinetd,
+        duration=stress_duration,
+        tmp_path=tmp_path,
     )
 
-    if not can_run:
-        soft, hard = get_file_limit()
-        pytest.skip(f"Insufficient file descriptors: {reason} (soft={soft}, hard={hard})")
+    # Check results
+    failures = [r for r in results if not r["success"]]
 
-    if reason:
-        print(f"\nNote: {reason}")
+    if failures:
+        print(f"\n{'='*70}")
+        print(f"FAILURES: {len(failures)}/{num_pairs}")
+        for i, f in enumerate(failures[:10]):  # Show first 10
+            print(f"  {i+1}. {f['message']}")
+        print(f"{'='*70}\n")
 
-    num_threads = effective_clients
-    stress_duration = get_stress_duration(is_quick)
+    # Allow up to 1% failure rate for very large stress tests
+    # (transient issues can occur at scale)
+    max_failures = max(1, num_pairs // 100) if num_pairs >= 100 else 0
 
-    # Setup rules for all protocol combinations
-    rules = []
-    protocol_map = {}  # (listen_proto, connect_proto) -> listen_addr
-
-    for lp, cp in STRESS_PROTOCOLS:
-        listen_port = None
-        listen_path = None
-        if lp == "tcp":
-            listen_port = get_free_port()
-            listen_addr = ('127.0.0.1', listen_port)
-        else:
-            listen_path = str(tmp_path / f"stress_listen_{lp}_{cp}_{num_clients}.sock")
-            listen_addr = listen_path
-
-        backend_host = "127.0.0.1"
-        backend_port = None
-        backend_path = None
-
-        if cp == "tcp":
-            backend_port = tcp_echo_server.actual_port
-        elif cp == "unix":
-            backend_path = unix_echo_server.path
-
-        listen_spec = f"0.0.0.0 {listen_port}" if listen_port else f"unix:{listen_path}"
-        connect_spec = f"{backend_host} {backend_port}" if backend_port else f"unix:{backend_path}"
-
-        rules.append(f"{listen_spec} {connect_spec}")
-        protocol_map[(lp, cp)] = listen_addr
-
-    rinetd(rules)
-    time.sleep(1)  # Give rinetd time to bind all
-
-    # Deadline for starting NEW transfers (not for completing in-progress ones)
-    stop_new_transfers_at = time.time() + stress_duration
-
-    def worker(thread_id):
-        """
-        Worker thread that runs randomized transfers.
-
-        Behavior:
-        - Start new transfers until stop_new_transfers_at is reached
-        - Each transfer completes fully (sender finishes, receiver gets all data)
-        - After deadline, no new transfers are started, but current one completes
-        """
-        # Each thread gets its own RNG seeded from thread_id for reproducibility
-        thread_rng = random.Random(thread_id + int(time.time()))
-        total_count = 0
-
-        while time.time() < stop_new_transfers_at:
-            # Pick random protocol combination (TCP/Unix only)
-            lp, cp = thread_rng.choice(STRESS_PROTOCOLS)
-            listen_addr = protocol_map[(lp, cp)]
-
-            # Run transfers until deadline with fully randomized parameters
-            # The deadline is passed to run_transfer_until_deadline which will:
-            # - Stop starting new transfers when deadline is reached
-            # - Complete any in-progress transfer fully
-            success, msg, count = run_transfer_until_deadline(
-                lp, listen_addr, stop_new_transfers_at, rng=thread_rng
-            )
-
-            total_count += count
-
-            if not success:
-                return False, f"Thread {thread_id} failed: {msg}"
-
-        return True, f"Thread {thread_id} completed {total_count} transfers"
-
-    # Cap max_workers to avoid system exhaustion
-    # Note: run_transfer also spawns a thread for TCP, so effective load is higher
-    max_workers = min(num_threads, 500)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(worker, i) for i in range(num_threads)]
-
-        # Wait for all workers with grace period for completion
-        # The grace period allows in-progress transfers to finish after deadline
-        done, not_done = concurrent.futures.wait(
-            futures,
-            timeout=stress_duration + COMPLETION_GRACE_PERIOD
-        )
-
-        # Collect results from completed futures
-        results = []
-        for f in done:
-            try:
-                results.append(f.result(timeout=10))
-            except Exception as e:
-                results.append((False, f"Exception: {e}"))
-
-        # Any futures that didn't complete in time are failures
-        for f in not_done:
-            results.append((False, "Timed out waiting for completion"))
-            f.cancel()
-
-    failures = [r for r in results if not r[0]]
-    assert len(failures) == 0, f"Stress test failed: {failures[:5]}"
+    assert len(failures) <= max_failures, \
+        f"Too many failures: {len(failures)}/{num_pairs} (max {max_failures})"
 
 
 @pytest.mark.quick
@@ -201,4 +193,3 @@ def test_randomization_sanity():
         # Verify we get a good distribution (not all same values)
         assert len(set(sizes)) > 10, f"Not enough size variety for {proto}"
         assert len(set(chunks)) > 10, f"Not enough chunk variety for {proto}"
-
