@@ -1078,7 +1078,7 @@ from .servers import (
 )
 
 
-def create_backend_server(protocol, mode, socket_path=None, host='127.0.0.1'):
+def create_backend_server(protocol, mode, socket_path=None, host='127.0.0.1', port=0):
     """
     Factory function to create the appropriate backend server.
 
@@ -1087,6 +1087,7 @@ def create_backend_server(protocol, mode, socket_path=None, host='127.0.0.1'):
         mode: "echo", "upload", "download", "upload_sha256", or "download_sha256"
         socket_path: Required for unix protocol
         host: IP address to bind to for TCP/UDP (default: 127.0.0.1)
+        port: Port to bind to for TCP/UDP (default: 0 for random)
 
     Returns:
         Server instance (not started)
@@ -1118,8 +1119,8 @@ def create_backend_server(protocol, mode, socket_path=None, host='127.0.0.1'):
             raise ValueError("socket_path required for unix protocol")
         return server_class(socket_path)
     else:
-        # TCP/UDP servers accept (host, port) - pass dedicated host IP
-        return server_class(host=host)
+        # TCP/UDP servers accept (host, port) - pass dedicated host IP and port
+        return server_class(host=host, port=port)
 
 
 def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
@@ -1176,15 +1177,19 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
 
     server = None
     try:
-        # Create backend server with dedicated IP to avoid port conflicts
+        # Create backend server with fixed IP and port range
         if connect_proto == "unix":
             backend_path = str(tmp_path / f"backend_{pair_id}.sock")
             server = create_backend_server(connect_proto, mode, backend_path)
             result["backend_path"] = backend_path
         else:
-            # Use dedicated backend IP: 127.2.X.Y (separate range from listen IPs 127.1.X.Y)
-            backend_ip = f"127.2.{pair_id >> 8}.{pair_id & 0xFF}"
-            server = create_backend_server(connect_proto, mode, host=backend_ip)
+            # Use 127.0.0.3 for backend servers with port = base + pair_id
+            # This matches the rinetd listen port strategy (separate IP to avoid conflicts)
+            backend_ip = "127.0.0.3"
+            backend_port = 20000 + pair_id
+            if backend_port > 65535:
+                raise ValueError(f"pair_id {pair_id} exceeds port range (max 45535)")
+            server = create_backend_server(connect_proto, mode, host=backend_ip, port=backend_port)
             result["backend_ip"] = backend_ip
 
         # Start server and wait for it to be ready
@@ -1204,13 +1209,15 @@ def run_client_server_pair(listen_proto, connect_proto, mode, size, chunk_size,
             listen_path = str(tmp_path / f"listen_{pair_id}.sock")
             result["listen_path"] = listen_path
         else:
-            # Use dedicated loopback IP address for this pair to avoid port conflicts
-            # The 127.0.0.0/8 range is all loopback, giving us 16M unique addresses
-            # This eliminates port allocation race conditions entirely!
-            # Format: 127.1.X.Y where pair_id = X*256 + Y
-            listen_ip = f"127.1.{pair_id >> 8}.{pair_id & 0xFF}"
-            # Use a fixed port since each pair has unique IP
-            listen_port = 5000
+            # Use fixed IP with port range allocation
+            # Linux allows 127.0.0.0/8, but FreeBSD requires explicit IP configuration
+            # Use 127.0.0.2 for rinetd listen addresses with port = base + pair_id
+            # Base port 20000 avoids conflicts with common services
+            # Supports up to ~45,000 pairs (20000-65535)
+            listen_ip = "127.0.0.2"
+            listen_port = 20000 + pair_id
+            if listen_port > 65535:
+                raise ValueError(f"pair_id {pair_id} exceeds port range (max 45535)")
             result["listen_port"] = listen_port
             result["listen_ip"] = listen_ip
 
