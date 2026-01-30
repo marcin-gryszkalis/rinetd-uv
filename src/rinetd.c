@@ -43,6 +43,12 @@
 #include "log.h"
 #include "parse.h"
 #include "buffer_pool.h"
+#include "loadbalancer.h"
+#include "affinity.h"
+
+#ifdef HAVE_LIBYAML
+#include "yaml_config.h"
+#endif
 
 Rule *allRules = NULL;
 int allRulesCount = 0;
@@ -50,6 +56,11 @@ int globalRulesCount = 0;
 
 ServerInfo *seInfo = NULL;
 int seTotal = 0;
+
+/* YAML configuration state */
+RuleInfo *yamlRules = NULL;
+int yamlRulesCount = 0;
+int usingYamlConfig = 0;
 
 /* Connection management */
 static ConnectionInfo *connectionListHead = NULL;
@@ -82,10 +93,12 @@ int listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
 int maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
 static RinetdOptions options = {
-    .conf_file = RINETD_CONFIG_FILE,
+    .conf_file = NULL,  /* Will be determined by findConfigFile() if not specified with -c */
     .foreground = 0,
     .debug = 0,
 };
+
+static int conf_file_explicit = 0;  /* Set to 1 if -c was used */
 
 static int forked = 0;
 static int config_reload_pending = 0;
@@ -101,6 +114,7 @@ static void init_udp_hash_table(void);
 static void cleanup_udp_hash_table(void);
 
 static int readArgs(int argc, char **argv, RinetdOptions *options);
+static char const *findConfigFile(void);
 static void clearConfiguration(void);
 static void readConfiguration(char const *file);
 
@@ -137,6 +151,11 @@ int main(int argc, char *argv[])
     readArgs(argc, argv, &options);
     log_set_debug(options.debug);
 
+    /* If -c not specified, find config file in order: .yaml, .yml, .conf */
+    if (!conf_file_explicit) {
+        options.conf_file = findConfigFile();
+    }
+
     if (!options.foreground) {
 #if HAVE_DAEMON
         if (daemon(0, 0) != 0) {
@@ -153,6 +172,11 @@ int main(int argc, char *argv[])
     }
 
     readConfiguration(options.conf_file);
+
+    /* If using YAML config, initialize from rules */
+    if (usingYamlConfig)
+        initializeFromYamlRules();
+
     if (pidFileName || !options.foreground)
         registerPID(pidFileName ? pidFileName : RINETD_PID_FILE);
 
@@ -338,8 +362,34 @@ static void readConfiguration(char const *file)
     listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
     maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
-    /* Parse the configuration file. */
-    parseConfiguration(file);
+#ifdef HAVE_LIBYAML
+    /* Check if this is a YAML config file */
+    if (yaml_config_is_yaml_file(file)) {
+        YamlConfig *config = yaml_config_parse(file);
+        if (!config) {
+            logError("Failed to parse YAML configuration: %s\n", file);
+            exit(1);
+        }
+
+        /* Apply global settings */
+        yaml_config_apply_globals(config);
+
+        /* Store rules for later initialization */
+        yamlRules = config->rules;
+        yamlRulesCount = config->rule_count;
+        usingYamlConfig = 1;
+
+        /* Transfer ownership - don't free rules, just the config wrapper */
+        config->rules = NULL;
+        config->rule_count = 0;
+        yaml_config_free(config);
+    } else
+#endif
+    {
+        /* Parse legacy configuration file */
+        usingYamlConfig = 0;
+        parseConfiguration(file);
+    }
 
     /* Open the log file */
     if (logFd != -1) {
@@ -880,8 +930,14 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
         logErrorConn(cnx, "connect error: %s\n", uv_strerror(status));
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
-        /* Track failures and trigger DNS refresh if threshold reached */
-        if (cnx->server) {
+        /* Track backend health for load balancing */
+        if (cnx->selected_backend && cnx->rule) {
+            lb_backend_mark_failure(cnx->selected_backend, cnx->rule);
+            lb_backend_connection_end(cnx->selected_backend, 0, 0);
+        }
+
+        /* Track failures and trigger DNS refresh if threshold reached (legacy) */
+        if (cnx->server && !cnx->selected_backend) {
             ServerInfo *srv = (ServerInfo *)cnx->server;
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
@@ -941,8 +997,12 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
 
     logEvent(cnx, cnx->server, logOpened);
 
-    /* Reset failure counter on successful connection */
-    if (cnx->server)
+    /* Mark backend healthy on successful connection (load balancing) */
+    if (cnx->selected_backend && cnx->rule)
+        lb_backend_mark_success(cnx->selected_backend, cnx->rule);
+
+    /* Reset failure counter on successful connection (legacy) */
+    if (cnx->server && !cnx->selected_backend)
         ((ServerInfo *)cnx->server)->consecutive_failures = 0;
 }
 
@@ -1033,12 +1093,42 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cacheServerInfoForLogging(cnx, srv);
     cnx->timer_initialized = 0;
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    char *backend_unix_path = NULL;
+    int backend_is_abstract = 0;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        /* YAML config with load balancing */
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_unix_path = backend->unixPath;
+            backend_is_abstract = backend->isAbstract;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields if no backend selected */
+    if (!backend_addr && !backend_unix_path) {
+        backend_addr = srv->toAddrInfo;
+        backend_unix_path = srv->toUnixPath;
+        backend_is_abstract = srv->toIsAbstract;
+        backend_source = srv->sourceAddrInfo;
+    }
+
     /* Connect to backend - either TCP or Unix socket */
-    if (srv->toUnixPath) {
+    if (backend_unix_path) {
         /* Backend is Unix socket */
         ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
         if (ret != 0) {
             logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
             return;
@@ -1050,6 +1140,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for Unix connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1059,11 +1150,12 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         connect_req->data = cnx;
 
         /* Connect to Unix socket backend */
-        if (srv->toIsAbstract) {
+        if (backend_is_abstract) {
             char abstract_name[UNIX_PATH_MAX + 2];
-            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            size_t name_len = prepareAbstractSocketName(backend_unix_path, abstract_name);
             if (name_len == 0) {
                 free(connect_req);
+                if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
                 uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1072,13 +1164,14 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             }
             uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, backend_unix_path, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
         ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
             return;
@@ -1087,9 +1180,10 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
 
-        /* Bind to source address if specified */
-        if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
+        /* Bind to source address if specified (backend-specific or server default) */
+        struct addrinfo *source = backend_source ? backend_source : srv->sourceAddrInfo;
+        if (source) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, source->ai_addr, 0);
             if (ret != 0) {
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
                 /* Continue anyway - binding is optional */
@@ -1100,6 +1194,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1108,10 +1203,11 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, backend_addr->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1720,12 +1816,17 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     sreq->buffer_size = data_len; /* Bytes being sent (for stats) */
     sreq->alloc_size = alloc_size; /* Allocated size (for pool) */
     sreq->is_to_backend = 1;
-    sreq->dest_addr = *(struct sockaddr_storage*)cnx->server->toAddrInfo->ai_addr;
+
+    /* Use selected backend address or fall back to server address */
+    struct addrinfo *backend_addr = cnx->selected_backend ?
+        cnx->selected_backend->addrInfo : cnx->server->toAddrInfo;
+
+    sreq->dest_addr = *(struct sockaddr_storage*)backend_addr->ai_addr;
 
     /* Set up buffer for sending */
     uv_buf_t wrbuf = uv_buf_init(data, data_len);
 
-    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1, cnx->server->toAddrInfo->ai_addr, udp_send_cb);
+    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1, backend_addr->ai_addr, udp_send_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
@@ -2121,6 +2222,28 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
     cacheServerInfoForLogging(cnx, srv);
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields */
+    if (!backend_addr) {
+        backend_addr = srv->toAddrInfo;
+        backend_source = srv->sourceAddrInfo;
+    }
+
     /* Remote handle shared with server (don't initialize separate handle) */
     cnx->remote_handle_initialized = 0;
 
@@ -2128,6 +2251,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     int ret = uv_timer_init(main_loop, &cnx->timeout_timer);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_init error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         buffer_pool_free(buf->base, buf->len);
         free(cnx);
         return;
@@ -2136,6 +2260,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
         buffer_pool_free(buf->base, buf->len);
         return;
@@ -2146,6 +2271,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     ret = uv_udp_init(main_loop, &cnx->local_uv_handle.udp);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_init error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         cnx->timer_closing = 1;
         uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
         buffer_pool_free(buf->base, buf->len);
@@ -2155,17 +2281,17 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     cnx->local_handle_initialized = 1;
     cnx->local_uv_handle.udp.data = cnx;
 
-    cnx->local.family = srv->toAddrInfo->ai_family;
+    cnx->local.family = backend_addr->ai_family;
     cnx->local.protocol = IPPROTO_UDP;
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
     /* Bind socket - required to get fd for buffer size setting */
-    if (srv->sourceAddrInfo) {
-        ret = uv_udp_bind(&cnx->local_uv_handle.udp, srv->sourceAddrInfo->ai_addr, 0);
+    if (backend_source) {
+        ret = uv_udp_bind(&cnx->local_uv_handle.udp, backend_source->ai_addr, 0);
     } else {
         struct sockaddr_storage any_addr;
         memset(&any_addr, 0, sizeof(any_addr));
-        if (srv->toAddrInfo->ai_family == AF_INET6) {
+        if (backend_addr->ai_family == AF_INET6) {
             struct sockaddr_in6 *a = (struct sockaddr_in6 *)&any_addr;
             a->sin6_family = AF_INET6;
         } else {
@@ -2219,6 +2345,13 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
             logLocalClosedFirst : logRemoteClosedFirst;
         logEvent(cnx, cnx->server, cnx->coLog);
         cnx->coClosing = 1;
+
+        /* Update load balancing statistics */
+        if (cnx->selected_backend) {
+            uint64_t bytes_in = cnx->local.totalBytesIn + cnx->remote.totalBytesIn;
+            uint64_t bytes_out = cnx->local.totalBytesOut + cnx->remote.totalBytesOut;
+            lb_backend_connection_end(cnx->selected_backend, bytes_in, bytes_out);
+        }
 
         /* Cleanup UDP connection: remove from hash table and LRU list */
         if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
@@ -2442,6 +2575,71 @@ error:
 #endif
 }
 
+/* Initialize servers from YAML rules (called after yaml_config_parse) */
+void initializeFromYamlRules(void)
+{
+    if (!usingYamlConfig || !yamlRules)
+        return;
+
+    /* Collect all listeners from all rules into seInfo array */
+    for (int r = 0; r < yamlRulesCount; r++) {
+        RuleInfo *rule = &yamlRules[r];
+
+        for (int l = 0; l < rule->listener_count; l++) {
+            ServerInfo *srv = rule->listeners[l];
+
+            /* Link listener to its rule */
+            srv->rule = rule;
+
+            /* Copy access rules reference */
+            srv->rulesStart = rule->rulesStart;
+            srv->rulesCount = rule->rulesCount;
+
+            /* Add to global seInfo array */
+            seInfo = (ServerInfo *)realloc(seInfo, sizeof(ServerInfo) * (seTotal + 1));
+            if (!seInfo) {
+                logError("realloc failed for ServerInfo\n");
+                exit(1);
+            }
+
+            /* Copy ServerInfo (but keep pointer to rule) */
+            seInfo[seTotal] = *srv;
+            seInfo[seTotal].rule = rule;
+
+            /* Update the rule's listener pointer to point to seInfo entry */
+            rule->listeners[l] = &seInfo[seTotal];
+
+            seTotal++;
+        }
+
+        logInfo("Rule '%s': %d listener(s), %d backend(s), algorithm=%s\n",
+                rule->name ? rule->name : "unnamed",
+                rule->listener_count,
+                rule->backend_count,
+                lb_algorithm_name(rule->algorithm));
+    }
+}
+
+static char const *findConfigFile(void)
+{
+    /* Check for config files in order: .yaml, .yml, .conf */
+    static char const *candidates[] = {
+        RINETD_CONFIG_FILE_YAML,
+        RINETD_CONFIG_FILE_YML,
+        RINETD_CONFIG_FILE_CONF,
+        NULL
+    };
+
+    for (int i = 0; candidates[i] != NULL; i++) {
+        if (access(candidates[i], R_OK) == 0) {
+            return candidates[i];
+        }
+    }
+
+    /* None found - return the legacy default (will fail with clear error message) */
+    return RINETD_CONFIG_FILE_CONF;
+}
+
 static int readArgs (int argc, char **argv, RinetdOptions *options)
 {
     for (;;) {
@@ -2462,6 +2660,7 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
         switch (c) {
             case 'c':
                 options->conf_file = optarg;
+                conf_file_explicit = 1;
                 if (!options->conf_file) {
                     logError("configuration filename not accepted\n");
                     exit(1);
@@ -2480,6 +2679,10 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                     "  -f, --foreground       do not run in the background\n"
                     "  -h, --help             display this help\n"
                     "  -v, --version          display version number\n\n"
+                    "Without -c, searches for config in order:\n"
+                    "  " RINETD_CONFIG_FILE_YAML "\n"
+                    "  " RINETD_CONFIG_FILE_YML "\n"
+                    "  " RINETD_CONFIG_FILE_CONF "\n\n"
                     "Most options are controlled through the configuration file.\n"
                     "See the rinetd-uv(8) manpage for more information.\n");
                 exit(0);

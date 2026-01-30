@@ -25,7 +25,9 @@ static int const RINETD_DEFAULT_POOL_MIN_FREE = 64;
 static int const RINETD_DEFAULT_POOL_MAX_FREE = 1024;
 static int const RINETD_DEFAULT_POOL_TRIM_DELAY = 60000;
 
-#define RINETD_CONFIG_FILE "/etc/rinetd-uv.conf"
+#define RINETD_CONFIG_FILE_YAML "/etc/rinetd-uv.yaml"
+#define RINETD_CONFIG_FILE_YML "/etc/rinetd-uv.yml"
+#define RINETD_CONFIG_FILE_CONF "/etc/rinetd-uv.conf"
 #define RINETD_PID_FILE "/var/run/rinetd-uv.pid"
 #define MAX_INCLUDE_DEPTH 10
 
@@ -50,8 +52,16 @@ extern int maxUdpConnections;
 /* libuv event loop */
 extern uv_loop_t *main_loop;
 
+/* YAML configuration state */
+extern RuleInfo *yamlRules;
+extern int yamlRulesCount;
+extern int usingYamlConfig;
+
 /* Functions */
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
                int serverTimeout, char *sourceAddress, int keepalive,
                int dns_refresh_period, int socketMode);
+
+/* Initialize servers from YAML rules (called after yaml_config_parse) */
+void initializeFromYamlRules(void);
