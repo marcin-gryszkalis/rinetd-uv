@@ -148,8 +148,8 @@ class UdpEchoServer(BaseEchoServer):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             # Large buffers to handle burst of parallel clients sending 64KB each
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2 * 1024 * 1024)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2 * 1024 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 * 1024 * 1024)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 * 1024 * 1024)
             self.sock.bind((self.host, self.port))
             self.actual_port = self.sock.getsockname()[1]
             self.ready.set()
@@ -165,7 +165,7 @@ class UdpEchoServer(BaseEchoServer):
                 except OSError:
                     break
         except Exception as e:
-            print(f"UdpEchoServer error: {e}", file=sys.stderr)
+            print(f"UdpEchoServer error({self.host}:{self.port}): {e}", file=sys.stderr)
         finally:
             if self.sock:
                 self.sock.close()
