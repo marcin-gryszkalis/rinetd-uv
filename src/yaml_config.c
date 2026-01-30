@@ -91,6 +91,26 @@ static int parse_int(const char *s, int min_val, int max_val, int default_val)
     return (int)val;
 }
 
+/* Helper: parse integer with strict validation - returns -1 on error, sets error message */
+static int parse_int_strict(const char *s, int min_val, int max_val, const char *field_name, char *error_msg, size_t error_msg_size)
+{
+    if (!s || *s == '\0') {
+        snprintf(error_msg, error_msg_size, "Missing value for %s", field_name);
+        return -1;
+    }
+    char *end;
+    long val = strtol(s, &end, 10);
+    if (*end != '\0') {
+        snprintf(error_msg, error_msg_size, "Invalid value for %s: '%s' (not a number)", field_name, s);
+        return -1;
+    }
+    if (val < min_val || val > max_val) {
+        snprintf(error_msg, error_msg_size, "Value for %s out of range: %ld (must be %d-%d)", field_name, val, min_val, max_val);
+        return -1;
+    }
+    return (int)val;
+}
+
 /* Helper: parse boolean */
 static int parse_bool(const char *s, int default_val)
 {
@@ -139,8 +159,9 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
         else if (strcasecmp(proto_str, "udp") == 0)
             *protocol = IPPROTO_UDP;
         else {
-            logWarning("Unknown protocol '%s', defaulting to tcp\n", proto_str);
-            *protocol = IPPROTO_TCP;
+            logError("Unknown protocol '%s' (must be 'tcp' or 'udp')\n", proto_str);
+            free(copy);
+            return -1;
         }
     }
 
@@ -174,6 +195,29 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
     }
 
     free(copy);
+
+    /* Validate: port is required for network addresses */
+    if (*host && !*port) {
+        logError("Missing port in address: %s\n", addr_str);
+        free(*host);
+        *host = NULL;
+        return -1;
+    }
+
+    /* Validate port number if provided */
+    if (*port) {
+        char err_msg[256];
+        int port_num = parse_int_strict(*port, 1, 65535, "port", err_msg, sizeof(err_msg));
+        if (port_num < 0) {
+            logError("Invalid port in address '%s': %s\n", addr_str, err_msg);
+            free(*host);
+            free(*port);
+            *host = NULL;
+            *port = NULL;
+            return -1;
+        }
+    }
+
     return (*host != NULL) ? 0 : -1;
 }
 
@@ -399,14 +443,46 @@ static int finalize_rule(ParserContext *ctx)
     if (ctx->current_backend)
         add_backend_to_rule(ctx);
 
+    /* Validate rule has a name */
+    if (!rule->name || rule->name[0] == '\0') {
+        logError("Rule missing required 'name' field\n");
+        return -1;
+    }
+
+    /* Check for duplicate rule names */
+    YamlConfig *config = ctx->config;
+    for (int i = 0; i < config->rule_count; i++) {
+        if (config->rules[i].name && strcmp(config->rules[i].name, rule->name) == 0) {
+            logError("Duplicate rule name: '%s'\n", rule->name);
+            return -1;
+        }
+    }
+
     /* Validate rule has at least one listener and one backend */
     if (rule->listener_count == 0) {
-        logError("Rule '%s' has no bind addresses\n", rule->name ? rule->name : "unnamed");
+        logError("Rule '%s' has no bind addresses\n", rule->name);
         return -1;
     }
     if (rule->backend_count == 0) {
-        logError("Rule '%s' has no backends\n", rule->name ? rule->name : "unnamed");
+        logError("Rule '%s' has no backends\n", rule->name);
         return -1;
+    }
+
+    /* Validate: UDP cannot be used with Unix socket backends */
+    int has_udp_listener = 0;
+    for (int i = 0; i < rule->listener_count; i++) {
+        if (rule->listeners[i]->handle_type == UV_UDP) {
+            has_udp_listener = 1;
+            break;
+        }
+    }
+    if (has_udp_listener) {
+        for (int i = 0; i < rule->backend_count; i++) {
+            if (rule->backends[i].unixPath) {
+                logError("Rule '%s': UDP cannot forward to Unix socket backend\n", rule->name);
+                return -1;
+            }
+        }
     }
 
     /* Set default algorithm if multiple backends and none specified */
@@ -439,7 +515,6 @@ static int finalize_rule(ParserContext *ctx)
     }
 
     /* Add rule to config */
-    YamlConfig *config = ctx->config;
     if (config->rule_count >= config->rule_capacity) {
         int new_cap = config->rule_capacity ? config->rule_capacity * 2 : 8;
         RuleInfo *new_rules = realloc(config->rules, new_cap * sizeof(RuleInfo));
@@ -465,37 +540,84 @@ static void process_scalar(ParserContext *ctx, const char *value)
         return;
 
     switch (ctx->state) {
-        case STATE_GLOBAL_KEY:
+        case STATE_GLOBAL_KEY: {
             if (!ctx->current_key)
                 break;
 
-            if (strcmp(ctx->current_key, "buffer_size") == 0)
-                ctx->config->buffer_size = parse_int(value, 1024, 1024*1024, RINETD_DEFAULT_BUFFER_SIZE);
-            else if (strcmp(ctx->current_key, "dns_refresh") == 0)
-                ctx->config->dns_refresh = parse_int(value, 0, 86400*7, RINETD_DEFAULT_DNS_REFRESH_PERIOD);
-            else if (strcmp(ctx->current_key, "log_file") == 0)
+            int val;
+            char err_msg[256];
+
+            if (strcmp(ctx->current_key, "buffer_size") == 0) {
+                val = parse_int_strict(value, 1024, 1024*1024, "buffer_size", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->buffer_size = val;
+                }
+            } else if (strcmp(ctx->current_key, "dns_refresh") == 0) {
+                val = parse_int_strict(value, 0, 86400*7, "dns_refresh", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->dns_refresh = val;
+                }
+            } else if (strcmp(ctx->current_key, "log_file") == 0) {
                 ctx->config->log_file = safe_strdup(value, 4096);
-            else if (strcmp(ctx->current_key, "pid_file") == 0)
+            } else if (strcmp(ctx->current_key, "pid_file") == 0) {
                 ctx->config->pid_file = safe_strdup(value, 4096);
-            else if (strcmp(ctx->current_key, "log_common") == 0)
+            } else if (strcmp(ctx->current_key, "log_common") == 0) {
                 ctx->config->log_common = parse_bool(value, 0);
-            else if (strcmp(ctx->current_key, "max_udp_connections") == 0)
-                ctx->config->max_udp_connections = parse_int(value, 100, 1000000, RINETD_DEFAULT_MAX_UDP_CONNECTIONS);
-            else if (strcmp(ctx->current_key, "listen_backlog") == 0)
-                ctx->config->listen_backlog = parse_int(value, 1, 65535, RINETD_DEFAULT_LISTEN_BACKLOG);
-            else if (strcmp(ctx->current_key, "pool_min_free") == 0)
-                ctx->config->pool_min_free = parse_int(value, 0, 100000, RINETD_DEFAULT_POOL_MIN_FREE);
-            else if (strcmp(ctx->current_key, "pool_max_free") == 0)
-                ctx->config->pool_max_free = parse_int(value, 0, 100000, RINETD_DEFAULT_POOL_MAX_FREE);
-            else if (strcmp(ctx->current_key, "pool_trim_delay") == 0)
-                ctx->config->pool_trim_delay = parse_int(value, 0, 3600000, RINETD_DEFAULT_POOL_TRIM_DELAY);
-            else
+            } else if (strcmp(ctx->current_key, "max_udp_connections") == 0) {
+                val = parse_int_strict(value, 100, 1000000, "max_udp_connections", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->max_udp_connections = val;
+                }
+            } else if (strcmp(ctx->current_key, "listen_backlog") == 0) {
+                val = parse_int_strict(value, 1, 65535, "listen_backlog", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->listen_backlog = val;
+                }
+            } else if (strcmp(ctx->current_key, "pool_min_free") == 0) {
+                val = parse_int_strict(value, 0, 100000, "pool_min_free", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->pool_min_free = val;
+                }
+            } else if (strcmp(ctx->current_key, "pool_max_free") == 0) {
+                val = parse_int_strict(value, 0, 100000, "pool_max_free", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->pool_max_free = val;
+                }
+            } else if (strcmp(ctx->current_key, "pool_trim_delay") == 0) {
+                val = parse_int_strict(value, 0, 3600000, "pool_trim_delay", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->pool_trim_delay = val;
+                }
+            } else {
                 logWarning("Unknown global option: %s\n", ctx->current_key);
+            }
 
             free(ctx->current_key);
             ctx->current_key = NULL;
             ctx->state = STATE_GLOBAL;
             break;
+        }
 
         case STATE_RULE_KEY:
             if (!ctx->current_key || !ctx->current_rule)
@@ -564,7 +686,14 @@ static void process_scalar(ParserContext *ctx, const char *value)
                     ctx->error = 1;
                 }
             } else if (strcmp(ctx->current_key, "weight") == 0) {
-                ctx->current_backend->weight = parse_int(value, 1, 100, 1);
+                char err_msg[256];
+                int val = parse_int_strict(value, 1, 100, "weight", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_backend->weight = val;
+                }
             } else if (strcmp(ctx->current_key, "dns_refresh") == 0) {
                 ctx->current_backend->dns_refresh_period = parse_int(value, 0, 86400*7, 0);
             } else if (strcmp(ctx->current_key, "src") == 0) {
@@ -582,9 +711,12 @@ static void process_scalar(ParserContext *ctx, const char *value)
             ctx->state = STATE_BACKEND;
             break;
 
-        case STATE_LB_KEY:
+        case STATE_LB_KEY: {
             if (!ctx->current_key || !ctx->current_rule)
                 break;
+
+            int val;
+            char err_msg[256];
 
             if (strcmp(ctx->current_key, "algorithm") == 0) {
                 LbAlgorithm algo = lb_parse_algorithm(value);
@@ -593,13 +725,37 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 else
                     ctx->current_rule->algorithm = algo;
             } else if (strcmp(ctx->current_key, "health_threshold") == 0) {
-                ctx->current_rule->health_threshold = parse_int(value, 1, 100, LB_DEFAULT_HEALTH_THRESHOLD);
+                val = parse_int_strict(value, 1, 100, "health_threshold", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_rule->health_threshold = val;
+                }
             } else if (strcmp(ctx->current_key, "recovery_timeout") == 0) {
-                ctx->current_rule->recovery_timeout = parse_int(value, 1, 86400, LB_DEFAULT_RECOVERY_TIMEOUT);
+                val = parse_int_strict(value, 1, 86400, "recovery_timeout", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_rule->recovery_timeout = val;
+                }
             } else if (strcmp(ctx->current_key, "affinity_ttl") == 0) {
-                ctx->current_rule->affinity_ttl = parse_int(value, 0, 86400*30, 0);
+                val = parse_int_strict(value, 0, 86400*30, "affinity_ttl", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_rule->affinity_ttl = val;
+                }
             } else if (strcmp(ctx->current_key, "affinity_max_entries") == 0) {
-                ctx->current_rule->affinity_max_entries = parse_int(value, 100, 10000000, LB_DEFAULT_AFFINITY_MAX_ENTRIES);
+                val = parse_int_strict(value, 100, 10000000, "affinity_max_entries", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_rule->affinity_max_entries = val;
+                }
             } else {
                 logWarning("Unknown load_balancing option: %s\n", ctx->current_key);
             }
@@ -608,6 +764,7 @@ static void process_scalar(ParserContext *ctx, const char *value)
             ctx->current_key = NULL;
             ctx->state = STATE_LOAD_BALANCING;
             break;
+        }
 
         case STATE_ACCESS_LIST:
             /* Add allow/deny pattern to global rules array */

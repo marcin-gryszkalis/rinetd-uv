@@ -10,13 +10,13 @@
 #include <netinet/in.h>
 
 /* Default values for load balancing configuration */
-#define LB_DEFAULT_HEALTH_THRESHOLD 3
-#define LB_DEFAULT_RECOVERY_TIMEOUT 30
-#define LB_DEFAULT_AFFINITY_TTL 0
-#define LB_DEFAULT_AFFINITY_MAX_ENTRIES 10000
-#define LB_DEFAULT_WEIGHT 1
-#define LB_MAX_BACKENDS_PER_RULE 100
-#define LB_MAX_LISTENERS_PER_RULE 10
+static int const LB_DEFAULT_HEALTH_THRESHOLD = 3;
+static int const LB_DEFAULT_RECOVERY_TIMEOUT = 30;
+static int const LB_DEFAULT_AFFINITY_TTL = 0;
+static int const LB_DEFAULT_AFFINITY_MAX_ENTRIES = 10000;
+static int const LB_DEFAULT_WEIGHT = 1;
+static int const LB_MAX_BACKENDS_PER_RULE = 100;
+static int const LB_MAX_LISTENERS_PER_RULE = 10;
 
 /* Backend selection - main entry point for load balancing
  * Returns the selected backend, or NULL if no backends available
