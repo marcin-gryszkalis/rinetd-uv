@@ -1911,7 +1911,9 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     struct addrinfo *backend_addr = cnx->selected_backend ?
         cnx->selected_backend->addrInfo : cnx->server->toAddrInfo;
 
-    sreq->dest_addr = *(struct sockaddr_storage*)backend_addr->ai_addr;
+    /* Copy address with correct size (not full sockaddr_storage which would overrun) */
+    memset(&sreq->dest_addr, 0, sizeof(sreq->dest_addr));
+    memcpy(&sreq->dest_addr, backend_addr->ai_addr, backend_addr->ai_addrlen);
 
     /* Set up buffer for sending */
     uv_buf_t wrbuf = uv_buf_init(data, data_len);
@@ -2285,7 +2287,12 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     }
 
     /* Setup minimal state needed for rule check */
-    cnx->remoteAddress = *(struct sockaddr_storage*)addr;
+    /* Copy address with correct size based on family (not full sockaddr_storage) */
+    memset(&cnx->remoteAddress, 0, sizeof(cnx->remoteAddress));
+    size_t addr_len = (addr->sa_family == AF_INET) ? sizeof(struct sockaddr_in) :
+                      (addr->sa_family == AF_INET6) ? sizeof(struct sockaddr_in6) :
+                      sizeof(struct sockaddr);
+    memcpy(&cnx->remoteAddress, addr, addr_len);
     cnx->server = srv;
 
     int logCode = checkConnectionAllowed(cnx);
