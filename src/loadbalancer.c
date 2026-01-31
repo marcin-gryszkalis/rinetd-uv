@@ -338,7 +338,7 @@ void lb_rule_init(RuleInfo *rule)
         return;
 
     memset(rule, 0, sizeof(*rule));
-    rule->algorithm = LB_ROUND_ROBIN;
+    rule->algorithm = LB_NONE;  /* Will be set to LB_ROUND_ROBIN if multiple backends */
     rule->health_threshold = LB_DEFAULT_HEALTH_THRESHOLD;
     rule->recovery_timeout = LB_DEFAULT_RECOVERY_TIMEOUT;
     rule->affinity_ttl = LB_DEFAULT_AFFINITY_TTL;
