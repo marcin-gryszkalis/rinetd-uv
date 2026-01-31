@@ -15,6 +15,7 @@ import time
 import tempfile
 import threading
 import subprocess
+import random
 from collections import Counter
 from .utils import get_free_port, wait_for_port
 from .servers import TcpEchoServer, UdpEchoServer, UnixEchoServer
@@ -907,6 +908,248 @@ rules:
             stop_rinetd(process)
             for s in servers:
                 s.stop()
+
+
+# =============================================================================
+# Rinetd Chaining Tests (1:n → n:m → m:1)
+# =============================================================================
+
+class TestRinetdChaining:
+    """Tests for chaining multiple rinetd instances in different modes."""
+
+    def test_three_rinetd_chain_1n_nm_m1(self, rinetd_path, tmp_path):
+        """
+        Test 3 rinetd servers in a chain with 1MB data transfer.
+
+        Topology:
+          Client → [Rinetd-1 (1:n)] → [Rinetd-2 (n:m)] → [Rinetd-3 (m:1)] → Echo Server
+
+        - Rinetd-1: 1 listener  → 2 backends (round-robin)
+        - Rinetd-2: 2 listeners → 3 backends (round-robin)
+        - Rinetd-3: 3 listeners → 1 backend  (echo server)
+
+        Transfer: 1MB in 4KB chunks, 60s timeout
+        """
+        # Start echo server (final destination)
+        echo_server = TcpEchoServer()
+        echo_server.start()
+        echo_server.wait_ready()
+
+        # Allocate ports for all rinetd instances
+        # Rinetd-3: 3 listeners, 1 backend (to echo)
+        r3_listen1 = get_free_port()
+        r3_listen2 = get_free_port()
+        r3_listen3 = get_free_port()
+
+        # Rinetd-2: 2 listeners, 3 backends (to rinetd-3)
+        r2_listen1 = get_free_port()
+        r2_listen2 = get_free_port()
+
+        # Rinetd-1: 1 listener, 2 backends (to rinetd-2)
+        r1_listen = get_free_port()
+
+        # Configure Rinetd-3 (m:1 mode - multiple listeners to one backend)
+        yaml_r3 = f"""
+global:
+  buffer_size: 65536
+
+rules:
+  - name: rinetd3-m-to-1
+    bind:
+      - "127.0.0.1:{r3_listen1}/tcp"
+      - "127.0.0.1:{r3_listen2}/tcp"
+      - "127.0.0.1:{r3_listen3}/tcp"
+    connect:
+      - dest: "127.0.0.1:{echo_server.actual_port}"
+"""
+
+        # Configure Rinetd-2 (n:m mode - multiple listeners to multiple backends)
+        yaml_r2 = f"""
+global:
+  buffer_size: 65536
+
+rules:
+  - name: rinetd2-n-to-m
+    bind:
+      - "127.0.0.1:{r2_listen1}/tcp"
+      - "127.0.0.1:{r2_listen2}/tcp"
+    connect:
+      - dest: "127.0.0.1:{r3_listen1}"
+      - dest: "127.0.0.1:{r3_listen2}"
+      - dest: "127.0.0.1:{r3_listen3}"
+    load_balancing:
+      algorithm: roundrobin
+"""
+
+        # Configure Rinetd-1 (1:n mode - one listener to multiple backends)
+        yaml_r1 = f"""
+global:
+  buffer_size: 65536
+
+rules:
+  - name: rinetd1-1-to-n
+    bind: "127.0.0.1:{r1_listen}/tcp"
+    connect:
+      - dest: "127.0.0.1:{r2_listen1}"
+      - dest: "127.0.0.1:{r2_listen2}"
+    load_balancing:
+      algorithm: roundrobin
+"""
+
+        # Create subdirectories for each rinetd instance
+        (tmp_path / "r3").mkdir(exist_ok=True)
+        (tmp_path / "r2").mkdir(exist_ok=True)
+        (tmp_path / "r1").mkdir(exist_ok=True)
+
+        # Start rinetd instances in reverse order (bottom-up)
+        proc_r3 = run_rinetd_yaml(rinetd_path, yaml_r3, tmp_path / "r3")
+        proc_r2 = run_rinetd_yaml(rinetd_path, yaml_r2, tmp_path / "r2")
+        proc_r1 = run_rinetd_yaml(rinetd_path, yaml_r1, tmp_path / "r1")
+
+        try:
+            # Wait for all listeners to be ready
+            assert wait_for_port(r3_listen1, timeout=5), "Rinetd-3 listener 1 not ready"
+            assert wait_for_port(r3_listen2, timeout=5), "Rinetd-3 listener 2 not ready"
+            assert wait_for_port(r3_listen3, timeout=5), "Rinetd-3 listener 3 not ready"
+            assert wait_for_port(r2_listen1, timeout=5), "Rinetd-2 listener 1 not ready"
+            assert wait_for_port(r2_listen2, timeout=5), "Rinetd-2 listener 2 not ready"
+            assert wait_for_port(r1_listen, timeout=5), "Rinetd-1 listener not ready"
+
+            # Give the chain a moment to stabilize
+            time.sleep(0.5)
+
+            # Run transfers for 60 seconds with random chunk/transfer sizes
+            test_duration = 60  # seconds
+            base_chunk_size = 4 * 4096  # 4KB base
+            base_transfer_size = 1024 * 1024  # 1MB base
+            variation = 0.20  # ±20%
+
+            start_time = time.time()
+            total_bytes_sent = 0
+            total_bytes_received = 0
+            transfer_count = 0
+            errors = []
+
+            pattern = b"RINETD_CHAIN_TEST_"
+
+            print(f"\nStarting 60-second stress test with randomized chunk/transfer sizes...")
+            print(f"Base chunk size: {base_chunk_size} bytes ±{variation*100}%")
+            print(f"Base transfer size: {base_transfer_size / 1024:.1f} KB ±{variation*100}%\n")
+
+            with socket.create_connection(('127.0.0.1', r1_listen), timeout=65) as sock:
+                sock.settimeout(65)
+
+                # Increase socket buffers for better throughput
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024)  # 1MB send buffer
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)  # 1MB recv buffer
+
+                while time.time() - start_time < test_duration:
+                    transfer_count += 1
+
+                    # Randomize chunk size (±20%)
+                    chunk_size = int(base_chunk_size * random.uniform(1 - variation, 1 + variation))
+                    # Ensure chunk size is reasonable (at least 1KB)
+                    chunk_size = max(1024, chunk_size)
+
+                    # Randomize transfer size (±20%)
+                    transfer_size = int(base_transfer_size * random.uniform(1 - variation, 1 + variation))
+                    # Ensure transfer size is a multiple of chunk size
+                    chunks_count = max(1, transfer_size // chunk_size)
+                    transfer_size = chunks_count * chunk_size
+
+                    # Create test chunk for this transfer
+                    test_chunk = (pattern * ((chunk_size // len(pattern)) + 1))[:chunk_size]
+                    assert len(test_chunk) == chunk_size
+
+                    # Transfer data with pipelined I/O for better throughput
+                    transfer_start = time.time()
+                    bytes_sent = 0
+                    bytes_received = 0
+                    received_data = bytearray()
+
+                    try:
+                        # Phase 1: Send all chunks with pipelining (don't wait for echo)
+                        send_start = time.time()
+                        for i in range(chunks_count):
+                            sock.sendall(test_chunk)
+                            bytes_sent += len(test_chunk)
+                        send_elapsed = time.time() - send_start
+
+                        # Phase 2: Receive all echoed data
+                        recv_start = time.time()
+                        sock.settimeout(30)  # Longer timeout for receiving
+                        while bytes_received < transfer_size:
+                            chunk = sock.recv(min(65536, transfer_size - bytes_received))
+                            if not chunk:
+                                raise ConnectionError(f"Connection closed after {bytes_received} bytes")
+                            received_data.extend(chunk)
+                            bytes_received = len(received_data)
+                        recv_elapsed = time.time() - recv_start
+                        sock.settimeout(65)  # Restore timeout
+
+                        transfer_elapsed = time.time() - transfer_start
+                        total_bytes_sent += bytes_sent
+                        total_bytes_received += bytes_received
+
+                        # Verify data integrity
+                        if bytes_sent != transfer_size:
+                            errors.append(f"Transfer {transfer_count}: sent {bytes_sent}, expected {transfer_size}")
+                        if bytes_received != transfer_size:
+                            errors.append(f"Transfer {transfer_count}: received {bytes_received}, expected {transfer_size}")
+
+                        # Verify first and last chunks
+                        if received_data[:chunk_size] != test_chunk:
+                            errors.append(f"Transfer {transfer_count}: first chunk corrupted")
+                        if received_data[-chunk_size:] != test_chunk:
+                            errors.append(f"Transfer {transfer_count}: last chunk corrupted")
+
+                        # Progress report every 5 transfers
+                        if transfer_count % 5 == 0:
+                            elapsed = time.time() - start_time
+                            throughput = (total_bytes_sent * 8 / (1024 * 1024)) / elapsed
+                            transfer_mbps = (transfer_size * 8 / (1024 * 1024)) / transfer_elapsed
+                            print(f"Transfer #{transfer_count}: {transfer_size/1024:.1f} KB in {chunks_count} chunks "
+                                  f"of {chunk_size} bytes ({transfer_elapsed*1000:.1f}ms, {transfer_mbps:.1f} Mbps) | "
+                                  f"Total: {total_bytes_sent/(1024*1024):.2f} MB @ {throughput:.1f} Mbps | "
+                                  f"Elapsed: {elapsed:.1f}s")
+
+                    except Exception as e:
+                        errors.append(f"Transfer {transfer_count} failed: {e}")
+                        break
+
+            total_elapsed = time.time() - start_time
+
+            # Final statistics
+            print(f"\n{'='*70}")
+            print(f"Chain stress test completed:")
+            print(f"  Duration: {total_elapsed:.2f}s")
+            print(f"  Transfers: {transfer_count}")
+            print(f"  Total sent: {total_bytes_sent / (1024 * 1024):.2f} MB")
+            print(f"  Total received: {total_bytes_received / (1024 * 1024):.2f} MB")
+            print(f"  Average throughput: {(total_bytes_sent * 8 / (1024 * 1024)) / total_elapsed:.2f} Mbps")
+            print(f"  Average transfer rate: {transfer_count / total_elapsed:.2f} transfers/sec")
+            print(f"  Errors: {len(errors)}")
+            print(f"{'='*70}\n")
+
+            # Verify no errors occurred
+            if errors:
+                for error in errors[:10]:  # Show first 10 errors
+                    print(f"  ERROR: {error}")
+                pytest.fail(f"Chain test had {len(errors)} error(s)")
+
+            # Verify sent == received
+            assert total_bytes_sent == total_bytes_received, \
+                f"Sent {total_bytes_sent} bytes but received {total_bytes_received} bytes"
+
+            # Verify we ran for approximately the full duration
+            assert total_elapsed >= test_duration * 0.95, \
+                f"Test ran for {total_elapsed:.1f}s, expected ~{test_duration}s"
+
+        finally:
+            stop_rinetd(proc_r1)
+            stop_rinetd(proc_r2)
+            stop_rinetd(proc_r3)
+            echo_server.stop()
 
 
 # =============================================================================
