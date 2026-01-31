@@ -204,18 +204,22 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
         return -1;
     }
 
-    /* Validate port number if provided */
+    /* Validate port if provided - allow both numbers and service names */
     if (*port) {
-        char err_msg[256];
-        int port_num = parse_int_strict(*port, 1, 65535, "port", err_msg, sizeof(err_msg));
-        if (port_num < 0) {
-            logError("Invalid port in address '%s': %s\n", addr_str, err_msg);
-            free(*host);
-            free(*port);
-            *host = NULL;
-            *port = NULL;
-            return -1;
+        char *end;
+        long port_num = strtol(*port, &end, 10);
+        /* If it's a valid number, check range */
+        if (*end == '\0') {
+            if (port_num < 1 || port_num > 65535) {
+                logError("Invalid port number in address '%s': %ld (must be 1-65535)\n", addr_str, port_num);
+                free(*host);
+                free(*port);
+                *host = NULL;
+                *port = NULL;
+                return -1;
+            }
         }
+        /* Otherwise, assume it's a service name (will be validated by getaddrinfo) */
     }
 
     return (*host != NULL) ? 0 : -1;
