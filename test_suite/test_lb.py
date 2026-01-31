@@ -31,19 +31,47 @@ def create_yaml_config(yaml_content, filename=None):
     return filename
 
 
-def run_rinetd_yaml(rinetd_path, yaml_content, tmp_path):
-    """Start rinetd with a YAML config and return the process."""
+def run_rinetd_yaml(rinetd_path, yaml_content, tmp_path, valgrind=False, valgrind_log=None):
+    """Start rinetd with a YAML config and return the process.
+
+    Args:
+        rinetd_path: Path to rinetd-uv executable
+        yaml_content: YAML configuration content
+        tmp_path: Temporary directory for config file
+        valgrind: If True, run under valgrind
+        valgrind_log: Optional path for valgrind log file (auto-generated if None)
+    """
     config_file = str(tmp_path / "test.yaml")
     with open(config_file, 'w') as f:
         f.write(yaml_content)
 
+    cmd = []
+    if valgrind:
+        # Set up valgrind log file
+        if valgrind_log is None:
+            valgrind_log = str(tmp_path / "valgrind.log")
+
+        cmd.extend([
+            "valgrind",
+            "--leak-check=full",
+            "--show-leak-kinds=all",
+            "--track-origins=yes",
+            "--track-fds=yes",
+            f"--log-file={valgrind_log}",
+            "--error-exitcode=0",  # Don't fail on valgrind errors (we'll check logs)
+        ])
+
+    cmd.extend([rinetd_path, "-f", "-c", config_file])
+
     process = subprocess.Popen(
-        [rinetd_path, "-f", "-c", config_file],
+        cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True
     )
-    time.sleep(0.3)
+
+    # Valgrind needs more time to initialize
+    time.sleep(0.5 if valgrind else 0.3)
 
     if process.poll() is not None:
         stdout, stderr = process.communicate()
@@ -917,7 +945,7 @@ rules:
 class TestRinetdChaining:
     """Tests for chaining multiple rinetd instances in different modes."""
 
-    def test_three_rinetd_chain_1n_nm_m1(self, rinetd_path, tmp_path):
+    def test_three_rinetd_chain_1n_nm_m1(self, rinetd_path, tmp_path, use_valgrind):
         """
         Test 3 rinetd servers in a chain with 1MB data transfer.
 
@@ -929,6 +957,8 @@ class TestRinetdChaining:
         - Rinetd-3: 3 listeners → 1 backend  (echo server)
 
         Transfer: 1MB in 4KB chunks, 60s timeout
+
+        Run with --valgrind to enable memory leak detection on all 3 rinetd instances.
         """
         # Start echo server (final destination)
         echo_server = TcpEchoServer()
@@ -1001,10 +1031,30 @@ rules:
         (tmp_path / "r2").mkdir(exist_ok=True)
         (tmp_path / "r1").mkdir(exist_ok=True)
 
+        # Set up valgrind log files if enabled
+        valgrind_logs = {}
+        if use_valgrind:
+            valgrind_logs['r3'] = str(tmp_path / "r3" / "valgrind.log")
+            valgrind_logs['r2'] = str(tmp_path / "r2" / "valgrind.log")
+            valgrind_logs['r1'] = str(tmp_path / "r1" / "valgrind.log")
+            print(f"\n{'='*70}")
+            print("Running with Valgrind memory leak detection enabled")
+            print(f"Valgrind logs will be saved to:")
+            print(f"  Rinetd-3: {valgrind_logs['r3']}")
+            print(f"  Rinetd-2: {valgrind_logs['r2']}")
+            print(f"  Rinetd-1: {valgrind_logs['r1']}")
+            print(f"{'='*70}\n")
+
         # Start rinetd instances in reverse order (bottom-up)
-        proc_r3 = run_rinetd_yaml(rinetd_path, yaml_r3, tmp_path / "r3")
-        proc_r2 = run_rinetd_yaml(rinetd_path, yaml_r2, tmp_path / "r2")
-        proc_r1 = run_rinetd_yaml(rinetd_path, yaml_r1, tmp_path / "r1")
+        proc_r3 = run_rinetd_yaml(rinetd_path, yaml_r3, tmp_path / "r3",
+                                   valgrind=use_valgrind,
+                                   valgrind_log=valgrind_logs.get('r3'))
+        proc_r2 = run_rinetd_yaml(rinetd_path, yaml_r2, tmp_path / "r2",
+                                   valgrind=use_valgrind,
+                                   valgrind_log=valgrind_logs.get('r2'))
+        proc_r1 = run_rinetd_yaml(rinetd_path, yaml_r1, tmp_path / "r1",
+                                   valgrind=use_valgrind,
+                                   valgrind_log=valgrind_logs.get('r1'))
 
         try:
             # Wait for all listeners to be ready
@@ -1150,6 +1200,49 @@ rules:
             stop_rinetd(proc_r2)
             stop_rinetd(proc_r3)
             echo_server.stop()
+
+            # Display valgrind results if enabled
+            if use_valgrind and valgrind_logs:
+                print(f"\n{'='*70}")
+                print("Valgrind Memory Leak Analysis")
+                print(f"{'='*70}")
+
+                for name, log_file in [('Rinetd-1', valgrind_logs.get('r1')),
+                                       ('Rinetd-2', valgrind_logs.get('r2')),
+                                       ('Rinetd-3', valgrind_logs.get('r3'))]:
+                    if log_file and os.path.exists(log_file):
+                        print(f"\n{name} ({log_file}):")
+                        with open(log_file, 'r') as f:
+                            content = f.read()
+
+                            # Extract key metrics
+                            import re
+                            heap_summary = re.search(r'HEAP SUMMARY:.*?(?=\n\n)', content, re.DOTALL)
+                            leak_summary = re.search(r'LEAK SUMMARY:.*?(?=\n\n)', content, re.DOTALL)
+                            error_summary = re.search(r'ERROR SUMMARY: (\d+) errors', content)
+
+                            if heap_summary:
+                                print("  " + "\n  ".join(heap_summary.group(0).split('\n')))
+                            if leak_summary:
+                                print("  " + "\n  ".join(leak_summary.group(0).split('\n')))
+                            if error_summary:
+                                errors = int(error_summary.group(1))
+                                status = "✓ PASS" if errors == 0 else "✗ FAIL"
+                                print(f"  {status}: {errors} errors from valgrind")
+
+                print(f"\n{'='*70}")
+                print(f"Full logs available at: {tmp_path}")
+                print(f"{'='*70}\n")
+
+
+# =============================================================================
+# Valgrind support for memory leak detection
+# =============================================================================
+
+@pytest.fixture(scope="module")
+def use_valgrind(request):
+    """Check if --valgrind flag is set."""
+    return request.config.getoption("--valgrind", default=False)
 
 
 # =============================================================================
