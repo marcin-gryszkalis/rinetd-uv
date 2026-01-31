@@ -741,7 +741,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.pipe, &fd);
         srv->fd = fd;
     }
@@ -771,7 +771,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.tcp, &fd);
         srv->fd = fd;
     }
@@ -801,7 +801,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.udp, &fd);
         srv->fd = fd;
     }
@@ -989,7 +989,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t fd;
+    uv_os_fd_t fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.tcp, &fd);
     cnx->local.fd = fd;
 
@@ -1104,7 +1104,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t remote_fd;
+    uv_os_fd_t remote_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.tcp, &remote_fd);
     cnx->remote.fd = remote_fd;
 
@@ -1290,7 +1290,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t fd;
+    uv_os_fd_t fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.pipe, &fd);
     cnx->local.fd = fd;
 
@@ -1363,7 +1363,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     set_socket_buffer_sizes((uv_handle_t *)&cnx->remote_uv_handle.pipe);
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t remote_fd;
+    uv_os_fd_t remote_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.pipe, &remote_fd);
     cnx->remote.fd = remote_fd;
 
@@ -2246,7 +2246,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     }
 
     ServerInfo *srv = (ServerInfo*)handle->data;
-    uv_os_fd_t server_fd;
+    uv_os_fd_t server_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)handle, &server_fd);
 
     /* Convert to sockaddr_storage for hashing (zero-init to avoid uninitialized padding) */
@@ -2405,7 +2405,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.udp);
 
     /* Extract fd */
-    uv_os_fd_t local_fd;
+    uv_os_fd_t local_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.udp, &local_fd);
     cnx->local.fd = local_fd;
 
@@ -2699,7 +2699,7 @@ RETSIGTYPE quit(int s)
         iterations++;
     }
     if (iterations >= RINETD_CLEANUP_MAX_ITERATIONS) {
-        logWarning("warning: some handles may not have closed cleanly (iterations: %d)\n", iterations);
+        logWarning("some handles may not have closed cleanly (iterations: %d)\n", iterations);
     } else {
         logDebug("all handles closed successfully (%d iterations)\n", iterations);
     }
