@@ -8,9 +8,7 @@
 
 #include <netinet/in.h>
 #include <time.h>
-
-/* Forward declaration - full definition in affinity.c */
-typedef struct _affinity_table AffinityTable;
+#include "types.h"  /* For AffinityTable typedef */
 
 /* Create a new affinity table
  * max_entries: maximum number of entries (LRU eviction when exceeded)

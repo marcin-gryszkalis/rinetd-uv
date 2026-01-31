@@ -1060,8 +1060,8 @@ There are assorted system-level settings that may affect rinetd-uv behavior, esp
 Many of UDP-related scenarios require increasing limit of open files:
 * local limit (`ulimit -n`)
 * global/kernel limit
-    - Linux: fs.file-max and fs.nr_open
-    - FreeBSD: kern.maxfiles and kern.maxfilesperproc
+    - Linux: `fs.file-max` and `fs.nr_open`
+    - FreeBSD: `kern.maxfiles` and `kern.maxfilesperproc`
 
 #### Max network buffer size
 

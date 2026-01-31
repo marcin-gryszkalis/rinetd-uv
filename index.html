@@ -1301,8 +1301,8 @@ or high bandwidth).</p>
 <h4 id="open-files">Open files</h4>
 <p>Many of UDP-related scenarios require increasing limit of open files:
 * local limit (<code>ulimit -n</code>) * global/kernel limit - Linux:
-fs.file-max and fs.nr_open - FreeBSD: kern.maxfiles and
-kern.maxfilesperproc</p>
+<code>fs.file-max</code> and <code>fs.nr_open</code> - FreeBSD:
+<code>kern.maxfiles</code> and <code>kern.maxfilesperproc</code></p>
 <h4 id="max-network-buffer-size">Max network buffer size</h4>
 <p>Rinetd-uv sets both buffer sizes (send and receive, known as
 SO_SNDBUF and SO_RCVBUF) to twice the value of <code>buffersize</code>

@@ -1411,8 +1411,8 @@ or high bandwidth).
 .SS Open files
 Many of UDP\-related scenarios require increasing limit of open files: *
 local limit (\f[CR]ulimit \-n\f[R]) * global/kernel limit \- Linux:
-fs.file\-max and fs.nr_open \- FreeBSD: kern.maxfiles and
-kern.maxfilesperproc
+\f[CR]fs.file\-max\f[R] and \f[CR]fs.nr_open\f[R] \- FreeBSD:
+\f[CR]kern.maxfiles\f[R] and \f[CR]kern.maxfilesperproc\f[R]
 .SS Max network buffer size
 Rinetd\-uv sets both buffer sizes (send and receive, known as SO_SNDBUF
 and SO_RCVBUF) to twice the value of \f[CR]buffersize\f[R] configuration
