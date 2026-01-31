@@ -293,6 +293,99 @@ Tests for error conditions and recovery scenarios.
 | `test_half_close_handling` | TCP half-close (shutdown) support |
 | `test_connection_timeout_backend_slow` | Slow backend connection handling |
 
+### test_yaml.py - YAML Configuration Validation Tests
+
+Comprehensive tests for YAML configuration parsing, validation, and error handling.
+
+**Test Classes:**
+
+| Class | Description |
+|-------|-------------|
+| `TestYAMLSyntaxErrors` | YAML syntax errors (indentation, quotes, colons, tabs) |
+| `TestInvalidValues` | Invalid values (negative numbers, out-of-range ports, buffer sizes) |
+| `TestMissingFields` | Missing required fields (rules, bind, connect, dest) |
+| `TestInvalidCombinations` | Invalid combinations (UDP+Unix, mixed protocols, duplicate names) |
+| `TestValidConfigurations` | Valid YAML configs that should parse successfully |
+| `TestEdgeCases` | Edge cases and boundary conditions |
+
+**Key Tests:**
+
+| Test | Description |
+|------|-------------|
+| `test_invalid_yaml_indentation` | Detects YAML indentation errors |
+| `test_tabs_instead_of_spaces` | Rejects tabs in YAML (spaces required) |
+| `test_negative_buffer_size` | Validates buffer_size must be positive |
+| `test_buffer_size_too_small` | Enforces minimum buffer size (1024 bytes) |
+| `test_buffer_size_too_large` | Enforces maximum buffer size (16MB) |
+| `test_invalid_port_number` | Validates port range (1-65535) |
+| `test_invalid_algorithm` | Rejects unknown load balancing algorithms |
+| `test_zero_weight` | Validates backend weights must be > 0 |
+| `test_missing_rules` | Requires at least one rule |
+| `test_rule_missing_name` | Each rule must have a name |
+| `test_rule_missing_bind` | Each rule must have bind address(es) |
+| `test_rule_missing_connect` | Each rule must have backend(s) |
+| `test_duplicate_rule_names` | Rejects duplicate rule names |
+| `test_backend_with_both_host_and_path` | Backend cannot have both TCP and Unix socket |
+| `test_udp_with_unix_socket` | UDP cannot use Unix sockets |
+| `test_mixed_protocol_backends` | All backends in a rule must use same protocol |
+
+**Marker:** `@pytest.mark.expect_rinetd_errors` (tests expect rinetd to exit with error)
+
+### test_lb.py - Load Balancing Feature Tests
+
+Tests for YAML-based load balancing features including many:many forwarding, algorithms, health checking, and affinity.
+
+**Test Classes:**
+
+| Class | Description |
+|-------|-------------|
+| `TestManyToOne` | Multiple listeners forwarding to single backend (fan-in) |
+| `TestManyToMany` | Multiple listeners with multiple backends (full load balancing) |
+| `TestMixedBackends` | Mixed protocol backends (TCP/Unix socket combinations) |
+| `TestLBAlgorithms` | Load balancing algorithms (roundrobin, leastconn, random, iphash) |
+| `TestWeightedDistribution` | Weighted round-robin distribution |
+| `TestHealthMonitoring` | Backend health checking and failover |
+| `TestClientAffinity` | Source IP-based destination affinity |
+| `TestUDPLoadBalancing` | UDP protocol load balancing |
+| `TestRinetdChaining` | Chaining multiple rinetd instances (1:n → n:m → m:1) |
+
+**Key Tests:**
+
+| Test | Description |
+|------|-------------|
+| `test_two_listeners_one_backend_tcp` | 2 listeners fan-in to 1 backend |
+| `test_three_listeners_one_backend_mixed` | 3 listeners (TCP+Unix) to 1 backend |
+| `test_two_listeners_two_backends_roundrobin` | Many:many with round-robin |
+| `test_tcp_listener_to_mixed_backends` | TCP listener with TCP+Unix backends |
+| `test_roundrobin_distribution` | Round-robin distributes evenly (2, 3, 5 backends) |
+| `test_leastconn_distribution` | Least-connections algorithm (2, 3, 5 backends) |
+| `test_random_distribution` | Random algorithm statistical distribution |
+| `test_iphash_consistency` | IP hash sends same client to same backend |
+| `test_weighted_roundrobin_2_1` | 2:1 weight ratio distribution |
+| `test_weighted_roundrobin_3_2_1` | 3:2:1 weight ratio distribution |
+| `test_backend_failure_failover` | Automatic failover to healthy backends |
+| `test_backend_recovery` | Backend comes back online after failure |
+| `test_all_backends_unhealthy_failopen` | Fail-open when all backends down |
+| `test_affinity_same_backend` | Client IP affinity persistence |
+| `test_udp_roundrobin` | UDP protocol load balancing |
+| `test_three_rinetd_chain_1n_nm_m1` | Complex 3-rinetd chain stress test (60s, 125 Mbps) |
+
+**Valgrind Integration:**
+
+The chaining test (`test_three_rinetd_chain_1n_nm_m1`) supports optional `--valgrind` flag to run all 3 rinetd instances under valgrind for memory leak detection. See `VALGRIND.md` for details.
+
+**Usage:**
+```bash
+# Run all load balancing tests
+./venv/bin/pytest test_lb.py -v
+
+# Run specific algorithm tests
+./venv/bin/pytest test_lb.py::TestLBAlgorithms -v
+
+# Run with valgrind (slow, but checks for leaks)
+./venv/bin/pytest test_lb.py::TestRinetdChaining --valgrind -v -s
+```
+
 ## Test Architecture
 
 ### Directory Structure
@@ -303,7 +396,9 @@ test_suite/
 ├── servers.py            # Server implementations (Echo, Upload, Download, SHA256)
 ├── utils.py              # Helper functions, utilities, and 1:1 pair orchestration
 ├── test_transfer.py      # IPv6 and edge case tests
-├── test_config.py        # Configuration directive tests
+├── test_config.py        # Configuration directive tests (legacy format)
+├── test_yaml.py          # YAML configuration validation tests
+├── test_lb.py            # Load balancing feature tests (YAML only)
 ├── test_matrix.py        # Comprehensive matrix tests (1:1 architecture)
 ├── test_stress.py        # Randomized stress tests (1:1 architecture)
 ├── test_leaks.py         # Valgrind leak detection tests
@@ -311,6 +406,7 @@ test_suite/
 ├── test_error_handling.py # Error recovery tests
 ├── test_big.py           # Very large transfer tests (1:1 architecture)
 ├── requirements.txt      # Python dependencies
+├── VALGRIND.md           # Valgrind integration documentation
 └── README.md             # This file
 ```
 
