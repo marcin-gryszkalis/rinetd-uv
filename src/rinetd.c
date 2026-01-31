@@ -1073,6 +1073,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     /* Get remote address immediately after accept */
     struct sockaddr_storage addr;
+    memset(&addr, 0, sizeof(addr));
     int addrlen = sizeof(addr);
     ret = uv_tcp_getpeername(&cnx->remote_uv_handle.tcp, (struct sockaddr*)&addr, &addrlen);
     if (ret != 0) {
@@ -2248,8 +2249,9 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     uv_os_fd_t server_fd;
     uv_fileno((uv_handle_t*)handle, &server_fd);
 
-    /* Convert to sockaddr_storage for hashing */
+    /* Convert to sockaddr_storage for hashing (zero-init to avoid uninitialized padding) */
     struct sockaddr_storage addr_storage;
+    memset(&addr_storage, 0, sizeof(addr_storage));
     memcpy(&addr_storage, addr, addr->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
 
     /* O(1) hash lookup instead of O(n) list scan */
