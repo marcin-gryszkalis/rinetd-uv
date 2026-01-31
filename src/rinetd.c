@@ -1083,9 +1083,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
 
     cnx->local.fd = INVALID_SOCKET;
-    /* Set local family based on backend type - Unix or TCP */
-    cnx->local.family = srv->toUnixPath ? AF_UNIX : srv->toAddrInfo->ai_family;
-    cnx->local.protocol = srv->toUnixPath ? 0 : IPPROTO_TCP;
+    /* local.family will be set after backend selection */
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
     cnx->coClosing = 0;
@@ -1120,6 +1118,21 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         backend_unix_path = srv->toUnixPath;
         backend_is_abstract = srv->toIsAbstract;
         backend_source = srv->sourceAddrInfo;
+    }
+
+    /* Set local family/protocol based on backend type */
+    if (backend_unix_path) {
+        cnx->local.family = AF_UNIX;
+        cnx->local.protocol = 0;
+    } else if (backend_addr) {
+        cnx->local.family = backend_addr->ai_family;
+        cnx->local.protocol = IPPROTO_TCP;
+    } else {
+        /* No backend available - this shouldn't happen */
+        logErrorConn(cnx, "No backend address available\n");
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+        return;
     }
 
     /* Connect to backend - either TCP or Unix socket */
@@ -1345,12 +1358,57 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     /* No IP-based access control for Unix sockets - filesystem permissions apply */
     /* Skip checkConnectionAllowed() */
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    char *backend_unix_path = NULL;
+    int backend_is_abstract = 0;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        /* YAML config with load balancing */
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_unix_path = backend->unixPath;
+            backend_is_abstract = backend->isAbstract;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields if no backend selected */
+    if (!backend_addr && !backend_unix_path) {
+        backend_addr = srv->toAddrInfo;
+        backend_unix_path = srv->toUnixPath;
+        backend_is_abstract = srv->toIsAbstract;
+        backend_source = srv->sourceAddrInfo;
+    }
+
+    /* Set local family/protocol based on backend type */
+    if (backend_unix_path) {
+        cnx->local.family = AF_UNIX;
+        cnx->local.protocol = 0;
+    } else if (backend_addr) {
+        cnx->local.family = backend_addr->ai_family;
+        cnx->local.protocol = IPPROTO_TCP;
+    } else {
+        /* No backend available */
+        logErrorConn(cnx, "No backend address available\n");
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+        return;
+    }
+
     /* Connect to backend - either TCP or Unix */
-    if (srv->toUnixPath) {
+    if (backend_unix_path) {
         /* Backend is Unix socket */
         ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
         if (ret != 0) {
             logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
             return;
@@ -1358,11 +1416,11 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_type = UV_NAMED_PIPE;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
-        cnx->local.family = AF_UNIX;
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for Unix connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1372,12 +1430,13 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         connect_req->data = cnx;
 
         /* Connect to Unix socket backend */
-        if (srv->toIsAbstract) {
+        if (backend_is_abstract) {
             /* Abstract socket */
             char abstract_name[UNIX_PATH_MAX + 1];
-            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            size_t name_len = prepareAbstractSocketName(backend_unix_path, abstract_name);
             if (name_len == 0) {
                 free(connect_req);
+                if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
                 uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1386,13 +1445,14 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             }
             uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, backend_unix_path, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
         ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
             return;
@@ -1400,12 +1460,10 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_type = UV_TCP;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
-        cnx->local.family = srv->toAddrInfo->ai_family;
-        cnx->local.protocol = IPPROTO_TCP;
 
         /* Bind to source address if specified */
-        if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
+        if (backend_source) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, backend_source->ai_addr, 0);
             if (ret != 0)
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
         }
@@ -1413,6 +1471,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for TCP connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1421,10 +1480,11 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, backend_addr->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
