@@ -2625,7 +2625,77 @@ RETSIGTYPE quit(int s)
 {
     (void)s;
 
-    /* Obey the request, but first flush the log */
+    logInfo("forced quit - closing connections gracefully\n");
+
+    /* Stop and close signal handlers to allow loop to exit cleanly */
+    uv_signal_stop(&sighup_handle);
+    uv_signal_stop(&sigint_handle);
+    uv_signal_stop(&sigterm_handle);
+    uv_signal_stop(&sigpipe_handle);
+    uv_close((uv_handle_t*)&sighup_handle, NULL);
+    uv_close((uv_handle_t*)&sigint_handle, NULL);
+    uv_close((uv_handle_t*)&sigterm_handle, NULL);
+    uv_close((uv_handle_t*)&sigpipe_handle, NULL);
+
+    /* Close all server listeners (stops accepting new connections) */
+    clearConfiguration();
+
+    /* Close all active connection handles (iterate carefully as list may be modified) */
+    ConnectionInfo *cnx = connectionListHead;
+    while (cnx) {
+        ConnectionInfo *next = cnx->next;  /* Save next before async close */
+
+        /* Close local handle if initialized and not already closing */
+        if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
+            cnx->local_handle_closing = 1;
+            if (cnx->local_handle_type == UV_TCP) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, NULL);
+            } else if (cnx->local_handle_type == UV_UDP) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.udp, NULL);
+            } else if (cnx->local_handle_type == UV_NAMED_PIPE) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, NULL);
+            }
+        }
+
+        /* Close remote handle if initialized and not already closing */
+        if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
+            cnx->remote_handle_closing = 1;
+            if (cnx->remote_handle_type == UV_TCP) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, NULL);
+            } else if (cnx->remote_handle_type == UV_UDP) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.udp, NULL);
+            } else if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, NULL);
+            }
+        }
+
+        /* Close timeout timer if initialized and not already closing */
+        if (cnx->timer_initialized && !cnx->timer_closing) {
+            cnx->timer_closing = 1;
+            uv_close((uv_handle_t*)&cnx->timeout_timer, NULL);
+        }
+
+        cnx = next;
+    }
+
+    /* Run event loop to process close callbacks
+     * Use UV_RUN_ONCE which blocks for I/O, giving handles time to close */
+    logDebug("processing close callbacks...\n");
+    int iterations = 0;
+    while (uv_loop_alive(main_loop) && iterations < RINETD_CLEANUP_MAX_ITERATIONS) {
+        /* UV_RUN_ONCE polls for I/O and blocks if needed */
+        if (uv_run(main_loop, UV_RUN_ONCE) == 0) {
+            break;  /* No more events to process */
+        }
+        iterations++;
+    }
+    if (iterations >= RINETD_CLEANUP_MAX_ITERATIONS) {
+        logWarning("warning: some handles may not have closed cleanly (iterations: %d)\n", iterations);
+    } else {
+        logDebug("all handles closed successfully (%d iterations)\n", iterations);
+    }
+
+    /* Flush the log before closing */
     if (logFd != -1) {
         uv_fs_t req;
         uv_fs_close(NULL, &req, logFd, NULL);
@@ -2633,13 +2703,19 @@ RETSIGTYPE quit(int s)
         logFd = -1;
     }
 
-    logInfo("forced quit\n");
-
     /* Shutdown buffer pool */
     buffer_pool_shutdown();
 
-    /* Clear configuration (connections will be freed when process exits) */
-    clearConfiguration();
+    /* Cleanup UDP hash table */
+    cleanup_udp_hash_table();
+
+    /* Cleanup YAML rules */
+    cleanup_yaml_rules();
+
+    /* Close the event loop */
+    uv_loop_close(main_loop);
+
+    logInfo("graceful shutdown complete\n");
     exit(0);
 }
 
