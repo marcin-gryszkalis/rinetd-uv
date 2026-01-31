@@ -109,6 +109,7 @@ static int checkConnectionAllowed(ConnectionInfo const *cnx);
 /* UDP hash table and LRU functions */
 static void init_udp_hash_table(void);
 static void cleanup_udp_hash_table(void);
+static void cleanup_yaml_rules(void);
 
 static int readArgs(int argc, char **argv, RinetdOptions *options);
 static char const *findConfigFile(void);
@@ -270,10 +271,41 @@ int main(int argc, char *argv[])
     /* Cleanup UDP hash table */
     cleanup_udp_hash_table();
 
+    /* Cleanup YAML configuration if used */
+    cleanup_yaml_rules();
+
     /* Close the loop */
     uv_loop_close(main_loop);
 
     return 0;
+}
+
+static void cleanup_yaml_rules(void)
+{
+    if (!usingYamlConfig || !yamlRules)
+        return;
+
+    for (int i = 0; i < yamlRulesCount; i++) {
+        RuleInfo *rule = &yamlRules[i];
+
+        /* Free listeners array (the ServerInfo structs themselves are in seInfo,
+         * which is freed separately) */
+        free(rule->listeners);
+
+        /* Free backends */
+        for (int j = 0; j < rule->backend_count; j++)
+            lb_backend_cleanup(&rule->backends[j]);
+        free(rule->backends);
+
+        /* Free affinity table */
+        if (rule->affinity_table)
+            affinity_table_free(rule->affinity_table);
+
+        free(rule->name);
+    }
+    free(yamlRules);
+    yamlRules = NULL;
+    yamlRulesCount = 0;
 }
 
 static void clearConfiguration(void)
@@ -341,6 +373,10 @@ static void clearConfiguration(void)
     free(allRules);
     allRules = NULL;
     allRulesCount = globalRulesCount = 0;
+
+    /* Cleanup YAML rules if using YAML config */
+    cleanup_yaml_rules();
+
     /* Free file names */
     free(logFileName);
     logFileName = NULL;
@@ -2640,14 +2676,14 @@ void initializeFromYamlRules(void)
         RuleInfo *rule = &yamlRules[r];
 
         for (int l = 0; l < rule->listener_count; l++) {
-            ServerInfo *srv = rule->listeners[l];
+            ServerInfo *srv_original = rule->listeners[l];
 
             /* Link listener to its rule */
-            srv->rule = rule;
+            srv_original->rule = rule;
 
             /* Copy access rules reference */
-            srv->rulesStart = rule->rulesStart;
-            srv->rulesCount = rule->rulesCount;
+            srv_original->rulesStart = rule->rulesStart;
+            srv_original->rulesCount = rule->rulesCount;
 
             /* Add to global seInfo array */
             seInfo = (ServerInfo *)realloc(seInfo, sizeof(ServerInfo) * (seTotal + 1));
@@ -2657,11 +2693,14 @@ void initializeFromYamlRules(void)
             }
 
             /* Copy ServerInfo (but keep pointer to rule) */
-            seInfo[seTotal] = *srv;
+            seInfo[seTotal] = *srv_original;
             seInfo[seTotal].rule = rule;
 
             /* Update the rule's listener pointer to point to seInfo entry */
             rule->listeners[l] = &seInfo[seTotal];
+
+            /* Free the original ServerInfo shell (fields now owned by seInfo) */
+            free(srv_original);
 
             seTotal++;
         }
