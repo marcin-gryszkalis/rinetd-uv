@@ -1343,11 +1343,15 @@ really came from.
 This cannot be corrected; however, the log produced by
 \f[B]rinetd\-uv\f[R] provides a way to obtain this information.
 .PP
-Two rules with the same source ip/port and different destination ip/port
-are not allowed (you\[cq]ll get \[lq]Address already in use\[rq] or
-similar error).
+Two rules with the same effective source ip/port and different
+destination ip/port are not allowed.
+With YAML config file problem will be recognized on parsing stage, with
+legacy config you\[cq]ll get \[lq]Address already in use\[rq] or similar
+error.
 Note that \f[CR]0.0.0.0\f[R] (IPv4) and \f[CR]::\f[R] (IPv6) effectively
 mean the same (both would bind to \[lq]any\[rq] address).
+Checking may also fail on edge cases like unix: sockets accessed via
+symlink.
 .PP
 \f[B]rinetd\-uv\f[R] does not implement backpressure (flow control)
 between the client and backend connections.

@@ -1087,6 +1087,98 @@ YamlConfig *yaml_config_parse(const char *filename)
         return NULL;
     }
 
+    /* Validate for duplicate bind addresses across all rules */
+    for (int i = 0; i < config->rule_count; i++) {
+        RuleInfo *rule_i = &config->rules[i];
+        for (int li = 0; li < rule_i->listener_count; li++) {
+            ServerInfo *srv_i = rule_i->listeners[li];
+
+            /* Check against all subsequent rules */
+            for (int j = i; j < config->rule_count; j++) {
+                RuleInfo *rule_j = &config->rules[j];
+                int start_lj = (j == i) ? li + 1 : 0;  /* Skip same listener */
+
+                for (int lj = start_lj; lj < rule_j->listener_count; lj++) {
+                    ServerInfo *srv_j = rule_j->listeners[lj];
+
+                    /* Must be same handle type (TCP, UDP, or PIPE) */
+                    if (srv_i->handle_type != srv_j->handle_type)
+                        continue;
+
+                    /* Compare Unix socket paths */
+                    if (srv_i->fromUnixPath && srv_j->fromUnixPath) {
+                        if (strcmp(srv_i->fromUnixPath, srv_j->fromUnixPath) == 0 &&
+                            srv_i->fromIsAbstract == srv_j->fromIsAbstract) {
+
+                            logError("Duplicate Unix socket bind '%s' in rules '%s' and '%s'\n",
+                                     srv_i->fromUnixPath,
+                                     rule_i->name ? rule_i->name : "unnamed",
+                                     rule_j->name ? rule_j->name : "unnamed");
+                            yaml_config_free(config);
+                            return NULL;
+                        }
+                        continue;
+                    }
+
+                    /* Compare network addresses (TCP/UDP) */
+                    if (srv_i->fromAddrInfo && srv_j->fromAddrInfo) {
+                        struct sockaddr *addr_i = srv_i->fromAddrInfo->ai_addr;
+                        struct sockaddr *addr_j = srv_j->fromAddrInfo->ai_addr;
+
+                        /* Must be same address family */
+                        if (addr_i->sa_family != addr_j->sa_family)
+                            continue;
+
+                        /* Compare IPv4 addresses */
+                        if (addr_i->sa_family == AF_INET) {
+                            struct sockaddr_in *in_i = (struct sockaddr_in *)addr_i;
+                            struct sockaddr_in *in_j = (struct sockaddr_in *)addr_j;
+
+                            if (in_i->sin_addr.s_addr == in_j->sin_addr.s_addr &&
+                                in_i->sin_port == in_j->sin_port) {
+
+                                char addr_str[128];
+                                snprintf(addr_str, sizeof(addr_str), "%s:%d/%s",
+                                         srv_i->fromHost,
+                                         ntohs(in_i->sin_port),
+                                         srv_i->handle_type == UV_TCP ? "tcp" : "udp");
+
+                                logError("Duplicate bind address '%s' in rules '%s' and '%s'\n",
+                                         addr_str,
+                                         rule_i->name ? rule_i->name : "unnamed",
+                                         rule_j->name ? rule_j->name : "unnamed");
+                                yaml_config_free(config);
+                                return NULL;
+                            }
+                        }
+                        /* Compare IPv6 addresses */
+                        else if (addr_i->sa_family == AF_INET6) {
+                            struct sockaddr_in6 *in6_i = (struct sockaddr_in6 *)addr_i;
+                            struct sockaddr_in6 *in6_j = (struct sockaddr_in6 *)addr_j;
+
+                            if (memcmp(&in6_i->sin6_addr, &in6_j->sin6_addr, sizeof(struct in6_addr)) == 0 &&
+                                in6_i->sin6_port == in6_j->sin6_port) {
+
+                                char addr_str[128];
+                                snprintf(addr_str, sizeof(addr_str), "%s:%d/%s",
+                                         srv_i->fromHost,
+                                         ntohs(in6_i->sin6_port),
+                                         srv_i->handle_type == UV_TCP ? "tcp" : "udp");
+
+                                logError("Duplicate bind address '%s' in rules '%s' and '%s'\n",
+                                         addr_str,
+                                         rule_i->name ? rule_i->name : "unnamed",
+                                         rule_j->name ? rule_j->name : "unnamed");
+                                yaml_config_free(config);
+                                return NULL;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     logInfo("Loaded YAML config: %d rule(s)\n", config->rule_count);
     return config;
 }

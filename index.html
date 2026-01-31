@@ -1242,10 +1242,13 @@ connections for data transfer).</p>
 really came from. This cannot be corrected; however, the log produced by
 <strong>rinetd-uv</strong> provides a way to obtain this
 information.</p>
-<p>Two rules with the same source ip/port and different destination
-ip/port are not allowed (you’ll get “Address already in use” or similar
-error). Note that <code>0.0.0.0</code> (IPv4) and <code>::</code> (IPv6)
-effectively mean the same (both would bind to “any” address).</p>
+<p>Two rules with the same effective source ip/port and different
+destination ip/port are not allowed. With YAML config file problem will
+be recognized on parsing stage, with legacy config you’ll get “Address
+already in use” or similar error. Note that <code>0.0.0.0</code> (IPv4)
+and <code>::</code> (IPv6) effectively mean the same (both would bind to
+“any” address). Checking may also fail on edge cases like unix: sockets
+accessed via symlink.</p>
 <p><strong>rinetd-uv</strong> does not implement backpressure (flow
 control) between the client and backend connections. If one endpoint
 sends data faster than the other endpoint can receive it, the data

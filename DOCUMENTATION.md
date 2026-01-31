@@ -1018,7 +1018,7 @@ killall -HUP rinetd-uv
 
 The server redirected to is not able to identify the host the client really came from. This cannot be corrected; however, the log produced by **rinetd-uv** provides a way to obtain this information.
 
-Two rules with the same source ip/port and different destination ip/port are not allowed (you'll get "Address already in use" or similar error). Note that `0.0.0.0` (IPv4) and `::` (IPv6) effectively mean the same (both would bind to "any" address).
+Two rules with the same effective source ip/port and different destination ip/port are not allowed. With YAML config file problem will be recognized on parsing stage, with legacy config you'll get "Address already in use" or similar error. Note that `0.0.0.0` (IPv4) and `::` (IPv6) effectively mean the same (both would bind to "any" address). Checking may also fail on edge cases like unix: sockets accessed via symlink.
 
 **rinetd-uv** does not implement backpressure (flow control) between the client and backend connections. If one endpoint sends data faster than the other endpoint can receive it, the data waiting to be forwarded will queue up in memory. In extreme cases (e.g., a fast sender paired with a very slow or stalled receiver), this can lead to unbounded memory growth. This is generally not a problem for well-behaved clients and backends, but could be exploited in adversarial scenarios where an attacker deliberately sends data rapidly while receiving slowly.
 
