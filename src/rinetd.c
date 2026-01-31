@@ -317,6 +317,14 @@ static void clearConfiguration(void)
     int any_handles_to_close = 0;
     for (int i = 0; i < seTotal; ++i) {
         ServerInfo *srv = &seInfo[i];
+
+        /* Close DNS refresh timer if initialized */
+        if (srv->dns_timer_initialized) {
+            uv_timer_stop(&srv->dns_refresh_timer);
+            uv_close((uv_handle_t*)&srv->dns_refresh_timer, dns_timer_close_cb);
+            any_handles_to_close = 1;
+        }
+
         if (srv->handle_initialized) {
             any_handles_to_close = 1;
             /* Stop listening/recv before closing */
@@ -2630,6 +2638,26 @@ RETSIGTYPE hup(int s)
 }
 #endif /* _WIN32 */
 
+/* Debug: walk all handles and print their type/state */
+static void debug_walk_cb(uv_handle_t* handle, void* arg)
+{
+    int *count = (int*)arg;
+    const char *type_name = uv_handle_type_name(handle->type);
+    if (!type_name)
+        type_name = "unknown";
+
+    logDebug("  handle %d: type=%s, closing=%d, data=%p\n", *count, type_name, uv_is_closing(handle), handle->data);
+    (*count)++;
+}
+
+/* Signal handle close callback - called when signal handle finishes closing */
+static void signal_handle_close_cb(uv_handle_t* handle)
+{
+    logDebug("signal handle close callback\n");
+    (void)handle;
+    /* Nothing to do - just allows the close to complete properly */
+}
+
 RETSIGTYPE quit(int s)
 {
     (void)s;
@@ -2641,13 +2669,28 @@ RETSIGTYPE quit(int s)
     uv_signal_stop(&sigint_handle);
     uv_signal_stop(&sigterm_handle);
     uv_signal_stop(&sigpipe_handle);
-    uv_close((uv_handle_t*)&sighup_handle, NULL);
-    uv_close((uv_handle_t*)&sigint_handle, NULL);
-    uv_close((uv_handle_t*)&sigterm_handle, NULL);
-    uv_close((uv_handle_t*)&sigpipe_handle, NULL);
+    uv_close((uv_handle_t*)&sighup_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigint_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigterm_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigpipe_handle, signal_handle_close_cb);
 
     /* Close all server listeners (stops accepting new connections) */
     clearConfiguration();
+
+    /* Close backend DNS refresh timers (keeps loop alive if not closed) */
+    if (usingYamlConfig && yamlRules) {
+        for (int r = 0; r < yamlRulesCount; r++) {
+            RuleInfo *rule = &yamlRules[r];
+            for (int b = 0; b < rule->backend_count; b++) {
+                BackendInfo *backend = &rule->backends[b];
+                if (backend->dns_timer_initialized && !backend->dns_timer_closing) {
+                    backend->dns_timer_closing = 1;
+                    uv_timer_stop(&backend->dns_timer);
+                    uv_close((uv_handle_t*)&backend->dns_timer, NULL);
+                }
+            }
+        }
+    }
 
     /* Close all active connection handles (iterate carefully as list may be modified) */
     ConnectionInfo *cnx = connectionListHead;
@@ -2688,20 +2731,46 @@ RETSIGTYPE quit(int s)
     }
 
     /* Run event loop to process close callbacks
-     * Use UV_RUN_ONCE which blocks for I/O, giving handles time to close */
+     * Hybrid approach: UV_RUN_NOWAIT (fast) + periodic UV_RUN_ONCE (ensures close callbacks) */
     logDebug("processing close callbacks...\n");
     int iterations = 0;
+
     while (uv_loop_alive(main_loop) && iterations < RINETD_CLEANUP_MAX_ITERATIONS) {
-        /* UV_RUN_ONCE polls for I/O and blocks if needed */
-        if (uv_run(main_loop, UV_RUN_ONCE) == 0) {
-            break;  /* No more events to process */
-        }
+        /* Use UV_RUN_ONCE every 10 iterations to ensure close callbacks get processed,
+         * otherwise use UV_RUN_NOWAIT for speed */
+        /* if (iterations % 10 == 0) {
+            uv_run(main_loop, UV_RUN_ONCE);
+        } else { */
+            uv_run(main_loop, UV_RUN_NOWAIT);
+        /* } */
+
         iterations++;
+
+        /* Diagnostic logging */
+        /*
+        if (iterations % 10 == 0) {
+            uv_metrics_t metrics;
+            uv_metrics_info(main_loop, &metrics);
+            logDebug("closing: iteration %d -- %lld events -- alive=%d -- handles=%u\n",
+                     iterations, metrics.events_waiting, uv_loop_alive(main_loop),
+                     main_loop->active_handles);
+        }
+        */
+
+        /* Small sleep every iteration to avoid busy-waiting */
+        struct timespec ts = {0, 1000000};  /* 1ms */
+        nanosleep(&ts, NULL);
     }
+
     if (iterations >= RINETD_CLEANUP_MAX_ITERATIONS) {
-        logWarning("some handles may not have closed cleanly (iterations: %d)\n", iterations);
+        logWarning("some handles may not have closed cleanly\n");
+        /* Debug: enumerate all remaining handles */
+        int handle_count = 0;
+        logDebug("enumerating remaining handles:\n");
+        uv_walk(main_loop, debug_walk_cb, &handle_count);
+        logDebug("total handles: %d\n", handle_count);
     } else {
-        logDebug("all handles closed successfully (%d iterations)\n", iterations);
+        logDebug("all handles closed successfully\n");
     }
 
     /* Flush the log before closing */

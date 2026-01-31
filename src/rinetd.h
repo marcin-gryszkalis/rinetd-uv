@@ -25,7 +25,7 @@ static int const RINETD_DEFAULT_POOL_MAX_FREE = 1024;
 static int const RINETD_DEFAULT_POOL_TRIM_DELAY = 60000;
 
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
-static int const RINETD_CLEANUP_MAX_ITERATIONS = 50;
+static int const RINETD_CLEANUP_MAX_ITERATIONS = 1000;
 
 #define RINETD_CONFIG_FILE_YAML "/etc/rinetd-uv.yaml"
 #define RINETD_CONFIG_FILE_YML "/etc/rinetd-uv.yml"
