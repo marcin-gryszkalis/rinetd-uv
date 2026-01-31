@@ -21,17 +21,12 @@ PKG_CHECK_MODULES([LIBUV], [libuv >= 1.0], [], [
 AC_SUBST([LIBUV_CFLAGS])
 AC_SUBST([LIBUV_LIBS])
 
-# Check for libyaml (optional, for YAML configuration support)
-PKG_CHECK_MODULES([YAML], [yaml-0.1], [
-    AC_DEFINE([HAVE_LIBYAML], [1], [Define if libyaml is available])
-    have_libyaml=yes
-], [
-    AC_MSG_WARN([libyaml not found - YAML configuration with load balancing will be disabled])
-    have_libyaml=no
+# Check for libyaml (required for YAML configuration support)
+PKG_CHECK_MODULES([YAML], [yaml-0.1], [], [
+    AC_MSG_ERROR([libyaml not found. Install with: apt-get install libyaml-dev (Debian/Ubuntu) or brew install libyaml (macOS)])
 ])
 AC_SUBST([YAML_CFLAGS])
 AC_SUBST([YAML_LIBS])
-AM_CONDITIONAL([HAVE_LIBYAML], [test "x$have_libyaml" = "xyes"])
 
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h errno.h fcntl.h netdb.h netinet/in.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h syslog.h unistd.h])

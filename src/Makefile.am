@@ -10,12 +10,8 @@ rinetd_uv_SOURCES = rinetd.c rinetd.h \
                     buffer_pool.c buffer_pool.h \
                     loadbalancer.c loadbalancer.h \
                     affinity.c affinity.h \
+                    yaml_config.c yaml_config.h \
                     types.h
-
-# Conditionally add YAML config sources if libyaml is available
-if HAVE_LIBYAML
-rinetd_uv_SOURCES += yaml_config.c yaml_config.h
-endif
 
 BUILT_SOURCES = parse.c
 

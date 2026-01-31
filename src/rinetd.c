@@ -45,10 +45,7 @@
 #include "buffer_pool.h"
 #include "loadbalancer.h"
 #include "affinity.h"
-
-#ifdef HAVE_LIBYAML
 #include "yaml_config.h"
-#endif
 
 Rule *allRules = NULL;
 int allRulesCount = 0;
@@ -362,7 +359,6 @@ static void readConfiguration(char const *file)
     listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
     maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
-#ifdef HAVE_LIBYAML
     /* Check if this is a YAML config file */
     if (yaml_config_is_yaml_file(file)) {
         YamlConfig *config = yaml_config_parse(file);
@@ -383,9 +379,7 @@ static void readConfiguration(char const *file)
         config->rules = NULL;
         config->rule_count = 0;
         yaml_config_free(config);
-    } else
-#endif
-    {
+    } else {
         /* Parse legacy configuration file */
         usingYamlConfig = 0;
         parseConfiguration(file);

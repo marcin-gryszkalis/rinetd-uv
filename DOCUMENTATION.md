@@ -534,8 +534,6 @@ This allow rule matches all IP addresses in the 206.125.69 class C domain.
 
 Starting with version 2.1.0, **rinetd-uv** supports an alternative YAML configuration format that enables advanced features including load balancing. The YAML format is detected automatically by file extension (`.yaml` or `.yml`).
 
-**Note:** YAML configuration requires **libyaml** to be installed at build time. If libyaml is not available, YAML configuration will be disabled but the legacy format continues to work.
-
 ### Overview
 
 The YAML configuration provides:
@@ -848,22 +846,6 @@ The script converts:
 - Allow and deny rules (global and per-rule)
 
 **Note:** The legacy format does not support load balancing. After conversion, you can manually add multiple backends and load_balancing configuration to rules.
-
-### YAML vs Legacy Format Comparison
-
-| Feature | Legacy Format | YAML Format |
-|---------|---------------|-------------|
-| Basic forwarding | ✓ | ✓ |
-| UDP forwarding | ✓ | ✓ |
-| Unix sockets | ✓ | ✓ |
-| Access control | ✓ | ✓ |
-| DNS refresh | ✓ | ✓ |
-| Multiple backends | ✗ | ✓ |
-| Load balancing | ✗ | ✓ |
-| Health checking | ✗ | ✓ |
-| Client affinity | ✗ | ✓ |
-| Weighted distribution | ✗ | ✓ |
-| Multiple listeners per rule | ✗ | ✓ |
 
 ## EXAMPLE CONFIGURATION
 

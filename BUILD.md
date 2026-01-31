@@ -13,6 +13,8 @@ This document describes how to build and install rinetd-uv from source.
 - **pkg-config**: For detecting library dependencies
 - **libuv**: Event loop library (tested with version 1.51.0)
   - Development headers required (libuv-dev or libuv1-dev package)
+- **libyaml**: YAML parser library (version 0.1 or later)
+  - Development headers required (libyaml-dev package)
 
 ### Optional Dependencies
 
@@ -32,37 +34,37 @@ Python 3 and common python libraries are required to run scripts int `test/`:
 
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential autoconf automake pkg-config libuv1-dev
+sudo apt-get install build-essential autoconf automake pkg-config libuv1-dev libyaml-dev
 ```
 
 ### Fedora/RHEL/CentOS
 
 ```bash
-sudo dnf install gcc autoconf automake pkgconfig libuv-devel
+sudo dnf install gcc autoconf automake pkgconfig libuv-devel libyaml-devel
 ```
 
 ### macOS (Homebrew)
 
 ```bash
-brew install autoconf automake pkg-config libuv
+brew install autoconf automake pkg-config libuv libyaml
 ```
 
 ### Arch Linux
 
 ```bash
-sudo pacman -S base-devel autoconf automake pkgconf libuv
+sudo pacman -S base-devel autoconf automake pkgconf libuv libyaml
 ```
 
 ### FreeBSD
 
 ```bash
-pkg install autoconf automake pkgconf libuv
+pkg install autoconf automake pkgconf libuv libyaml
 ```
 
 ### OpenBSD
 
 ```
-pkg_add autoconf automake libuv
+pkg_add autoconf automake libuv libyaml
 ```
 
 ## Build Instructions
@@ -210,6 +212,33 @@ sudo dnf install libuv-devel
 
 # macOS
 brew install libuv
+```
+
+### libyaml Not Found
+
+**Error:**
+```
+configure: error: libyaml not found
+```
+
+**Solution:**
+Install libyaml development headers:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install libyaml-dev
+
+# Fedora/RHEL
+sudo dnf install libyaml-devel
+
+# macOS
+brew install libyaml
+
+# Arch Linux
+sudo pacman -S libyaml
+
+# FreeBSD
+pkg install libyaml
 ```
 
 ### peg/leg Not Found

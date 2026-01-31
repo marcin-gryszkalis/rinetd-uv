@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-01-30" />
+  <meta name="dcterms.date" content="2026-01-31" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-01-30</p>
+<p class="date">2026-01-31</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -680,10 +680,6 @@ connections would be forced to pause during the address lookup.</p>
 alternative YAML configuration format that enables advanced features
 including load balancing. The YAML format is detected automatically by
 file extension (<code>.yaml</code> or <code>.yml</code>).</p>
-<p><strong>Note:</strong> YAML configuration requires
-<strong>libyaml</strong> to be installed at build time. If libyaml is
-not available, YAML configuration will be disabled but the legacy format
-continues to work.</p>
 <h3 id="overview">Overview</h3>
 <p>The YAML configuration provides:</p>
 <ul>
@@ -1086,74 +1082,6 @@ rules (global and per-rule)</p>
 <p><strong>Note:</strong> The legacy format does not support load
 balancing. After conversion, you can manually add multiple backends and
 load_balancing configuration to rules.</p>
-<h3 id="yaml-vs-legacy-format-comparison">YAML vs Legacy Format
-Comparison</h3>
-<table>
-<thead>
-<tr>
-<th>Feature</th>
-<th>Legacy Format</th>
-<th>YAML Format</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Basic forwarding</td>
-<td>✓</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>UDP forwarding</td>
-<td>✓</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Unix sockets</td>
-<td>✓</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Access control</td>
-<td>✓</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>DNS refresh</td>
-<td>✓</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Multiple backends</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Load balancing</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Health checking</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Client affinity</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Weighted distribution</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-<tr>
-<td>Multiple listeners per rule</td>
-<td>✗</td>
-<td>✓</td>
-</tr>
-</tbody>
-</table>
 <h2 id="example-configuration">EXAMPLE CONFIGURATION</h2>
 <h3 id="legacy-format">Legacy Format</h3>
 <pre><code># rinetd-uv.conf - example configuration

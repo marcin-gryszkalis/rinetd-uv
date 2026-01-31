@@ -8,8 +8,6 @@
 #   include <config.h>
 #endif
 
-#ifdef HAVE_LIBYAML
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1173,5 +1171,3 @@ RuleInfo *yaml_config_get_rules(YamlConfig *config, int *count)
     *count = config->rule_count;
     return config->rules;
 }
-
-#endif /* HAVE_LIBYAML */

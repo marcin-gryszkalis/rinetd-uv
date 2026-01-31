@@ -6,8 +6,6 @@
 
 #pragma once
 
-#ifdef HAVE_LIBYAML
-
 #include "types.h"
 
 /* Result structure for YAML parsing */
@@ -47,5 +45,3 @@ void yaml_config_apply_globals(YamlConfig *config);
 
 /* Get the array of rules from the config (for initialization) */
 RuleInfo *yaml_config_get_rules(YamlConfig *config, int *count);
-
-#endif /* HAVE_LIBYAML */
