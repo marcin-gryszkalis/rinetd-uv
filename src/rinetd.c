@@ -264,18 +264,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Close all remaining handles gracefully */
-    uv_walk(main_loop, (uv_walk_cb)uv_close, NULL);
-    uv_run(main_loop, UV_RUN_DEFAULT);  /* Process close callbacks */
-
-    /* Cleanup UDP hash table */
-    cleanup_udp_hash_table();
-
-    /* Cleanup YAML configuration if used */
-    cleanup_yaml_rules();
-
-    /* Close the loop */
-    uv_loop_close(main_loop);
+    /* Perform graceful cleanup (called outside signal callback context) */
+    quit(0);
 
     return 0;
 }
@@ -657,10 +647,13 @@ static void signal_cb(uv_signal_t *handle, int signum)
     if (signum == SIGHUP) {
         hup(signum);
     } else if (signum == SIGINT || signum == SIGTERM) {
-        quit(signum);
+        logInfo("received %s signal - initiating graceful shutdown\n", signum == SIGINT ? "INT" : "TERM");
+        should_exit = 1;
+        uv_stop(main_loop);  /* Interrupt current UV_RUN_DEFAULT iteration */
     } else if (signum == SIGPIPE) {
         /* SIGPIPE is ignored (no-op callback) */
         /* This prevents the process from terminating on broken pipes */
+        logInfo("received SIGPIPE signal - ignored\n");
     }
 }
 
