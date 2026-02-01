@@ -384,6 +384,8 @@ static void clearConfiguration(void)
 
 static void readConfiguration(char const *file)
 {
+    logInfo("loading configuration from: %s\n", file);
+
     /* Reset configurable values to defaults before re-parsing (for SIGHUP) */
     bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
     globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;

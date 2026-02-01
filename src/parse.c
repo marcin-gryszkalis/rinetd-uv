@@ -2249,6 +2249,11 @@ void parseInclude(char const *pattern, yycontext *ctx)
 /* Internal function for parsing a single config file (supports recursion) */
 void parseConfigurationFile(char const *file, yycontext *ctx)
 {
+    /* Log included files (main file is already logged in readConfiguration) */
+    if (ctx->includeDepth > 0) {
+        logInfo("loading included configuration from: %s\n", file);
+    }
+
     FILE *in = fopen(file, "r");
     if (!in) {
         logError("could not open configuration file %s at %s:%d\n", file, ctx->currentFile, ctx->currentLine);
