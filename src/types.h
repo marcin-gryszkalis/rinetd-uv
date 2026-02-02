@@ -59,6 +59,9 @@ typedef struct _affinity_table AffinityTable;
 
 /* Backend information for load balancing */
 struct _backend_info {
+    /* Human-readable name for status/stats output (no sensitive data exposure) */
+    char *name;
+
     /* Address info (mutually exclusive with unixPath) */
     struct addrinfo *addrInfo;
     char *host;

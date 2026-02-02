@@ -17,6 +17,7 @@
 #include "rinetd.h"
 #include "log.h"
 #include "parse.h"
+#include "stats.h"
 
 #include <glob.h>
 #include <stdlib.h>
@@ -70,7 +71,7 @@ static char *stripQuotes(char const *str);
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | include-directive)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | statusfile | statusinterval | statusformat | statsloginterval | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-spec - connect-spec (-? server-options)?
@@ -242,6 +243,41 @@ max-udp-connections  =  "max-udp-connections" - < number >
     maxUdpConnections = atoi(yytext);
     if (maxUdpConnections < 1 || maxUdpConnections > 1000000) {
         logError("invalid max-udp-connections value %d at line %d (must be 1-1000000)\n", maxUdpConnections, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+statusfile  =  "statusfile" - < filename >
+{
+    free(statusConfig.file);
+    statusConfig.file = stripQuotes(yytext);
+    if (!statusConfig.file)
+        MEMORY_ERROR;
+    statusConfig.enabled = 1;
+}
+
+statusinterval  =  "statusinterval" - < number >
+{
+    statusConfig.interval = atoi(yytext);
+    if (statusConfig.interval < 1 || statusConfig.interval > 86400) {
+        logError("invalid statusinterval value %d at line %d (must be 1-86400)\n", statusConfig.interval, yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+statusformat  =  "statusformat" - < ("json" | "text") >
+{
+    if (strcmp(yytext, "json") == 0)
+        statusConfig.format = STATUS_FORMAT_JSON;
+    else if (strcmp(yytext, "text") == 0)
+        statusConfig.format = STATUS_FORMAT_TEXT;
+}
+
+statsloginterval  =  "statsloginterval" - < number >
+{
+    statsLogInterval = atoi(yytext);
+    if (statsLogInterval < 0 || statsLogInterval > 86400) {
+        logError("invalid statsloginterval value %d at line %d (must be 0-86400)\n", statsLogInterval, yy->currentLine);
         PARSE_ERROR;
     }
 }

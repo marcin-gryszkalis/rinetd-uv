@@ -8,6 +8,15 @@
 
 #include "types.h"
 
+/* Status file configuration (parsed from YAML) */
+typedef struct _yaml_status_config YamlStatusConfig;
+struct _yaml_status_config {
+    int enabled;
+    char *file;
+    int interval;       /* Seconds between writes (default: 30) */
+    int format_json;    /* 1 = JSON (default), 0 = text */
+};
+
 /* Result structure for YAML parsing */
 typedef struct _yaml_config YamlConfig;
 struct _yaml_config {
@@ -22,6 +31,10 @@ struct _yaml_config {
     int pool_min_free;
     int pool_max_free;
     int pool_trim_delay;
+
+    /* Status reporting */
+    YamlStatusConfig status;
+    int stats_log_interval;     /* Seconds, 0 = disabled (default: 60) */
 
     /* Rules */
     RuleInfo *rules;

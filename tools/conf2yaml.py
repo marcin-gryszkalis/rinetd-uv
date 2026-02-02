@@ -92,6 +92,38 @@ class LegacyConfigParser:
                 self.global_options['pool_trim_delay'] = int(match.group(1))
             return
 
+        # Status reporting options
+        if line.startswith('statusfile'):
+            match = re.match(r'statusfile\s+(\S+)', line)
+            if match:
+                if 'status' not in self.global_options:
+                    self.global_options['status'] = {}
+                self.global_options['status']['file'] = match.group(1).strip('"')
+                self.global_options['status']['enabled'] = True
+            return
+
+        if line.startswith('statusinterval'):
+            match = re.match(r'statusinterval\s+(\d+)', line)
+            if match:
+                if 'status' not in self.global_options:
+                    self.global_options['status'] = {}
+                self.global_options['status']['interval'] = int(match.group(1))
+            return
+
+        if line.startswith('statusformat'):
+            match = re.match(r'statusformat\s+(\S+)', line)
+            if match:
+                if 'status' not in self.global_options:
+                    self.global_options['status'] = {}
+                self.global_options['status']['format'] = match.group(1)
+            return
+
+        if line.startswith('statsloginterval'):
+            match = re.match(r'statsloginterval\s+(\d+)', line)
+            if match:
+                self.global_options['stats_log_interval'] = int(match.group(1))
+            return
+
         # Parse allow/deny rules
         if line.startswith('allow'):
             match = re.match(r'allow\s+(.+)', line)
@@ -229,7 +261,18 @@ def generate_yaml(parser):
     if parser.global_options or parser.global_allow or parser.global_deny:
         lines.append("global:")
         for key, value in parser.global_options.items():
-            if isinstance(value, bool):
+            # Handle status block separately
+            if key == 'status':
+                lines.append("  status:")
+                if 'enabled' in value:
+                    lines.append(f"    enabled: {str(value['enabled']).lower()}")
+                if 'file' in value:
+                    lines.append(f"    file: {quote_if_needed(value['file'])}")
+                if 'interval' in value:
+                    lines.append(f"    interval: {value['interval']}")
+                if 'format' in value:
+                    lines.append(f"    format: {value['format']}")
+            elif isinstance(value, bool):
                 lines.append(f"  {key}: {str(value).lower()}")
             elif isinstance(value, int):
                 lines.append(f"  {key}: {value}")

@@ -46,6 +46,7 @@
 #include "loadbalancer.h"
 #include "affinity.h"
 #include "yaml_config.h"
+#include "stats.h"
 
 Rule *allRules = NULL;
 int allRulesCount = 0;
@@ -109,6 +110,8 @@ static int checkConnectionAllowed(ConnectionInfo const *cnx);
 /* UDP hash table and LRU functions */
 static void init_udp_hash_table(void);
 static void cleanup_udp_hash_table(void);
+static void hash_remove_udp_connection(ConnectionInfo *cnx);
+static void lru_remove(ServerInfo *srv, ConnectionInfo *cnx);
 static void cleanup_yaml_rules(void);
 
 static int readArgs(int argc, char **argv, RinetdOptions *options);
@@ -136,6 +139,7 @@ static void check_all_servers_closed(void);
 int main(int argc, char *argv[])
 {
     log_init();
+    stats_init();
 
 #ifdef _WIN32
     WSADATA wsaData;
@@ -242,6 +246,9 @@ int main(int argc, char *argv[])
     /* Initialize buffer pool */
     buffer_pool_init(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
     buffer_pool_warm();
+
+    /* Start status reporting timers */
+    stats_start_timers();
 
     /* Start libuv event handling for all servers */
     for (int i = 0; i < seTotal; ++i)
@@ -360,6 +367,9 @@ static void clearConfiguration(void)
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
+            /* Update stats and restart timers */
+            stats_on_config_reload();
+            stats_restart_timers_if_needed();
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
@@ -865,6 +875,9 @@ static void check_all_servers_closed(void)
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
+            /* Update stats and restart timers */
+            stats_on_config_reload();
+            stats_restart_timers_if_needed();
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
@@ -961,6 +974,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
 
     if (status < 0) {
         logErrorConn(cnx, "connect error: %s\n", uv_strerror(status));
+        stats_error_connect();
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
         /* Track backend health for load balancing */
@@ -1029,6 +1043,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     logEvent(cnx, cnx->server, logOpened);
+    stats_connection_accepted(IPPROTO_TCP);
 
     /* Mark backend healthy on successful connection (load balancing) */
     if (cnx->selected_backend && cnx->rule)
@@ -1044,6 +1059,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 {
     if (status < 0) {
         logError("accept error: %s\n", uv_strerror(status));
+        stats_error_accept();
         return;
     }
 
@@ -1090,6 +1106,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     int logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
+        stats_connection_denied();
         cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
         uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
         logEvent(cnx, srv, logCode);
@@ -1275,6 +1292,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
 
     if (status < 0) {
         logErrorConn(cnx, "Unix connect error: %s\n", uv_strerror(status));
+        stats_error_connect();
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
         /* Close local handle that was initialized but failed to connect */
@@ -1324,6 +1342,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     }
 
     logEvent(cnx, cnx->server, logOpened);
+    stats_connection_accepted(0);  /* Unix socket - protocol 0 */
 
     /* Reset failure counter on successful connection */
     if (cnx->server)
@@ -1335,6 +1354,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 {
     if (status < 0) {
         logError("Unix accept error: %s\n", uv_strerror(status));
+        stats_error_accept();
         return;
     }
 
@@ -1568,6 +1588,35 @@ static void tcp_write_cb(uv_write_t *req, int status);
 /* Forward declaration for shutdown callback */
 static void shutdown_cb(uv_shutdown_t *req, int status);
 
+/* Helper: finalize connection statistics and cleanup (called once per connection) */
+static void finalizeConnection(ConnectionInfo *cnx, int logReason)
+{
+    if (cnx->coClosing)
+        return;
+
+    cnx->coLog = logReason;
+    logEvent(cnx, cnx->server, cnx->coLog);
+    cnx->coClosing = 1;
+
+    /* Update global statistics */
+    uint64_t bytes_in = cnx->local.totalBytesIn + cnx->remote.totalBytesIn;
+    uint64_t bytes_out = cnx->local.totalBytesOut + cnx->remote.totalBytesOut;
+    stats_connection_closed(cnx->remote.protocol, bytes_in, bytes_out);
+
+    /* Update load balancing statistics */
+    if (cnx->selected_backend)
+        lb_backend_connection_end(cnx->selected_backend, bytes_in, bytes_out);
+
+    /* Cleanup UDP connection: remove from hash table and LRU list */
+    if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
+        hash_remove_udp_connection(cnx);
+        ServerInfo *srv = (ServerInfo*)cnx->server;
+        lru_remove(srv, cnx);
+        if (srv->udp_connection_count > 0)
+            srv->udp_connection_count--;
+    }
+}
+
 /* Helper: check if connection can be fully closed (both sides EOF) */
 static void tryFullClose(ConnectionInfo *cnx)
 {
@@ -1575,12 +1624,8 @@ static void tryFullClose(ConnectionInfo *cnx)
     if (!cnx->local_read_eof || !cnx->remote_read_eof)
         return;
 
-    /* Both sides have EOF - now we can safely close both handles */
-    if (!cnx->coClosing) {
-        cnx->coLog = logLocalClosedFirst;  /* Arbitrary, both are done */
-        logEvent(cnx, cnx->server, cnx->coLog);
-        cnx->coClosing = 1;
-    }
+    /* Both sides have EOF - finalize stats before closing handles */
+    finalizeConnection(cnx, logLocalClosedFirst);  /* Arbitrary log reason for dual-EOF */
 
     /* Close local handle if not already closing */
     if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
@@ -2302,6 +2347,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
 
     int logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
+        stats_connection_denied();
         logEvent(cnx, srv, logCode);
         buffer_pool_free(buf->base, buf->len);
         /* No handles initialized yet, just remove from list and free */
@@ -2428,6 +2474,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     udp_send_to_backend(cnx, buf->base, (int)nread, buf->len);
 
     logEvent(cnx, srv, logOpened);
+    stats_connection_accepted(IPPROTO_UDP);
 
     /* Add to both hash table and LRU list */
     hash_insert_udp_connection(cnx);
@@ -2439,36 +2486,9 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
 {
-    /* If not already closing, log the event with final byte counts.
-       Note: handleClose() may be called twice (once for each socket) - this is normal.
-       We only log on the first call. */
-    if (!cnx->coClosing) {
-        cnx->coLog = (socket == &cnx->local) ?
-            logLocalClosedFirst : logRemoteClosedFirst;
-        logEvent(cnx, cnx->server, cnx->coLog);
-        cnx->coClosing = 1;
-
-        /* Update load balancing statistics */
-        if (cnx->selected_backend) {
-            uint64_t bytes_in = cnx->local.totalBytesIn + cnx->remote.totalBytesIn;
-            uint64_t bytes_out = cnx->local.totalBytesOut + cnx->remote.totalBytesOut;
-            lb_backend_connection_end(cnx->selected_backend, bytes_in, bytes_out);
-        }
-
-        /* Cleanup UDP connection: remove from hash table and LRU list */
-        if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
-            /* Remove from hash table */
-            hash_remove_udp_connection(cnx);
-
-            /* Remove from LRU list */
-            ServerInfo *srv = (ServerInfo*)cnx->server;
-            lru_remove(srv, cnx);
-
-            /* Decrement counter */
-            if (srv->udp_connection_count > 0)
-                srv->udp_connection_count--;
-        }
-    }
+    /* Finalize stats on first call (handleClose may be called twice, once per socket) */
+    int logReason = (socket == &cnx->local) ? logLocalClosedFirst : logRemoteClosedFirst;
+    finalizeConnection(cnx, logReason);
 
     /* Close the socket's libuv handle */
     if (socket->fd != INVALID_SOCKET) {
@@ -2626,6 +2646,8 @@ RETSIGTYPE hup(int s)
         return;
 
     logInfo("received SIGHUP, reloading configuration...\n");
+    /* Stop stats timers before reload */
+    stats_stop_timers();
     /* Set flag - readConfiguration() will be called after all handles close */
     config_reload_pending = 1;
     /* Clear old configuration - this starts async close of server handles */
@@ -2668,6 +2690,9 @@ RETSIGTYPE quit(int s)
     uv_close((uv_handle_t*)&sigint_handle, signal_handle_close_cb);
     uv_close((uv_handle_t*)&sigterm_handle, signal_handle_close_cb);
     uv_close((uv_handle_t*)&sigpipe_handle, signal_handle_close_cb);
+
+    /* Stop and close stats timers */
+    stats_shutdown();
 
     /* Close all server listeners (stops accepting new connections) */
     clearConfiguration();

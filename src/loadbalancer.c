@@ -386,6 +386,7 @@ void lb_backend_cleanup(BackendInfo *backend)
     if (!backend)
         return;
 
+    free(backend->name);
     free(backend->host);
     free(backend->port);
     free(backend->unixPath);

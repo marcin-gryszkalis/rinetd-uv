@@ -426,6 +426,174 @@ Under Linux the process ID is saved in the file `/var/run/rinetd-uv.pid` by defa
 pidfile /var/run/myrinetd-uv.pid
 ```
 
+### Status Reporting
+
+**rinetd-uv** can periodically write a status file containing runtime statistics, useful for monitoring and debugging.
+
+#### Legacy Format Configuration
+
+```
+statusfile /var/log/rinetd-uv_status.json
+statusinterval 30
+statusformat json
+statsloginterval 60
+```
+
+**statusfile** *path*
+:   Path to the status file. Status reporting is disabled if not specified.
+
+**statusinterval** *seconds*
+:   How often to write the status file.
+:   **Range:** 1 to unlimited seconds
+:   **Default:** 30 seconds
+
+**statusformat** *format*
+:   Output format for the status file.
+:   **Values:** `json` or `text`
+:   **Default:** `json`
+
+**statsloginterval** *seconds*
+:   How often to log a one-line statistics summary to the log file. Set to 0 to disable.
+:   **Range:** 0 to unlimited seconds
+:   **Default:** 60 seconds
+
+#### YAML Format Configuration
+
+In YAML configuration, status reporting is configured in a dedicated `status` block:
+
+```yaml
+global:
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `status.enabled` | boolean | false | Enable status file writing |
+| `status.file` | string | none | Path to status file |
+| `status.interval` | integer | 30 | Write interval in seconds |
+| `status.format` | string | json | Output format (`json` or `text`) |
+| `stats_log_interval` | integer | 60 | Log summary interval (0 to disable) |
+
+#### JSON Output Format
+
+The JSON status file includes:
+
+```json
+{
+  "timestamp": "2026-02-02T12:00:00Z",
+  "version": "2.1.0",
+  "uptime_seconds": 3600,
+  "config_reloads": 2,
+  "stats_since_reload": "2026-02-02T11:30:00Z",
+  "connections": {
+    "active": 150,
+    "active_tcp": 120,
+    "active_udp": 25,
+    "active_unix": 5,
+    "total": 50000,
+    "total_tcp": 45000,
+    "total_udp": 4500,
+    "total_unix": 500
+  },
+  "traffic": {
+    "bytes_in": 1073741824,
+    "bytes_out": 2147483648
+  },
+  "errors": {
+    "accept": 0,
+    "connect": 15,
+    "denied": 100
+  },
+  "buffer_pool": {
+    "buffer_size": 65536,
+    "free": 128,
+    "allocs_from_pool": 50000,
+    "allocs_from_malloc": 100
+  },
+  "servers": 5,
+  "rules": [
+    {
+      "name": "web-cluster",
+      "algorithm": "roundrobin",
+      "connections_active": 50,
+      "connections_total": 10000,
+      "bytes_in": 536870912,
+      "bytes_out": 1073741824,
+      "backends": [
+        {
+          "name": "web-cluster-backend-1",
+          "healthy": true,
+          "connections_active": 25,
+          "connections_total": 5000,
+          "bytes_in": 268435456,
+          "bytes_out": 536870912
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Text Output Format
+
+The text format provides a human-readable summary:
+
+```
+rinetd-uv Status Report
+Updated: 2026-02-02 12:00:00
+Version: 2.1.0
+Uptime: 1:00:00
+Config reloads: 2
+
+CONNECTIONS
+Active: 150 (TCP: 120, UDP: 25, Unix: 5)
+Total: 50000 (TCP: 45000, UDP: 4500, Unix: 500)
+
+TRAFFIC
+Bytes in: 1.0G
+Bytes out: 2.0G
+
+ERRORS
+Accept: 0
+Connect: 15
+Denied: 100
+
+BUFFER POOL
+Buffer size: 65536
+Free buffers: 128
+
+SERVERS
+Count: 5
+
+RULES
+  web-cluster (roundrobin):
+    Active: 50, Total: 10000, Traffic: 512.0M/1.0G
+    Backends:
+      web-cluster-backend-1: healthy, active=25, total=5000
+```
+
+#### Log Summary Format
+
+The periodic log summary outputs a single line with key metrics:
+
+```
+STATS: uptime=3600s conns=150/50000 tcp=120/45000 udp=25/4500 unix=5/500 traffic=1.0G/2.0G errors=0/15/100
+```
+
+Format: `conns=active/total`, `traffic=in/out`, `errors=accept/connect/denied`
+
+#### Security Considerations
+
+The status output intentionally omits sensitive information:
+- **No IP addresses or hostnames** are exposed in the status file
+- Backend servers are identified by their **name** field only
+- For YAML rules, backend names are auto-generated as `{rule-name}-backend-{N}` if not explicitly set
+
 ## INCLUDE DIRECTIVE
 
 Configuration files can include other configuration files using the `include` directive. This allows splitting large configurations into multiple files for better organization and maintainability.
@@ -577,6 +745,11 @@ The `global` section configures server-wide options. All settings are optional a
 | `pool_min_free` | integer | 64 | Minimum pooled buffers |
 | `pool_max_free` | integer | 1024 | Maximum pooled buffers |
 | `pool_trim_delay` | integer | 60000 | Pool trim delay in milliseconds |
+| `status.enabled` | boolean | false | Enable status file writing |
+| `status.file` | string | none | Path to status file |
+| `status.interval` | integer | 30 | Status file write interval in seconds |
+| `status.format` | string | json | Status file format (`json` or `text`) |
+| `stats_log_interval` | integer | 60 | Log summary interval in seconds (0 to disable) |
 
 ### Rules
 
@@ -885,6 +1058,14 @@ listen-backlog 128
 # Maximum UDP connections per forwarding rule (1-1000000, default: 5000)
 max-udp-connections 5000
 
+# Status reporting (writes JSON/text file with runtime statistics)
+statusfile /var/log/rinetd-uv_status.json
+statusinterval 30
+statusformat json
+
+# Statistics logging interval (one-line summary to log file)
+statsloginterval 60
+
 # Global Access Control:
 # You may specify global allow and deny rules here.
 # Only ip addresses are matched, hostnames cannot be specified here.
@@ -938,6 +1119,12 @@ global:
   pid_file: /var/run/rinetd-uv.pid
   pool_min_free: 64
   pool_max_free: 1024
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
 
 rules:
   # Simple 1:1 forwarding (equivalent to legacy format)

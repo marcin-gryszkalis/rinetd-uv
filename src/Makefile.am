@@ -11,6 +11,7 @@ rinetd_uv_SOURCES = rinetd.c rinetd.h \
                     loadbalancer.c loadbalancer.h \
                     affinity.c affinity.h \
                     yaml_config.c yaml_config.h \
+                    stats.c stats.h \
                     types.h
 
 BUILT_SOURCES = parse.c

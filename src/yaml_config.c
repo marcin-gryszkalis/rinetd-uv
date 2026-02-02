@@ -20,6 +20,7 @@
 #include "net.h"
 #include "rinetd.h"
 #include "log.h"
+#include "stats.h"
 
 /* Parser state */
 typedef enum {
@@ -27,6 +28,8 @@ typedef enum {
     STATE_ROOT,
     STATE_GLOBAL,
     STATE_GLOBAL_KEY,
+    STATE_STATUS,
+    STATE_STATUS_KEY,
     STATE_RULES,
     STATE_RULE,
     STATE_RULE_KEY,
@@ -487,6 +490,15 @@ static int finalize_rule(ParserContext *ctx)
         }
     }
 
+    /* Auto-generate backend names if not specified */
+    for (int i = 0; i < rule->backend_count; i++) {
+        if (!rule->backends[i].name) {
+            char auto_name[256];
+            snprintf(auto_name, sizeof(auto_name), "%s-backend-%d", rule->name, i + 1);
+            rule->backends[i].name = strdup(auto_name);
+        }
+    }
+
     /* Set default algorithm if multiple backends and none specified */
     if (rule->backend_count > 1 && rule->algorithm == LB_NONE)
         rule->algorithm = LB_ROUND_ROBIN;
@@ -611,6 +623,17 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 } else {
                     ctx->config->pool_trim_delay = val;
                 }
+            } else if (strcmp(ctx->current_key, "stats_log_interval") == 0) {
+                val = parse_int_strict(value, 0, 86400, "stats_log_interval", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->stats_log_interval = val;
+                }
+            } else if (strcmp(ctx->current_key, "status") == 0) {
+                /* status is a mapping, not a scalar - handled in MAPPING_START */
+                logWarning("'status' should be a mapping block, not a scalar value\n");
             } else {
                 logWarning("Unknown global option: %s\n", ctx->current_key);
             }
@@ -618,6 +641,43 @@ static void process_scalar(ParserContext *ctx, const char *value)
             free(ctx->current_key);
             ctx->current_key = NULL;
             ctx->state = STATE_GLOBAL;
+            break;
+        }
+
+        case STATE_STATUS_KEY: {
+            if (!ctx->current_key)
+                break;
+
+            int val;
+            char err_msg[256];
+
+            if (strcmp(ctx->current_key, "enabled") == 0) {
+                ctx->config->status.enabled = parse_bool(value, 0);
+            } else if (strcmp(ctx->current_key, "file") == 0) {
+                free(ctx->config->status.file);
+                ctx->config->status.file = safe_strdup(value, 4096);
+            } else if (strcmp(ctx->current_key, "interval") == 0) {
+                val = parse_int_strict(value, 1, 86400, "status.interval", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->status.interval = val;
+                }
+            } else if (strcmp(ctx->current_key, "format") == 0) {
+                if (strcasecmp(value, "json") == 0)
+                    ctx->config->status.format_json = 1;
+                else if (strcasecmp(value, "text") == 0)
+                    ctx->config->status.format_json = 0;
+                else
+                    logWarning("Unknown status format: %s (using json)\n", value);
+            } else {
+                logWarning("Unknown status option: %s\n", ctx->current_key);
+            }
+
+            free(ctx->current_key);
+            ctx->current_key = NULL;
+            ctx->state = STATE_STATUS;
             break;
         }
 
@@ -661,7 +721,10 @@ static void process_scalar(ParserContext *ctx, const char *value)
             if (!ctx->current_key || !ctx->current_backend)
                 break;
 
-            if (strcmp(ctx->current_key, "dest") == 0) {
+            if (strcmp(ctx->current_key, "name") == 0) {
+                free(ctx->current_backend->name);
+                ctx->current_backend->name = safe_strdup(value, 256);
+            } else if (strcmp(ctx->current_key, "dest") == 0) {
                 /* Parse destination address: "host:port/proto" or "unix:path" */
                 char *host = NULL, *port = NULL;
                 int protocol = IPPROTO_TCP;
@@ -827,6 +890,19 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                         ctx->current_key = NULL;
                     }
                     break;
+                case STATE_GLOBAL_KEY:
+                    /* Entering a nested mapping under global (e.g., status:) */
+                    if (ctx->current_key) {
+                        if (strcmp(ctx->current_key, "status") == 0) {
+                            ctx->state = STATE_STATUS;
+                        } else {
+                            logWarning("Unknown global mapping: %s\n", ctx->current_key);
+                            ctx->state = STATE_GLOBAL;
+                        }
+                        free(ctx->current_key);
+                        ctx->current_key = NULL;
+                    }
+                    break;
                 case STATE_RULES:
                     /* New rule */
                     ctx->current_rule = calloc(1, sizeof(RuleInfo));
@@ -865,6 +941,9 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
             switch (ctx->state) {
                 case STATE_GLOBAL:
                     ctx->state = STATE_ROOT;
+                    break;
+                case STATE_STATUS:
+                    ctx->state = STATE_GLOBAL;
                     break;
                 case STATE_RULE:
                     if (finalize_rule(ctx) != 0)
@@ -963,6 +1042,13 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                 case STATE_GLOBAL_KEY:
                     process_scalar(ctx, value);
                     break;
+                case STATE_STATUS:
+                    ctx->current_key = safe_strdup(value, 64);
+                    ctx->state = STATE_STATUS_KEY;
+                    break;
+                case STATE_STATUS_KEY:
+                    process_scalar(ctx, value);
+                    break;
                 case STATE_RULE:
                     ctx->current_key = safe_strdup(value, 64);
                     ctx->state = STATE_RULE_KEY;
@@ -1043,6 +1129,13 @@ YamlConfig *yaml_config_parse(const char *filename)
     config->pool_min_free = RINETD_DEFAULT_POOL_MIN_FREE;
     config->pool_max_free = RINETD_DEFAULT_POOL_MAX_FREE;
     config->pool_trim_delay = RINETD_DEFAULT_POOL_TRIM_DELAY;
+
+    /* Status reporting defaults */
+    config->status.enabled = 0;
+    config->status.file = NULL;
+    config->status.interval = 30;
+    config->status.format_json = 1;
+    config->stats_log_interval = 60;
 
     yaml_parser_t parser;
     yaml_event_t event;
@@ -1190,6 +1283,7 @@ void yaml_config_free(YamlConfig *config)
 
     free(config->log_file);
     free(config->pid_file);
+    free(config->status.file);
 
     /* Free rules */
     for (int i = 0; i < config->rule_count; i++) {
@@ -1252,6 +1346,19 @@ void yaml_config_apply_globals(YamlConfig *config)
     if (config->log_common) {
         extern int logFormatCommon;
         logFormatCommon = 1;
+    }
+
+    /* Apply status reporting configuration */
+    {
+        extern StatusConfig statusConfig;
+        extern int statsLogInterval;
+
+        statusConfig.enabled = config->status.enabled;
+        free(statusConfig.file);
+        statusConfig.file = config->status.file ? strdup(config->status.file) : NULL;
+        statusConfig.interval = config->status.interval;
+        statusConfig.format = config->status.format_json ? STATUS_FORMAT_JSON : STATUS_FORMAT_TEXT;
+        statsLogInterval = config->stats_log_interval;
     }
 }
 
