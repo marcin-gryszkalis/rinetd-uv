@@ -7,6 +7,12 @@ global:
   pid_file: /var/run/rinetd-uv.pid
   pool_min_free: 64
   pool_max_free: 1024
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
 
 rules:
   # Simple 1:1 forwarding (equivalent to legacy format)
