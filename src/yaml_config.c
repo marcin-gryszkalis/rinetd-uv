@@ -737,7 +737,6 @@ static void process_scalar(ParserContext *ctx, const char *value)
                             ctx->current_backend->isAbstract = is_abstract;
                         } else {
                             logError("Invalid Unix socket path: %s\n", host);
-                            free(host);
                             ctx->error = 1;
                         }
                         free(host);
