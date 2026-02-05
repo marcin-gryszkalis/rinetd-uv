@@ -5,17 +5,17 @@
  * **Load Balancing Feature:**
    - Many-to-many forwarding: multiple listeners to multiple backends
    - Different algorithms:
-      - Round-robin (default) with weighted round-robin support
-      - Least-connections for even distribution based on active connections
-      - Random for simple probabilistic distribution
-      - IP-hash algorithm for consistent routing based on client IP
+         - Round-robin (default) with weighted round-robin support
+         - Least-connections for even distribution based on active connections
+         - Random for simple probabilistic distribution
+         - IP-hash algorithm for consistent routing based on client IP
    - Health Checking:
-      - Passive health checking based on connection success/failure
-      - Configurable failure threshold and recover timeout
-      - Automatic failover when all backends are unhealthy
+         - Passive health checking based on connection success/failure
+         - Configurable failure threshold and recover timeout
+         - Automatic failover when all backends are unhealthy
    - Client Affinity (Session Persistence)
-      - Optional client IP affinity with configurable TTL
-      - LRU eviction when affinity table is full
+         - Optional client IP affinity with configurable TTL
+         - LRU eviction when affinity table is full
    - Requires configuration in YAML (see below)
 
  * **YAML Configuration Format:**
@@ -30,12 +30,13 @@
    - Global statistics: connections (TCP/UDP/Unix), traffic bytes, errors
    - Per-rule and per-backend statistics (with YAML configurations)
 
-## Version 2.0.3 (2026-01-26)
+## Version 2.0.3 (2026-02-05)
 
-**Better error validation and predictable test suite**
+**Small set of updates**
 
- * add missing error checking and more robust logging
- * test suite rewritten to more resilent architecture
+ * better logging (connection context)
+ * more robust error checking in libuv calls
+ * many updates to test_suite
 
 ## Version 2.0.2 (2026-01-25)
 

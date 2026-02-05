@@ -31,6 +31,8 @@ for i in $(seq 10 -1 1); do
 done
 echo ""
 
+cd ..
+
 if step 2 "Update VERSION file"; then
     echo "$VERSION" > VERSION
 fi
@@ -54,7 +56,7 @@ fi
 
 if step 6 "Test"; then
 # @@BEGIN:tests@@
-    venv/bin/pytest test_suite/ -v -m quick
+    test_suite/venv/bin/pytest test_suite/ -v -m quick
 # @@END:tests@@
 fi
 
