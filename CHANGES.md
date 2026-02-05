@@ -1,3 +1,11 @@
+## Version 2.0.3 (2026-02-05)
+
+** Small set of updates **
+
+ * better logging (connection context)
+ * more robust error checking in libuv calls
+ * many updates to test_suite
+
 ## Version 2.0.2 (2026-01-25)
 
 **Socket buffer size unification**
