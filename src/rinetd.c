@@ -43,6 +43,10 @@
 #include "log.h"
 #include "parse.h"
 #include "buffer_pool.h"
+#include "loadbalancer.h"
+#include "affinity.h"
+#include "yaml_config.h"
+#include "stats.h"
 
 Rule *allRules = NULL;
 int allRulesCount = 0;
@@ -50,6 +54,11 @@ int globalRulesCount = 0;
 
 ServerInfo *seInfo = NULL;
 int seTotal = 0;
+
+/* YAML configuration state */
+RuleInfo *yamlRules = NULL;
+int yamlRulesCount = 0;
+int usingYamlConfig = 0;
 
 /* Connection management */
 static ConnectionInfo *connectionListHead = NULL;
@@ -82,10 +91,12 @@ int listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
 int maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
 static RinetdOptions options = {
-    .conf_file = RINETD_CONFIG_FILE,
+    .conf_file = NULL,  /* Will be determined by findConfigFile() if not specified with -c */
     .foreground = 0,
     .debug = 0,
 };
+
+static int conf_file_explicit = 0;  /* Set to 1 if -c was used */
 
 static int forked = 0;
 static int config_reload_pending = 0;
@@ -99,8 +110,12 @@ static int checkConnectionAllowed(ConnectionInfo const *cnx);
 /* UDP hash table and LRU functions */
 static void init_udp_hash_table(void);
 static void cleanup_udp_hash_table(void);
+static void hash_remove_udp_connection(ConnectionInfo *cnx);
+static void lru_remove(ServerInfo *srv, ConnectionInfo *cnx);
+static void cleanup_yaml_rules(void);
 
 static int readArgs(int argc, char **argv, RinetdOptions *options);
+static char const *findConfigFile(void);
 static void clearConfiguration(void);
 static void readConfiguration(char const *file);
 
@@ -124,6 +139,7 @@ static void check_all_servers_closed(void);
 int main(int argc, char *argv[])
 {
     log_init();
+    stats_init();
 
 #ifdef _WIN32
     WSADATA wsaData;
@@ -136,6 +152,11 @@ int main(int argc, char *argv[])
 
     readArgs(argc, argv, &options);
     log_set_debug(options.debug);
+
+    /* If -c not specified, find config file in order: .yaml, .yml, .conf */
+    if (!conf_file_explicit) {
+        options.conf_file = findConfigFile();
+    }
 
     if (!options.foreground) {
 #if HAVE_DAEMON
@@ -153,6 +174,11 @@ int main(int argc, char *argv[])
     }
 
     readConfiguration(options.conf_file);
+
+    /* If using YAML config, initialize from rules */
+    if (usingYamlConfig)
+        initializeFromYamlRules();
+
     if (pidFileName || !options.foreground)
         registerPID(pidFileName ? pidFileName : RINETD_PID_FILE);
 
@@ -221,6 +247,9 @@ int main(int argc, char *argv[])
     buffer_pool_init(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
     buffer_pool_warm();
 
+    /* Start status reporting timers */
+    stats_start_timers();
+
     /* Start libuv event handling for all servers */
     for (int i = 0; i < seTotal; ++i)
         startServerListening(&seInfo[i]);
@@ -242,17 +271,38 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Close all remaining handles gracefully */
-    uv_walk(main_loop, (uv_walk_cb)uv_close, NULL);
-    uv_run(main_loop, UV_RUN_DEFAULT);  /* Process close callbacks */
-
-    /* Cleanup UDP hash table */
-    cleanup_udp_hash_table();
-
-    /* Close the loop */
-    uv_loop_close(main_loop);
+    /* Perform graceful cleanup (called outside signal callback context) */
+    quit(0);
 
     return 0;
+}
+
+static void cleanup_yaml_rules(void)
+{
+    if (!usingYamlConfig || !yamlRules)
+        return;
+
+    for (int i = 0; i < yamlRulesCount; i++) {
+        RuleInfo *rule = &yamlRules[i];
+
+        /* Free listeners array (the ServerInfo structs themselves are in seInfo,
+         * which is freed separately) */
+        free(rule->listeners);
+
+        /* Free backends */
+        for (int j = 0; j < rule->backend_count; j++)
+            lb_backend_cleanup(&rule->backends[j]);
+        free(rule->backends);
+
+        /* Free affinity table */
+        if (rule->affinity_table)
+            affinity_table_free(rule->affinity_table);
+
+        free(rule->name);
+    }
+    free(yamlRules);
+    yamlRules = NULL;
+    yamlRulesCount = 0;
 }
 
 static void clearConfiguration(void)
@@ -264,6 +314,14 @@ static void clearConfiguration(void)
     int any_handles_to_close = 0;
     for (int i = 0; i < seTotal; ++i) {
         ServerInfo *srv = &seInfo[i];
+
+        /* Close DNS refresh timer if initialized */
+        if (srv->dns_timer_initialized) {
+            uv_timer_stop(&srv->dns_refresh_timer);
+            uv_close((uv_handle_t*)&srv->dns_refresh_timer, dns_timer_close_cb);
+            any_handles_to_close = 1;
+        }
+
         if (srv->handle_initialized) {
             any_handles_to_close = 1;
             /* Stop listening/recv before closing */
@@ -309,6 +367,9 @@ static void clearConfiguration(void)
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
+            /* Update stats and restart timers */
+            stats_on_config_reload();
+            stats_restart_timers_if_needed();
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
@@ -320,6 +381,10 @@ static void clearConfiguration(void)
     free(allRules);
     allRules = NULL;
     allRulesCount = globalRulesCount = 0;
+
+    /* Cleanup YAML rules if using YAML config */
+    cleanup_yaml_rules();
+
     /* Free file names */
     free(logFileName);
     logFileName = NULL;
@@ -329,6 +394,8 @@ static void clearConfiguration(void)
 
 static void readConfiguration(char const *file)
 {
+    logInfo("loading configuration from: %s\n", file);
+
     /* Reset configurable values to defaults before re-parsing (for SIGHUP) */
     bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
     globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
@@ -338,8 +405,31 @@ static void readConfiguration(char const *file)
     listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
     maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
 
-    /* Parse the configuration file. */
-    parseConfiguration(file);
+    /* Check if this is a YAML config file */
+    if (yaml_config_is_yaml_file(file)) {
+        YamlConfig *config = yaml_config_parse(file);
+        if (!config) {
+            logError("Failed to parse YAML configuration: %s\n", file);
+            exit(1);
+        }
+
+        /* Apply global settings */
+        yaml_config_apply_globals(config);
+
+        /* Store rules for later initialization */
+        yamlRules = config->rules;
+        yamlRulesCount = config->rule_count;
+        usingYamlConfig = 1;
+
+        /* Transfer ownership - don't free rules, just the config wrapper */
+        config->rules = NULL;
+        config->rule_count = 0;
+        yaml_config_free(config);
+    } else {
+        /* Parse legacy configuration file */
+        usingYamlConfig = 0;
+        parseConfiguration(file);
+    }
 
     /* Open the log file */
     if (logFd != -1) {
@@ -569,10 +659,13 @@ static void signal_cb(uv_signal_t *handle, int signum)
     if (signum == SIGHUP) {
         hup(signum);
     } else if (signum == SIGINT || signum == SIGTERM) {
-        quit(signum);
+        logInfo("received %s signal - initiating graceful shutdown\n", signum == SIGINT ? "INT" : "TERM");
+        should_exit = 1;
+        uv_stop(main_loop);  /* Interrupt current UV_RUN_DEFAULT iteration */
     } else if (signum == SIGPIPE) {
         /* SIGPIPE is ignored (no-op callback) */
         /* This prevents the process from terminating on broken pipes */
+        logInfo("received SIGPIPE signal - ignored\n");
     }
 }
 
@@ -661,7 +754,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.pipe, &fd);
         srv->fd = fd;
     }
@@ -691,7 +784,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.tcp, &fd);
         srv->fd = fd;
     }
@@ -721,7 +814,7 @@ static void startServerListening(ServerInfo *srv)
         }
 
         /* Get the actual fd for logging/cleanup */
-        uv_os_fd_t fd;
+        uv_os_fd_t fd = INVALID_SOCKET;
         uv_fileno((uv_handle_t*)&srv->uv_handle.udp, &fd);
         srv->fd = fd;
     }
@@ -782,6 +875,9 @@ static void check_all_servers_closed(void)
             /* Start new servers listening */
             for (int i = 0; i < seTotal; ++i)
                 startServerListening(&seInfo[i]);
+            /* Update stats and restart timers */
+            stats_on_config_reload();
+            stats_restart_timers_if_needed();
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
         }
     }
@@ -878,10 +974,17 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
 
     if (status < 0) {
         logErrorConn(cnx, "connect error: %s\n", uv_strerror(status));
+        stats_error_connect();
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
-        /* Track failures and trigger DNS refresh if threshold reached */
-        if (cnx->server) {
+        /* Track backend health for load balancing */
+        if (cnx->selected_backend && cnx->rule) {
+            lb_backend_mark_failure(cnx->selected_backend, cnx->rule);
+            lb_backend_connection_end(cnx->selected_backend, 0, 0);
+        }
+
+        /* Track failures and trigger DNS refresh if threshold reached (legacy) */
+        if (cnx->server && !cnx->selected_backend) {
             ServerInfo *srv = (ServerInfo *)cnx->server;
             srv->consecutive_failures++;
             if (srv->consecutive_failures >= RINETD_DNS_REFRESH_FAILURE_THRESHOLD &&
@@ -903,7 +1006,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t fd;
+    uv_os_fd_t fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.tcp, &fd);
     cnx->local.fd = fd;
 
@@ -940,9 +1043,14 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
     }
 
     logEvent(cnx, cnx->server, logOpened);
+    stats_connection_accepted(IPPROTO_TCP);
 
-    /* Reset failure counter on successful connection */
-    if (cnx->server)
+    /* Mark backend healthy on successful connection (load balancing) */
+    if (cnx->selected_backend && cnx->rule)
+        lb_backend_mark_success(cnx->selected_backend, cnx->rule);
+
+    /* Reset failure counter on successful connection (legacy) */
+    if (cnx->server && !cnx->selected_backend)
         ((ServerInfo *)cnx->server)->consecutive_failures = 0;
 }
 
@@ -951,6 +1059,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 {
     if (status < 0) {
         logError("accept error: %s\n", uv_strerror(status));
+        stats_error_accept();
         return;
     }
 
@@ -983,6 +1092,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     /* Get remote address immediately after accept */
     struct sockaddr_storage addr;
+    memset(&addr, 0, sizeof(addr));
     int addrlen = sizeof(addr);
     ret = uv_tcp_getpeername(&cnx->remote_uv_handle.tcp, (struct sockaddr*)&addr, &addrlen);
     if (ret != 0) {
@@ -996,6 +1106,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
 
     int logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
+        stats_connection_denied();
         cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
         uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
         logEvent(cnx, srv, logCode);
@@ -1013,7 +1124,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t remote_fd;
+    uv_os_fd_t remote_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.tcp, &remote_fd);
     cnx->remote.fd = remote_fd;
 
@@ -1023,9 +1134,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cnx->remote.totalBytesIn = cnx->remote.totalBytesOut = 0;
 
     cnx->local.fd = INVALID_SOCKET;
-    /* Set local family based on backend type - Unix or TCP */
-    cnx->local.family = srv->toUnixPath ? AF_UNIX : srv->toAddrInfo->ai_family;
-    cnx->local.protocol = srv->toUnixPath ? 0 : IPPROTO_TCP;
+    /* local.family will be set after backend selection */
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
     cnx->coClosing = 0;
@@ -1033,12 +1142,57 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cacheServerInfoForLogging(cnx, srv);
     cnx->timer_initialized = 0;
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    char *backend_unix_path = NULL;
+    int backend_is_abstract = 0;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        /* YAML config with load balancing */
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_unix_path = backend->unixPath;
+            backend_is_abstract = backend->isAbstract;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields if no backend selected */
+    if (!backend_addr && !backend_unix_path) {
+        backend_addr = srv->toAddrInfo;
+        backend_unix_path = srv->toUnixPath;
+        backend_is_abstract = srv->toIsAbstract;
+        backend_source = srv->sourceAddrInfo;
+    }
+
+    /* Set local family/protocol based on backend type */
+    if (backend_unix_path) {
+        cnx->local.family = AF_UNIX;
+        cnx->local.protocol = 0;
+    } else if (backend_addr) {
+        cnx->local.family = backend_addr->ai_family;
+        cnx->local.protocol = IPPROTO_TCP;
+    } else {
+        /* No backend available - this shouldn't happen */
+        logErrorConn(cnx, "No backend address available\n");
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+        return;
+    }
+
     /* Connect to backend - either TCP or Unix socket */
-    if (srv->toUnixPath) {
+    if (backend_unix_path) {
         /* Backend is Unix socket */
         ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
         if (ret != 0) {
             logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
             return;
@@ -1050,6 +1204,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for Unix connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1059,11 +1214,12 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         connect_req->data = cnx;
 
         /* Connect to Unix socket backend */
-        if (srv->toIsAbstract) {
+        if (backend_is_abstract) {
             char abstract_name[UNIX_PATH_MAX + 2];
-            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            size_t name_len = prepareAbstractSocketName(backend_unix_path, abstract_name);
             if (name_len == 0) {
                 free(connect_req);
+                if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
                 uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1072,13 +1228,14 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             }
             uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, backend_unix_path, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
         ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
             return;
@@ -1087,9 +1244,10 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
 
-        /* Bind to source address if specified */
-        if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
+        /* Bind to source address if specified (backend-specific or server default) */
+        struct addrinfo *source = backend_source ? backend_source : srv->sourceAddrInfo;
+        if (source) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, source->ai_addr, 0);
             if (ret != 0) {
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
                 /* Continue anyway - binding is optional */
@@ -1100,6 +1258,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1108,10 +1267,11 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, backend_addr->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1132,6 +1292,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
 
     if (status < 0) {
         logErrorConn(cnx, "Unix connect error: %s\n", uv_strerror(status));
+        stats_error_connect();
         logEvent(cnx, cnx->server, logLocalConnectFailed);
 
         /* Close local handle that was initialized but failed to connect */
@@ -1150,7 +1311,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     }
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t fd;
+    uv_os_fd_t fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.pipe, &fd);
     cnx->local.fd = fd;
 
@@ -1181,6 +1342,7 @@ static void unix_connect_cb(uv_connect_t *req, int status)
     }
 
     logEvent(cnx, cnx->server, logOpened);
+    stats_connection_accepted(0);  /* Unix socket - protocol 0 */
 
     /* Reset failure counter on successful connection */
     if (cnx->server)
@@ -1192,6 +1354,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
 {
     if (status < 0) {
         logError("Unix accept error: %s\n", uv_strerror(status));
+        stats_error_accept();
         return;
     }
 
@@ -1223,7 +1386,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     set_socket_buffer_sizes((uv_handle_t *)&cnx->remote_uv_handle.pipe);
 
     /* Extract fd for Socket struct */
-    uv_os_fd_t remote_fd;
+    uv_os_fd_t remote_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->remote_uv_handle.pipe, &remote_fd);
     cnx->remote.fd = remote_fd;
 
@@ -1249,12 +1412,57 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     /* No IP-based access control for Unix sockets - filesystem permissions apply */
     /* Skip checkConnectionAllowed() */
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    char *backend_unix_path = NULL;
+    int backend_is_abstract = 0;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        /* YAML config with load balancing */
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_unix_path = backend->unixPath;
+            backend_is_abstract = backend->isAbstract;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields if no backend selected */
+    if (!backend_addr && !backend_unix_path) {
+        backend_addr = srv->toAddrInfo;
+        backend_unix_path = srv->toUnixPath;
+        backend_is_abstract = srv->toIsAbstract;
+        backend_source = srv->sourceAddrInfo;
+    }
+
+    /* Set local family/protocol based on backend type */
+    if (backend_unix_path) {
+        cnx->local.family = AF_UNIX;
+        cnx->local.protocol = 0;
+    } else if (backend_addr) {
+        cnx->local.family = backend_addr->ai_family;
+        cnx->local.protocol = IPPROTO_TCP;
+    } else {
+        /* No backend available */
+        logErrorConn(cnx, "No backend address available\n");
+        cnx->remote_handle_closing = 1;
+        uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+        return;
+    }
+
     /* Connect to backend - either TCP or Unix */
-    if (srv->toUnixPath) {
+    if (backend_unix_path) {
         /* Backend is Unix socket */
         ret = uv_pipe_init(main_loop, &cnx->local_uv_handle.pipe, 0);
         if (ret != 0) {
             logErrorConn(cnx, "uv_pipe_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
             return;
@@ -1262,11 +1470,11 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_type = UV_NAMED_PIPE;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.pipe.data = cnx;
-        cnx->local.family = AF_UNIX;
 
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for Unix connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1276,12 +1484,13 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         connect_req->data = cnx;
 
         /* Connect to Unix socket backend */
-        if (srv->toIsAbstract) {
+        if (backend_is_abstract) {
             /* Abstract socket */
             char abstract_name[UNIX_PATH_MAX + 1];
-            size_t name_len = prepareAbstractSocketName(srv->toUnixPath, abstract_name);
+            size_t name_len = prepareAbstractSocketName(backend_unix_path, abstract_name);
             if (name_len == 0) {
                 free(connect_req);
+                if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
                 cnx->local_handle_closing = 1;
                 cnx->remote_handle_closing = 1;
                 uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
@@ -1290,13 +1499,14 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             }
             uv_pipe_connect2(connect_req, &cnx->local_uv_handle.pipe, abstract_name, name_len, UV_PIPE_NO_TRUNCATE, unix_connect_cb);
         } else {
-            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, srv->toUnixPath, unix_connect_cb);
+            uv_pipe_connect(connect_req, &cnx->local_uv_handle.pipe, backend_unix_path, unix_connect_cb);
         }
     } else {
         /* Backend is TCP */
         ret = uv_tcp_init(main_loop, &cnx->local_uv_handle.tcp);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_init error: %s\n", uv_strerror(ret));
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
             return;
@@ -1304,12 +1514,10 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         cnx->local_handle_type = UV_TCP;
         cnx->local_handle_initialized = 1;
         cnx->local_uv_handle.tcp.data = cnx;
-        cnx->local.family = srv->toAddrInfo->ai_family;
-        cnx->local.protocol = IPPROTO_TCP;
 
         /* Bind to source address if specified */
-        if (srv->sourceAddrInfo) {
-            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, srv->sourceAddrInfo->ai_addr, 0);
+        if (backend_source) {
+            ret = uv_tcp_bind(&cnx->local_uv_handle.tcp, backend_source->ai_addr, 0);
             if (ret != 0)
                 logErrorConn(cnx, "bind (source) error: %s\n", uv_strerror(ret));
         }
@@ -1317,6 +1525,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         uv_connect_t *connect_req = malloc(sizeof(uv_connect_t));
         if (!connect_req) {
             logErrorConn(cnx, "malloc failed for TCP connect request\n");
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1325,10 +1534,11 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         }
         connect_req->data = cnx;
 
-        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, srv->toAddrInfo->ai_addr, tcp_connect_cb);
+        ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, backend_addr->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
             free(connect_req);
+            if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
             cnx->remote_handle_closing = 1;
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
@@ -1378,6 +1588,35 @@ static void tcp_write_cb(uv_write_t *req, int status);
 /* Forward declaration for shutdown callback */
 static void shutdown_cb(uv_shutdown_t *req, int status);
 
+/* Helper: finalize connection statistics and cleanup (called once per connection) */
+static void finalizeConnection(ConnectionInfo *cnx, int logReason)
+{
+    if (cnx->coClosing)
+        return;
+
+    cnx->coLog = logReason;
+    logEvent(cnx, cnx->server, cnx->coLog);
+    cnx->coClosing = 1;
+
+    /* Update global statistics */
+    uint64_t bytes_in = cnx->local.totalBytesIn + cnx->remote.totalBytesIn;
+    uint64_t bytes_out = cnx->local.totalBytesOut + cnx->remote.totalBytesOut;
+    stats_connection_closed(cnx->remote.protocol, bytes_in, bytes_out);
+
+    /* Update load balancing statistics */
+    if (cnx->selected_backend)
+        lb_backend_connection_end(cnx->selected_backend, bytes_in, bytes_out);
+
+    /* Cleanup UDP connection: remove from hash table and LRU list */
+    if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
+        hash_remove_udp_connection(cnx);
+        ServerInfo *srv = (ServerInfo*)cnx->server;
+        lru_remove(srv, cnx);
+        if (srv->udp_connection_count > 0)
+            srv->udp_connection_count--;
+    }
+}
+
 /* Helper: check if connection can be fully closed (both sides EOF) */
 static void tryFullClose(ConnectionInfo *cnx)
 {
@@ -1385,12 +1624,8 @@ static void tryFullClose(ConnectionInfo *cnx)
     if (!cnx->local_read_eof || !cnx->remote_read_eof)
         return;
 
-    /* Both sides have EOF - now we can safely close both handles */
-    if (!cnx->coClosing) {
-        cnx->coLog = logLocalClosedFirst;  /* Arbitrary, both are done */
-        logEvent(cnx, cnx->server, cnx->coLog);
-        cnx->coClosing = 1;
-    }
+    /* Both sides have EOF - finalize stats before closing handles */
+    finalizeConnection(cnx, logLocalClosedFirst);  /* Arbitrary log reason for dual-EOF */
 
     /* Close local handle if not already closing */
     if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
@@ -1720,12 +1955,19 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
     sreq->buffer_size = data_len; /* Bytes being sent (for stats) */
     sreq->alloc_size = alloc_size; /* Allocated size (for pool) */
     sreq->is_to_backend = 1;
-    sreq->dest_addr = *(struct sockaddr_storage*)cnx->server->toAddrInfo->ai_addr;
+
+    /* Use selected backend address or fall back to server address */
+    struct addrinfo *backend_addr = cnx->selected_backend ?
+        cnx->selected_backend->addrInfo : cnx->server->toAddrInfo;
+
+    /* Copy address with correct size (not full sockaddr_storage which would overrun) */
+    memset(&sreq->dest_addr, 0, sizeof(sreq->dest_addr));
+    memcpy(&sreq->dest_addr, backend_addr->ai_addr, backend_addr->ai_addrlen);
 
     /* Set up buffer for sending */
     uv_buf_t wrbuf = uv_buf_init(data, data_len);
 
-    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1, cnx->server->toAddrInfo->ai_addr, udp_send_cb);
+    int ret = uv_udp_send(&sreq->req, &cnx->local_uv_handle.udp, &wrbuf, 1, backend_addr->ai_addr, udp_send_cb);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_send (to backend) error: %s\n", uv_strerror(ret));
         buffer_pool_free(sreq->buffer, sreq->alloc_size);
@@ -2052,11 +2294,12 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     }
 
     ServerInfo *srv = (ServerInfo*)handle->data;
-    uv_os_fd_t server_fd;
+    uv_os_fd_t server_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)handle, &server_fd);
 
-    /* Convert to sockaddr_storage for hashing */
+    /* Convert to sockaddr_storage for hashing (zero-init to avoid uninitialized padding) */
     struct sockaddr_storage addr_storage;
+    memset(&addr_storage, 0, sizeof(addr_storage));
     memcpy(&addr_storage, addr, addr->sa_family == AF_INET ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6));
 
     /* O(1) hash lookup instead of O(n) list scan */
@@ -2094,11 +2337,17 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     }
 
     /* Setup minimal state needed for rule check */
-    cnx->remoteAddress = *(struct sockaddr_storage*)addr;
+    /* Copy address with correct size based on family (not full sockaddr_storage) */
+    memset(&cnx->remoteAddress, 0, sizeof(cnx->remoteAddress));
+    size_t addr_len = (addr->sa_family == AF_INET) ? sizeof(struct sockaddr_in) :
+                      (addr->sa_family == AF_INET6) ? sizeof(struct sockaddr_in6) :
+                      sizeof(struct sockaddr);
+    memcpy(&cnx->remoteAddress, addr, addr_len);
     cnx->server = srv;
 
     int logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
+        stats_connection_denied();
         logEvent(cnx, srv, logCode);
         buffer_pool_free(buf->base, buf->len);
         /* No handles initialized yet, just remove from list and free */
@@ -2121,6 +2370,28 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
     cacheServerInfoForLogging(cnx, srv);
 
+    /* Load balancing: select backend if rule has multiple backends */
+    BackendInfo *backend = NULL;
+    struct addrinfo *backend_addr = NULL;
+    struct addrinfo *backend_source = NULL;
+
+    if (srv->rule && srv->rule->backend_count > 0) {
+        backend = lb_select_backend(srv->rule, &cnx->remoteAddress);
+        if (backend) {
+            cnx->selected_backend = backend;
+            cnx->rule = srv->rule;
+            lb_backend_connection_start(backend);
+            backend_addr = backend->addrInfo;
+            backend_source = backend->sourceAddrInfo;
+        }
+    }
+
+    /* Fall back to legacy ServerInfo fields */
+    if (!backend_addr) {
+        backend_addr = srv->toAddrInfo;
+        backend_source = srv->sourceAddrInfo;
+    }
+
     /* Remote handle shared with server (don't initialize separate handle) */
     cnx->remote_handle_initialized = 0;
 
@@ -2128,6 +2399,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     int ret = uv_timer_init(main_loop, &cnx->timeout_timer);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_init error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         buffer_pool_free(buf->base, buf->len);
         free(cnx);
         return;
@@ -2136,6 +2408,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
         buffer_pool_free(buf->base, buf->len);
         return;
@@ -2146,6 +2419,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     ret = uv_udp_init(main_loop, &cnx->local_uv_handle.udp);
     if (ret != 0) {
         logErrorConn(cnx, "uv_udp_init error: %s\n", uv_strerror(ret));
+        if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         cnx->timer_closing = 1;
         uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
         buffer_pool_free(buf->base, buf->len);
@@ -2155,17 +2429,17 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     cnx->local_handle_initialized = 1;
     cnx->local_uv_handle.udp.data = cnx;
 
-    cnx->local.family = srv->toAddrInfo->ai_family;
+    cnx->local.family = backend_addr->ai_family;
     cnx->local.protocol = IPPROTO_UDP;
     cnx->local.totalBytesIn = cnx->local.totalBytesOut = 0;
 
     /* Bind socket - required to get fd for buffer size setting */
-    if (srv->sourceAddrInfo) {
-        ret = uv_udp_bind(&cnx->local_uv_handle.udp, srv->sourceAddrInfo->ai_addr, 0);
+    if (backend_source) {
+        ret = uv_udp_bind(&cnx->local_uv_handle.udp, backend_source->ai_addr, 0);
     } else {
         struct sockaddr_storage any_addr;
         memset(&any_addr, 0, sizeof(any_addr));
-        if (srv->toAddrInfo->ai_family == AF_INET6) {
+        if (backend_addr->ai_family == AF_INET6) {
             struct sockaddr_in6 *a = (struct sockaddr_in6 *)&any_addr;
             a->sin6_family = AF_INET6;
         } else {
@@ -2180,7 +2454,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     set_socket_buffer_sizes((uv_handle_t *)&cnx->local_uv_handle.udp);
 
     /* Extract fd */
-    uv_os_fd_t local_fd;
+    uv_os_fd_t local_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)&cnx->local_uv_handle.udp, &local_fd);
     cnx->local.fd = local_fd;
 
@@ -2200,6 +2474,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     udp_send_to_backend(cnx, buf->base, (int)nread, buf->len);
 
     logEvent(cnx, srv, logOpened);
+    stats_connection_accepted(IPPROTO_UDP);
 
     /* Add to both hash table and LRU list */
     hash_insert_udp_connection(cnx);
@@ -2211,29 +2486,9 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket)
 {
-    /* If not already closing, log the event with final byte counts.
-       Note: handleClose() may be called twice (once for each socket) - this is normal.
-       We only log on the first call. */
-    if (!cnx->coClosing) {
-        cnx->coLog = (socket == &cnx->local) ?
-            logLocalClosedFirst : logRemoteClosedFirst;
-        logEvent(cnx, cnx->server, cnx->coLog);
-        cnx->coClosing = 1;
-
-        /* Cleanup UDP connection: remove from hash table and LRU list */
-        if (cnx->remote.protocol == IPPROTO_UDP && cnx->server) {
-            /* Remove from hash table */
-            hash_remove_udp_connection(cnx);
-
-            /* Remove from LRU list */
-            ServerInfo *srv = (ServerInfo*)cnx->server;
-            lru_remove(srv, cnx);
-
-            /* Decrement counter */
-            if (srv->udp_connection_count > 0)
-                srv->udp_connection_count--;
-        }
-    }
+    /* Finalize stats on first call (handleClose may be called twice, once per socket) */
+    int logReason = (socket == &cnx->local) ? logLocalClosedFirst : logRemoteClosedFirst;
+    finalizeConnection(cnx, logReason);
 
     /* Close the socket's libuv handle */
     if (socket->fd != INVALID_SOCKET) {
@@ -2391,6 +2646,8 @@ RETSIGTYPE hup(int s)
         return;
 
     logInfo("received SIGHUP, reloading configuration...\n");
+    /* Stop stats timers before reload */
+    stats_stop_timers();
     /* Set flag - readConfiguration() will be called after all handles close */
     config_reload_pending = 1;
     /* Clear old configuration - this starts async close of server handles */
@@ -2398,11 +2655,145 @@ RETSIGTYPE hup(int s)
 }
 #endif /* _WIN32 */
 
+/* Debug: walk all handles and print their type/state */
+static void debug_walk_cb(uv_handle_t* handle, void* arg)
+{
+    int *count = (int*)arg;
+    const char *type_name = uv_handle_type_name(handle->type);
+    if (!type_name)
+        type_name = "unknown";
+
+    logDebug("  handle %d: type=%s, closing=%d, data=%p\n", *count, type_name, uv_is_closing(handle), handle->data);
+    (*count)++;
+}
+
+/* Signal handle close callback - called when signal handle finishes closing */
+static void signal_handle_close_cb(uv_handle_t* handle)
+{
+    logDebug("signal handle close callback\n");
+    (void)handle;
+    /* Nothing to do - just allows the close to complete properly */
+}
+
 RETSIGTYPE quit(int s)
 {
     (void)s;
 
-    /* Obey the request, but first flush the log */
+    logInfo("forced quit - closing connections gracefully\n");
+
+    /* Stop and close signal handlers to allow loop to exit cleanly */
+    uv_signal_stop(&sighup_handle);
+    uv_signal_stop(&sigint_handle);
+    uv_signal_stop(&sigterm_handle);
+    uv_signal_stop(&sigpipe_handle);
+    uv_close((uv_handle_t*)&sighup_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigint_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigterm_handle, signal_handle_close_cb);
+    uv_close((uv_handle_t*)&sigpipe_handle, signal_handle_close_cb);
+
+    /* Stop and close stats timers */
+    stats_shutdown();
+
+    /* Close all server listeners (stops accepting new connections) */
+    clearConfiguration();
+
+    /* Close backend DNS refresh timers (keeps loop alive if not closed) */
+    if (usingYamlConfig && yamlRules) {
+        for (int r = 0; r < yamlRulesCount; r++) {
+            RuleInfo *rule = &yamlRules[r];
+            for (int b = 0; b < rule->backend_count; b++) {
+                BackendInfo *backend = &rule->backends[b];
+                if (backend->dns_timer_initialized && !backend->dns_timer_closing) {
+                    backend->dns_timer_closing = 1;
+                    uv_timer_stop(&backend->dns_timer);
+                    uv_close((uv_handle_t*)&backend->dns_timer, NULL);
+                }
+            }
+        }
+    }
+
+    /* Close all active connection handles (iterate carefully as list may be modified) */
+    ConnectionInfo *cnx = connectionListHead;
+    while (cnx) {
+        ConnectionInfo *next = cnx->next;  /* Save next before async close */
+
+        /* Close local handle if initialized and not already closing */
+        if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
+            cnx->local_handle_closing = 1;
+            if (cnx->local_handle_type == UV_TCP) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, NULL);
+            } else if (cnx->local_handle_type == UV_UDP) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.udp, NULL);
+            } else if (cnx->local_handle_type == UV_NAMED_PIPE) {
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, NULL);
+            }
+        }
+
+        /* Close remote handle if initialized and not already closing */
+        if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
+            cnx->remote_handle_closing = 1;
+            if (cnx->remote_handle_type == UV_TCP) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, NULL);
+            } else if (cnx->remote_handle_type == UV_UDP) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.udp, NULL);
+            } else if (cnx->remote_handle_type == UV_NAMED_PIPE) {
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, NULL);
+            }
+        }
+
+        /* Close timeout timer if initialized and not already closing */
+        if (cnx->timer_initialized && !cnx->timer_closing) {
+            cnx->timer_closing = 1;
+            uv_close((uv_handle_t*)&cnx->timeout_timer, NULL);
+        }
+
+        cnx = next;
+    }
+
+    /* Run event loop to process close callbacks
+     * Hybrid approach: UV_RUN_NOWAIT (fast) + periodic UV_RUN_ONCE (ensures close callbacks) */
+    logDebug("processing close callbacks...\n");
+    int iterations = 0;
+
+    while (uv_loop_alive(main_loop) && iterations < RINETD_CLEANUP_MAX_ITERATIONS) {
+        /* Use UV_RUN_ONCE every 10 iterations to ensure close callbacks get processed,
+         * otherwise use UV_RUN_NOWAIT for speed */
+        /* if (iterations % 10 == 0) {
+            uv_run(main_loop, UV_RUN_ONCE);
+        } else { */
+            uv_run(main_loop, UV_RUN_NOWAIT);
+        /* } */
+
+        iterations++;
+
+        /* Diagnostic logging */
+        /*
+        if (iterations % 10 == 0) {
+            uv_metrics_t metrics;
+            uv_metrics_info(main_loop, &metrics);
+            logDebug("closing: iteration %d -- %lld events -- alive=%d -- handles=%u\n",
+                     iterations, metrics.events_waiting, uv_loop_alive(main_loop),
+                     main_loop->active_handles);
+        }
+        */
+
+        /* Small sleep every iteration to avoid busy-waiting */
+        struct timespec ts = {0, 1000000};  /* 1ms */
+        nanosleep(&ts, NULL);
+    }
+
+    if (iterations >= RINETD_CLEANUP_MAX_ITERATIONS) {
+        logWarning("some handles may not have closed cleanly\n");
+        /* Debug: enumerate all remaining handles */
+        int handle_count = 0;
+        logDebug("enumerating remaining handles:\n");
+        uv_walk(main_loop, debug_walk_cb, &handle_count);
+        logDebug("total handles: %d\n", handle_count);
+    } else {
+        logDebug("all handles closed successfully\n");
+    }
+
+    /* Flush the log before closing */
     if (logFd != -1) {
         uv_fs_t req;
         uv_fs_close(NULL, &req, logFd, NULL);
@@ -2410,13 +2801,19 @@ RETSIGTYPE quit(int s)
         logFd = -1;
     }
 
-    logInfo("forced quit\n");
-
     /* Shutdown buffer pool */
     buffer_pool_shutdown();
 
-    /* Clear configuration (connections will be freed when process exits) */
-    clearConfiguration();
+    /* Cleanup UDP hash table */
+    cleanup_udp_hash_table();
+
+    /* Cleanup YAML rules */
+    cleanup_yaml_rules();
+
+    /* Close the event loop */
+    uv_loop_close(main_loop);
+
+    logInfo("graceful shutdown complete\n");
     exit(0);
 }
 
@@ -2442,6 +2839,74 @@ error:
 #endif
 }
 
+/* Initialize servers from YAML rules (called after yaml_config_parse) */
+void initializeFromYamlRules(void)
+{
+    if (!usingYamlConfig || !yamlRules)
+        return;
+
+    /* Collect all listeners from all rules into seInfo array */
+    for (int r = 0; r < yamlRulesCount; r++) {
+        RuleInfo *rule = &yamlRules[r];
+
+        for (int l = 0; l < rule->listener_count; l++) {
+            ServerInfo *srv_original = rule->listeners[l];
+
+            /* Link listener to its rule */
+            srv_original->rule = rule;
+
+            /* Copy access rules reference */
+            srv_original->rulesStart = rule->rulesStart;
+            srv_original->rulesCount = rule->rulesCount;
+
+            /* Add to global seInfo array */
+            seInfo = (ServerInfo *)realloc(seInfo, sizeof(ServerInfo) * (seTotal + 1));
+            if (!seInfo) {
+                logError("realloc failed for ServerInfo\n");
+                exit(1);
+            }
+
+            /* Copy ServerInfo (but keep pointer to rule) */
+            seInfo[seTotal] = *srv_original;
+            seInfo[seTotal].rule = rule;
+
+            /* Update the rule's listener pointer to point to seInfo entry */
+            rule->listeners[l] = &seInfo[seTotal];
+
+            /* Free the original ServerInfo shell (fields now owned by seInfo) */
+            free(srv_original);
+
+            seTotal++;
+        }
+
+        logInfo("Rule '%s': %d listener(s), %d backend(s), algorithm=%s\n",
+                rule->name ? rule->name : "unnamed",
+                rule->listener_count,
+                rule->backend_count,
+                lb_algorithm_name(rule->algorithm));
+    }
+}
+
+static char const *findConfigFile(void)
+{
+    /* Check for config files in order: .yaml, .yml, .conf */
+    static char const *candidates[] = {
+        RINETD_CONFIG_FILE_YAML,
+        RINETD_CONFIG_FILE_YML,
+        RINETD_CONFIG_FILE_CONF,
+        NULL
+    };
+
+    for (int i = 0; candidates[i] != NULL; i++) {
+        if (access(candidates[i], R_OK) == 0) {
+            return candidates[i];
+        }
+    }
+
+    /* None found - return the legacy default (will fail with clear error message) */
+    return RINETD_CONFIG_FILE_CONF;
+}
+
 static int readArgs (int argc, char **argv, RinetdOptions *options)
 {
     for (;;) {
@@ -2462,6 +2927,7 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
         switch (c) {
             case 'c':
                 options->conf_file = optarg;
+                conf_file_explicit = 1;
                 if (!options->conf_file) {
                     logError("configuration filename not accepted\n");
                     exit(1);
@@ -2480,6 +2946,10 @@ static int readArgs (int argc, char **argv, RinetdOptions *options)
                     "  -f, --foreground       do not run in the background\n"
                     "  -h, --help             display this help\n"
                     "  -v, --version          display version number\n\n"
+                    "Without -c, searches for config in order:\n"
+                    "  " RINETD_CONFIG_FILE_YAML "\n"
+                    "  " RINETD_CONFIG_FILE_YML "\n"
+                    "  " RINETD_CONFIG_FILE_CONF "\n\n"
                     "Most options are controlled through the configuration file.\n"
                     "See the rinetd-uv(8) manpage for more information.\n");
                 exit(0);

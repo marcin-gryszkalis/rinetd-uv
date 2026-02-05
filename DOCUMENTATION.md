@@ -14,7 +14,9 @@ rinetd-uv -v
 
 ## DESCRIPTION
 
-**rinetd-uv** redirects TCP or UDP connections from one IP address and port to another. **rinetd-uv** is a single-process server which handles any number of connections to the address/port pairs specified in the file `/etc/rinetd-uv.conf`. Since **rinetd-uv** runs as a single process using nonblocking I/O (via libuv event loop), it is able to redirect a large number of connections without a severe impact on the machine. This makes it practical to run services on machines inside an IP masquerading firewall.
+**rinetd-uv** redirects TCP or UDP connections from one IP address and port to another. **rinetd-uv** is a single-process server which handles any number of connections to the address/port pairs specified in the file `/etc/rinetd-uv.conf` (legacy format) or `/etc/rinetd-uv.yaml` (YAML format with load balancing support). Since **rinetd-uv** runs as a single process using nonblocking I/O (via libuv event loop), it is able to redirect a large number of connections without a severe impact on the machine. This makes it practical to run services on machines inside an IP masquerading firewall.
+
+The YAML configuration format (version 2.1.0+) adds support for **load balancing** with multiple backend servers, health checking, and client affinity. See the **YAML CONFIGURATION FORMAT** section for details.
 
 ### Libuv
 
@@ -28,7 +30,13 @@ rinetd-uv -v
 /usr/sbin/rinetd-uv
 ```
 
-The configuration file is found in the file `/etc/rinetd-uv.conf`, unless another file is specified using the `-c` command line option.
+When no `-c` option is provided, **rinetd-uv** searches for configuration files in the following order:
+
+1. `/etc/rinetd-uv.yaml` (YAML format with load balancing support)
+2. `/etc/rinetd-uv.yml` (YAML format)
+3. `/etc/rinetd-uv.conf` (legacy format)
+
+The first file found is used. YAML configuration files enable load balancing features. Use the `-c` option to specify an alternate configuration file.
 
 ### Run with Docker
 
@@ -418,6 +426,174 @@ Under Linux the process ID is saved in the file `/var/run/rinetd-uv.pid` by defa
 pidfile /var/run/myrinetd-uv.pid
 ```
 
+### Status Reporting
+
+**rinetd-uv** can periodically write a status file containing runtime statistics, useful for monitoring and debugging.
+
+#### Legacy Format Configuration
+
+```
+statusfile /var/log/rinetd-uv_status.json
+statusinterval 30
+statusformat json
+statsloginterval 60
+```
+
+**statusfile** *path*
+:   Path to the status file. Status reporting is disabled if not specified.
+
+**statusinterval** *seconds*
+:   How often to write the status file.
+:   **Range:** 1 to unlimited seconds
+:   **Default:** 30 seconds
+
+**statusformat** *format*
+:   Output format for the status file.
+:   **Values:** `json` or `text`
+:   **Default:** `json`
+
+**statsloginterval** *seconds*
+:   How often to log a one-line statistics summary to the log file. Set to 0 to disable.
+:   **Range:** 0 to unlimited seconds
+:   **Default:** 60 seconds
+
+#### YAML Format Configuration
+
+In YAML configuration, status reporting is configured in a dedicated `status` block:
+
+```yaml
+global:
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
+```
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `status.enabled` | boolean | false | Enable status file writing |
+| `status.file` | string | none | Path to status file |
+| `status.interval` | integer | 30 | Write interval in seconds |
+| `status.format` | string | json | Output format (`json` or `text`) |
+| `stats_log_interval` | integer | 60 | Log summary interval (0 to disable) |
+
+#### JSON Output Format
+
+The JSON status file includes:
+
+```json
+{
+  "timestamp": "2026-02-02T12:00:00Z",
+  "version": "2.1.0",
+  "uptime_seconds": 3600,
+  "config_reloads": 2,
+  "stats_since_reload": "2026-02-02T11:30:00Z",
+  "connections": {
+    "active": 150,
+    "active_tcp": 120,
+    "active_udp": 25,
+    "active_unix": 5,
+    "total": 50000,
+    "total_tcp": 45000,
+    "total_udp": 4500,
+    "total_unix": 500
+  },
+  "traffic": {
+    "bytes_in": 1073741824,
+    "bytes_out": 2147483648
+  },
+  "errors": {
+    "accept": 0,
+    "connect": 15,
+    "denied": 100
+  },
+  "buffer_pool": {
+    "buffer_size": 65536,
+    "free": 128,
+    "allocs_from_pool": 50000,
+    "allocs_from_malloc": 100
+  },
+  "servers": 5,
+  "rules": [
+    {
+      "name": "web-cluster",
+      "algorithm": "roundrobin",
+      "connections_active": 50,
+      "connections_total": 10000,
+      "bytes_in": 536870912,
+      "bytes_out": 1073741824,
+      "backends": [
+        {
+          "name": "web-cluster-backend-1",
+          "healthy": true,
+          "connections_active": 25,
+          "connections_total": 5000,
+          "bytes_in": 268435456,
+          "bytes_out": 536870912
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Text Output Format
+
+The text format provides a human-readable summary:
+
+```
+rinetd-uv Status Report
+Updated: 2026-02-02 12:00:00
+Version: 2.1.0
+Uptime: 1:00:00
+Config reloads: 2
+
+CONNECTIONS
+Active: 150 (TCP: 120, UDP: 25, Unix: 5)
+Total: 50000 (TCP: 45000, UDP: 4500, Unix: 500)
+
+TRAFFIC
+Bytes in: 1.0G
+Bytes out: 2.0G
+
+ERRORS
+Accept: 0
+Connect: 15
+Denied: 100
+
+BUFFER POOL
+Buffer size: 65536
+Free buffers: 128
+
+SERVERS
+Count: 5
+
+RULES
+  web-cluster (roundrobin):
+    Active: 50, Total: 10000, Traffic: 512.0M/1.0G
+    Backends:
+      web-cluster-backend-1: healthy, active=25, total=5000
+```
+
+#### Log Summary Format
+
+The periodic log summary outputs a single line with key metrics:
+
+```
+STATS: uptime=3600s conns=150/50000 tcp=120/45000 udp=25/4500 unix=5/500 traffic=1.0G/2.0G errors=0/15/100
+```
+
+Format: `conns=active/total`, `traffic=in/out`, `errors=accept/connect/denied`
+
+#### Security Considerations
+
+The status output intentionally omits sensitive information:
+- **No IP addresses or hostnames** are exposed in the status file
+- Backend servers are identified by their **name** field only
+- For YAML rules, backend names are auto-generated as `{rule-name}-backend-{N}` if not explicitly set
+
 ## INCLUDE DIRECTIVE
 
 Configuration files can include other configuration files using the `include` directive. This allows splitting large configurations into multiple files for better organization and maintainability.
@@ -522,7 +698,331 @@ This allow rule matches all IP addresses in the 206.125.69 class C domain.
 
 **Important:** Host names are **NOT** permitted in allow and deny rules. The performance cost of looking up IP addresses to find their corresponding names is prohibitive. Since **rinetd-uv** is a single process server, all other connections would be forced to pause during the address lookup.
 
+## YAML CONFIGURATION FORMAT
+
+Starting with version 2.1.0, **rinetd-uv** supports an alternative YAML configuration format that enables advanced features including load balancing. The YAML format is detected automatically by file extension (`.yaml` or `.yml`).
+
+### Overview
+
+The YAML configuration provides:
+
+- **Load balancing** with multiple algorithms (round-robin, least-connections, random, IP-hash)
+- **Many-to-many forwarding** (multiple listeners to multiple backends)
+- **Weighted backends** for proportional traffic distribution
+- **Passive health checking** with automatic failover
+- **Client IP affinity** (session persistence)
+- **Per-backend DNS refresh** overrides
+
+### Basic Structure
+
+```yaml
+# rinetd-uv.yaml
+global:
+  buffer_size: 65536
+  dns_refresh: 600
+  log_file: /var/log/rinetd-uv.log
+  pid_file: /var/run/rinetd-uv.pid
+
+rules:
+  - name: my-rule
+    bind: "0.0.0.0:8080/tcp"
+    connect: "backend.example.com:80"
+```
+
+### Global Settings
+
+The `global` section configures server-wide options. All settings are optional and have sensible defaults.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `buffer_size` | integer | 65536 | I/O buffer size in bytes (1024-1048576) |
+| `dns_refresh` | integer | 600 | Default DNS refresh interval in seconds |
+| `log_file` | string | none | Path to log file |
+| `log_common` | boolean | false | Use Apache-style common log format |
+| `pid_file` | string | /var/run/rinetd-uv.pid | Path to PID file |
+| `max_udp_connections` | integer | 5000 | Max UDP connections per rule |
+| `listen_backlog` | integer | 128 | TCP listen backlog |
+| `pool_min_free` | integer | 64 | Minimum pooled buffers |
+| `pool_max_free` | integer | 1024 | Maximum pooled buffers |
+| `pool_trim_delay` | integer | 60000 | Pool trim delay in milliseconds |
+| `status.enabled` | boolean | false | Enable status file writing |
+| `status.file` | string | none | Path to status file |
+| `status.interval` | integer | 30 | Status file write interval in seconds |
+| `status.format` | string | json | Status file format (`json` or `text`) |
+| `stats_log_interval` | integer | 60 | Log summary interval in seconds (0 to disable) |
+
+### Rules
+
+The `rules` section is a list of forwarding rules. Each rule has the following structure:
+
+```yaml
+rules:
+  - name: rule-name              # Required: unique identifier
+    bind: "address:port/proto"   # Required: listen address(es)
+    connect: "host:port/proto"   # Required: destination(s)
+    # or for multiple destinations:
+    # connect:
+    #   - dest: "host1:port/proto"
+    #   - dest: "host2:port/proto"
+    load_balancing:              # Optional: LB configuration
+      algorithm: roundrobin
+    access:                      # Optional: access control
+      allow: ["192.168.*"]
+      deny: ["*"]
+    timeout: 10                  # Optional: UDP timeout (seconds)
+    keepalive: true              # Optional: TCP keepalive (default: true)
+```
+
+#### Bind Address Format
+
+The `bind` field specifies the listening address. It can be a single address or a list for many-to-many forwarding:
+
+```yaml
+# Single listener
+bind: "0.0.0.0:8080/tcp"
+
+# Multiple listeners (fan-in)
+bind:
+  - "0.0.0.0:80/tcp"
+  - "0.0.0.0:443/tcp"
+  - "[::]:80/tcp"
+
+# Unix socket
+bind: "unix:/var/run/proxy.sock"
+```
+
+Format: `address:port/protocol` where:
+- `address`: IP address, hostname, or `unix:/path`
+- `port`: Port number or service name
+- `protocol`: `tcp` or `udp` (default: tcp)
+
+#### Connect Destinations
+
+The `connect` field specifies destination servers. It can be a single destination string or a list for load balancing:
+
+```yaml
+# Single destination (simple syntax)
+connect: "backend.example.com:8080/tcp"
+
+# Multiple destinations for load balancing
+connect:
+  - dest: "web1.example.com:8080"
+    weight: 2              # Optional: for weighted algorithms
+    dns_refresh: 60        # Optional: per-backend DNS refresh
+    src: 10.1.1.2          # Optional: source address
+
+  - dest: "web2.example.com:8080"
+    weight: 1
+
+  # Unix socket backend
+  - dest: "unix:/var/run/backend.sock"
+```
+
+Format: `address:port/protocol` where:
+- `address`: IP address, hostname, or `unix:/path`
+- `port`: Port number or service name
+- `protocol`: `tcp` or `udp` (default: tcp)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `dest` | string | required | Destination address in `host:port/proto` or `unix:path` format |
+| `weight` | integer | 1 | Weight for weighted algorithms |
+| `dns_refresh` | integer | rule default | DNS refresh interval override |
+| `src` | string | none | Source address for outgoing connections |
+
+### Load Balancing
+
+When a rule has multiple backends, load balancing is automatically enabled. Configure the algorithm and behavior with the `load_balancing` section:
+
+```yaml
+load_balancing:
+  algorithm: roundrobin      # Algorithm to use
+  health_threshold: 3        # Failures before marking unhealthy
+  recovery_timeout: 30       # Seconds before retry after unhealthy
+  affinity_ttl: 300          # Client affinity TTL (0 = disabled)
+  affinity_max_entries: 10000 # Max affinity table entries
+```
+
+#### Algorithms
+
+| Algorithm | Description |
+|-----------|-------------|
+| `roundrobin` | Distributes connections evenly in circular order. With weights, uses smooth weighted round-robin for proportional distribution. |
+| `leastconn` | Sends to backend with fewest active connections. Good for varying request durations. |
+| `random` | Random selection. Simple and effective for uniform loads. |
+| `iphash` | Consistent routing based on client IP hash. Same client always goes to same backend (unless unhealthy). |
+
+**Default:** `roundrobin`
+
+#### Weighted Distribution
+
+Weights control the proportion of traffic each backend receives:
+
+```yaml
+connect:
+  - dest: "web1.example.com:8080"
+    weight: 3    # Receives 3/6 = 50% of traffic
+
+  - dest: "web2.example.com:8080"
+    weight: 2    # Receives 2/6 = 33% of traffic
+
+  - dest: "web3.example.com:8080"
+    weight: 1    # Receives 1/6 = 17% of traffic
+```
+
+Weights are respected by `roundrobin` and `random` algorithms. The `leastconn` algorithm considers weights as a tiebreaker.
+
+### Health Checking
+
+**rinetd-uv** performs passive health checking based on connection success/failure:
+
+1. **Connection succeeds:** Backend marked healthy, failure counter reset
+2. **Connection fails:** Failure counter incremented
+3. **Threshold reached:** Backend marked unhealthy after `health_threshold` consecutive failures
+4. **Recovery:** After `recovery_timeout` seconds, unhealthy backend becomes eligible for retry
+5. **All unhealthy:** If all backends are unhealthy, traffic is distributed anyway (fail-open)
+
+```yaml
+load_balancing:
+  health_threshold: 3      # Mark unhealthy after 3 failures
+  recovery_timeout: 30     # Retry after 30 seconds
+```
+
+**Note:** DNS is automatically re-resolved when a backend reaches the failure threshold.
+
+### Client Affinity (Session Persistence)
+
+Client affinity ensures the same client IP is routed to the same backend within a time window:
+
+```yaml
+load_balancing:
+  affinity_ttl: 300            # 5 minutes
+  affinity_max_entries: 10000  # Maximum tracked clients
+```
+
+- **TTL:** Time-to-live in seconds. Each connection refreshes the timer.
+- **Max entries:** When full, least-recently-used entries are evicted.
+- **Health-aware:** If the affinity target is unhealthy, a new backend is selected.
+
+Set `affinity_ttl: 0` to disable affinity (default).
+
+### Access Control
+
+Access control in YAML uses the same pattern matching as the legacy format:
+
+```yaml
+access:
+  allow:
+    - "192.168.*"
+    - "10.0.0.*"
+  deny:
+    - "192.168.1.100"
+    - "*"
+```
+
+Rules are evaluated in order: allow rules checked first, then deny rules.
+
+### YAML Configuration Examples
+
+#### Simple 1:1 Forwarding
+
+```yaml
+global:
+  log_file: /var/log/rinetd-uv.log
+
+rules:
+  - name: web-forward
+    bind: "0.0.0.0:80/tcp"
+    connect: "192.168.1.100:8080"
+```
+
+#### Load Balanced Web Cluster
+
+```yaml
+global:
+  buffer_size: 65536
+  dns_refresh: 300
+
+rules:
+  - name: web-cluster
+    bind:
+      - "0.0.0.0:80/tcp"
+      - "0.0.0.0:443/tcp"
+    connect:
+      - dest: "web1.internal:8080"
+        weight: 2
+      - dest: "web2.internal:8080"
+        weight: 2
+      - dest: "web3.internal:8080"
+        weight: 1
+    load_balancing:
+      algorithm: roundrobin
+      health_threshold: 3
+      recovery_timeout: 30
+    access:
+      allow: ["10.*", "192.168.*"]
+      deny: ["*"]
+```
+
+#### DNS Load Balancing (UDP)
+
+```yaml
+rules:
+  - name: dns-lb
+    bind: "0.0.0.0:53/udp"
+    connect:
+      - dest: "8.8.8.8:53/udp"
+      - dest: "8.8.4.4:53/udp"
+      - dest: "1.1.1.1:53/udp"
+    load_balancing:
+      algorithm: roundrobin
+    timeout: 10
+```
+
+#### Sticky Sessions with IP Hash
+
+```yaml
+rules:
+  - name: app-servers
+    bind: "0.0.0.0:8080/tcp"
+    connect:
+      - dest: "app1.internal:3000"
+      - dest: "app2.internal:3000"
+    load_balancing:
+      algorithm: iphash
+      affinity_ttl: 3600  # 1 hour sticky sessions
+```
+
+#### Unix Socket Proxy
+
+```yaml
+rules:
+  - name: docker-proxy
+    bind: "0.0.0.0:2375/tcp"
+    connect: "unix:/var/run/docker.sock"
+    access:
+      allow: ["10.0.0.*"]
+      deny: ["*"]
+```
+
+### Converting from Legacy Format
+
+A Python conversion script is provided to migrate legacy configurations to YAML:
+
+```bash
+python3 tools/conf2yaml.py /etc/rinetd-uv.conf > /etc/rinetd-uv.yaml
+```
+
+The script converts:
+- Global options (buffersize, dns-refresh, logfile, etc.)
+- Forwarding rules with all options
+- Allow and deny rules (global and per-rule)
+
+**Note:** The legacy format does not support load balancing. After conversion, you can manually add multiple backends and load_balancing configuration to rules.
+
 ## EXAMPLE CONFIGURATION
+
+### Legacy Format
 
 ```
 # rinetd-uv.conf - example configuration
@@ -557,6 +1057,14 @@ listen-backlog 128
 
 # Maximum UDP connections per forwarding rule (1-1000000, default: 5000)
 max-udp-connections 5000
+
+# Status reporting (writes JSON/text file with runtime statistics)
+statusfile /var/log/rinetd-uv_status.json
+statusinterval 30
+statusformat json
+
+# Statistics logging interval (one-line summary to log file)
+statsloginterval 60
 
 # Global Access Control:
 # You may specify global allow and deny rules here.
@@ -599,6 +1107,84 @@ allow 10.0.0.*
 
 ```
 
+### YAML Format
+
+```yaml
+# rinetd-uv.yaml - example configuration with load balancing
+
+global:
+  buffer_size: 65536
+  dns_refresh: 600
+  log_file: /var/log/rinetd-uv.log
+  pid_file: /var/run/rinetd-uv.pid
+  pool_min_free: 64
+  pool_max_free: 1024
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
+
+rules:
+  # Simple 1:1 forwarding (equivalent to legacy format)
+  - name: simple-forward
+    bind: "0.0.0.0:80/tcp"
+    connect: "192.168.1.10:8080"
+
+  # Load balanced web servers with weighted round-robin
+  - name: web-cluster
+    bind:
+      - "0.0.0.0:443/tcp"
+      - "[::]:443/tcp"
+    connect:
+      - dest: "web1.internal:8443"
+        weight: 3
+      - dest: "web2.internal:8443"
+        weight: 2
+      - dest: "web3.internal:8443"
+        weight: 1
+    load_balancing:
+      algorithm: roundrobin
+      health_threshold: 3
+      recovery_timeout: 30
+    access:
+      allow: ["10.*", "192.168.*"]
+      deny: ["*"]
+
+  # DNS servers with least-connections algorithm
+  - name: dns-lb
+    bind: "0.0.0.0:53/udp"
+    connect:
+      - dest: "8.8.8.8:53/udp"
+      - dest: "8.8.4.4:53/udp"
+      - dest: "1.1.1.1:53/udp"
+    load_balancing:
+      algorithm: leastconn
+    timeout: 10
+
+  # Application servers with sticky sessions
+  - name: app-cluster
+    bind: "0.0.0.0:8080/tcp"
+    connect:
+      - dest: "app1.internal:3000"
+        dns_refresh: 60
+      - dest: "app2.internal:3000"
+        dns_refresh: 60
+    load_balancing:
+      algorithm: iphash
+      affinity_ttl: 3600
+      affinity_max_entries: 50000
+
+  # Docker socket proxy
+  - name: docker-proxy
+    bind: "0.0.0.0:2375/tcp"
+    connect: "unix:/var/run/docker.sock"
+    access:
+      allow: ["10.0.0.*"]
+      deny: ["*"]
+```
+
 ## REINITIALIZING RINETD-UV
 
 The SIGHUP signal can be used to cause **rinetd-uv** to reload its configuration file without interrupting existing connections.
@@ -619,7 +1205,7 @@ killall -HUP rinetd-uv
 
 The server redirected to is not able to identify the host the client really came from. This cannot be corrected; however, the log produced by **rinetd-uv** provides a way to obtain this information.
 
-Two rules with the same source ip/port and different destination ip/port are not allowed (you'll get "Address already in use" or similar error). Note that `0.0.0.0` (IPv4) and `::` (IPv6) effectively mean the same (both would bind to "any" address).
+Two rules with the same effective source ip/port and different destination ip/port are not allowed. With YAML config file problem will be recognized on parsing stage, with legacy config you'll get "Address already in use" or similar error. Note that `0.0.0.0` (IPv4) and `::` (IPv6) effectively mean the same (both would bind to "any" address). Checking may also fail on edge cases like unix: sockets accessed via symlink.
 
 **rinetd-uv** does not implement backpressure (flow control) between the client and backend connections. If one endpoint sends data faster than the other endpoint can receive it, the data waiting to be forwarded will queue up in memory. In extreme cases (e.g., a fast sender paired with a very slow or stalled receiver), this can lead to unbounded memory growth. This is generally not a problem for well-behaved clients and backends, but could be exploited in adversarial scenarios where an attacker deliberately sends data rapidly while receiving slowly.
 
@@ -661,8 +1247,8 @@ There are assorted system-level settings that may affect rinetd-uv behavior, esp
 Many of UDP-related scenarios require increasing limit of open files:
 * local limit (`ulimit -n`)
 * global/kernel limit
-    - Linux: fs.file-max and fs.nr_open
-    - FreeBSD: kern.maxfiles and kern.maxfilesperproc
+    - Linux: `fs.file-max` and `fs.nr_open`
+    - FreeBSD: `kern.maxfiles` and `kern.maxfilesperproc`
 
 #### Max network buffer size
 

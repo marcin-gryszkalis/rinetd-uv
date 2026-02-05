@@ -1,6 +1,6 @@
 # rinetd-uv - Internet Redirection Server
 
-**rinetd-uv** is a modernized implementation of the rinetd internet redirection server, rewritten to use the [libuv](https://libuv.org/) event loop library.
+**rinetd-uv** is a modernized implementation of the rinetd internet redirection and loadbalancing proxy server, rewritten to use the [libuv](https://libuv.org/) event loop library.
 
 Originally by Thomas Boutell and Sam Hocevar. Rewritten to libuv by Marcin Gryszkalis with help from contributors and LLMs.
 

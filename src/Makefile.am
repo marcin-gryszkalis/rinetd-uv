@@ -8,6 +8,10 @@ rinetd_uv_SOURCES = rinetd.c rinetd.h \
                     match.c match.h \
                     net.c net.h \
                     buffer_pool.c buffer_pool.h \
+                    loadbalancer.c loadbalancer.h \
+                    affinity.c affinity.h \
+                    yaml_config.c yaml_config.h \
+                    stats.c stats.h \
                     types.h
 
 BUILT_SOURCES = parse.c
@@ -24,7 +28,7 @@ parse.c: parse.peg
 rinetd_uv_CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L \
                    -D_XOPEN_SOURCE -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
                    -D_BSD_SOURCE -D_DEFAULT_SOURCE -D__BSD_VISIBLE \
-                   -Wall -Wextra -Wwrite-strings $(LIBUV_CFLAGS)
+                   -Wall -Wextra -Wwrite-strings $(LIBUV_CFLAGS) $(YAML_CFLAGS)
 
-rinetd_uv_LDADD = $(LIBUV_LIBS)
+rinetd_uv_LDADD = $(LIBUV_LIBS) $(YAML_LIBS)
 

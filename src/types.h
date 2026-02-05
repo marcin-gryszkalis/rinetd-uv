@@ -11,12 +11,36 @@
 
 #include <time.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include <uv.h>
+
+/* Socket type compatibility */
+#if _WIN32
+#   include <winsock2.h>
+#else
+#   ifndef SOCKET
+#       define SOCKET int
+#   endif
+#   ifndef INVALID_SOCKET
+#       define INVALID_SOCKET (-1)
+#   endif
+#endif
 
 typedef enum _rule_type ruleType;
 enum _rule_type {
     allowRule,
     denyRule,
+};
+
+/* Load balancing algorithm types */
+typedef enum _lb_algorithm LbAlgorithm;
+enum _lb_algorithm {
+    LB_NONE = 0,
+    LB_ROUND_ROBIN,
+    LB_LEAST_CONN,
+    LB_RANDOM,
+    LB_IP_HASH,
+    LB_INVALID = -1
 };
 
 typedef struct _rule Rule;
@@ -28,8 +52,95 @@ struct _rule
 
 /* Forward declarations */
 typedef struct _connection_info ConnectionInfo;
-
 typedef struct _server_info ServerInfo;
+typedef struct _rule_info RuleInfo;
+typedef struct _backend_info BackendInfo;
+typedef struct _affinity_table AffinityTable;
+
+/* Backend information for load balancing */
+struct _backend_info {
+    /* Human-readable name for status/stats output (no sensitive data exposure) */
+    char *name;
+
+    /* Address info (mutually exclusive with unixPath) */
+    struct addrinfo *addrInfo;
+    char *host;
+    char *port;
+    int protocol;                       /* IPPROTO_TCP or IPPROTO_UDP */
+
+    /* Unix socket (mutually exclusive with host/port) */
+    char *unixPath;
+    int isAbstract;
+
+    /* Outbound source address */
+    struct addrinfo *sourceAddrInfo;
+
+    /* Health state */
+    int healthy;                        /* 1=healthy, 0=unhealthy */
+    int consecutive_failures;
+    time_t last_failure_time;
+    time_t next_retry_time;
+
+    /* Statistics */
+    uint64_t total_connections;
+    uint64_t active_connections;
+    uint64_t total_bytes_in;
+    uint64_t total_bytes_out;
+
+    /* Weight for weighted algorithms */
+    int weight;                         /* Configured weight (default: 1) */
+    int current_weight;                 /* For smooth weighted round-robin */
+    int effective_weight;               /* Weight adjusted by health */
+
+    /* DNS refresh (per-backend override) */
+    uv_getaddrinfo_t *dns_req;
+    uv_timer_t dns_timer;
+    int dns_timer_initialized;
+    int dns_timer_closing;
+    int dns_refresh_period;             /* 0 = use rule/global default */
+    char *host_saved;                   /* Hostname for async resolution */
+    char *port_saved;                   /* Port for async resolution */
+};
+
+/* Rule information for YAML config (replaces ServerInfo for LB rules) */
+struct _rule_info {
+    char *name;                         /* Rule name from YAML */
+
+    /* Listeners (can be multiple for many:many) */
+    ServerInfo **listeners;             /* Array of listening sockets */
+    int listener_count;
+    int listener_capacity;
+
+    /* Backends */
+    BackendInfo *backends;
+    int backend_count;
+    int backend_capacity;
+
+    /* Load balancing state */
+    LbAlgorithm algorithm;
+    int rr_index;                       /* Round-robin counter */
+    int total_weight;                   /* Sum of all backend weights */
+
+    /* Health checking configuration */
+    int health_threshold;               /* Failures before marking unhealthy */
+    int recovery_timeout;               /* Seconds before retry after marking unhealthy */
+    int healthy_count;                  /* Number of currently healthy backends */
+
+    /* Affinity (session persistence) */
+    AffinityTable *affinity_table;
+    int affinity_ttl;                   /* Seconds, 0 = disabled */
+    int affinity_max_entries;
+
+    /* Access control */
+    int rulesStart;                     /* Offset into global allRules array */
+    int rulesCount;                     /* Number of allow/deny rules */
+
+    /* Per-rule options */
+    int timeout;                        /* UDP timeout in seconds */
+    int keepalive;                      /* TCP keepalive: 1=enabled, 0=disabled */
+    int dns_refresh_period;             /* Default DNS refresh for backends */
+};
+
 struct _server_info {
     SOCKET fd;
 
@@ -80,6 +191,9 @@ struct _server_info {
     char *toHost_saved;                   /* Hostname for async resolution */
     char *toPort_saved;                   /* Port for async resolution */
     int toProtocol_saved;                 /* Protocol for async resolution */
+
+    /* Load balancing: link to parent rule (NULL for legacy config) */
+    RuleInfo *rule;
 };
 
 typedef struct _socket Socket;
@@ -171,6 +285,10 @@ struct _connection_info
     struct _connection_info *hash_next;     /* Next in hash bucket chain */
     struct _connection_info *lru_prev;      /* Previous in LRU list (per-server) */
     struct _connection_info *lru_next;      /* Next in LRU list (per-server) */
+
+    /* Load balancing: selected backend for this connection (NULL for legacy) */
+    BackendInfo *selected_backend;
+    RuleInfo *rule;                         /* Parent rule (for stats updates) */
 };
 
 /* Option parsing */

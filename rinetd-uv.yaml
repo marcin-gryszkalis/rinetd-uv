@@ -1,0 +1,73 @@
+# rinetd-uv.yaml - example configuration with load balancing
+
+global:
+  buffer_size: 65536
+  dns_refresh: 600
+  log_file: /var/log/rinetd-uv.log
+  pid_file: /var/run/rinetd-uv.pid
+  pool_min_free: 64
+  pool_max_free: 1024
+  status:
+    enabled: true
+    file: /var/log/rinetd-uv_status.json
+    interval: 30
+    format: json
+  stats_log_interval: 60
+
+rules:
+  # Simple 1:1 forwarding (equivalent to legacy format)
+  - name: simple-forward
+    bind: "0.0.0.0:80/tcp"
+    connect: "192.168.1.10:8080"
+
+  # Load balanced web servers with weighted round-robin
+  - name: web-cluster
+    bind:
+      - "0.0.0.0:443/tcp"
+      - "[::]:443/tcp"
+    connect:
+      - dest: "web1.internal:8443"
+        weight: 3
+      - dest: "web2.internal:8443"
+        weight: 2
+      - dest: "web3.internal:8443"
+        weight: 1
+    load_balancing:
+      algorithm: roundrobin
+      health_threshold: 3
+      recovery_timeout: 30
+    access:
+      allow: ["10.*", "192.168.*"]
+      deny: ["*"]
+
+  # DNS servers with least-connections algorithm
+  - name: dns-lb
+    bind: "0.0.0.0:53/udp"
+    connect:
+      - dest: "8.8.8.8:53/udp"
+      - dest: "8.8.4.4:53/udp"
+      - dest: "1.1.1.1:53/udp"
+    load_balancing:
+      algorithm: leastconn
+    timeout: 10
+
+  # Application servers with sticky sessions
+  - name: app-cluster
+    bind: "0.0.0.0:8080/tcp"
+    connect:
+      - dest: "app1.internal:3000"
+        dns_refresh: 60
+      - dest: "app2.internal:3000"
+        dns_refresh: 60
+    load_balancing:
+      algorithm: iphash
+      affinity_ttl: 3600
+      affinity_max_entries: 50000
+
+  # Docker socket proxy
+  - name: docker-proxy
+    bind: "0.0.0.0:2375/tcp"
+    connect: "unix:/var/run/docker.sock"
+    access:
+      allow: ["10.0.0.*"]
+      deny: ["*"]
