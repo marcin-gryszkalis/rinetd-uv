@@ -1,3 +1,42 @@
+## Version 2.1.0 (2026-02-05)
+
+**Round-Robin Load Balancing with YAML Configuration**
+
+ * **Load Balancing Feature:**
+   - Many-to-many forwarding: multiple listeners to multiple backends
+   - Different algorithms:
+      - Round-robin (default) with weighted round-robin support
+      - Least-connections for even distribution based on active connections
+      - Random for simple probabilistic distribution
+      - IP-hash algorithm for consistent routing based on client IP
+   - Health Checking:
+      - Passive health checking based on connection success/failure
+      - Configurable failure threshold and recover timeout
+      - Automatic failover when all backends are unhealthy
+   - Client Affinity (Session Persistence)
+      - Optional client IP affinity with configurable TTL
+      - LRU eviction when affinity table is full
+   - Requires configuration in YAML (see below)
+
+ * **YAML Configuration Format:**
+   - New YAML configuration format
+   - Legacy configuration format remains fully supported and unchanged (no support for load balancing)
+   - Default config search order: `/etc/rinetd-uv.yaml`, then `.yml`, then `.conf`
+   - `tools/conf2yaml.py` script to convert legacy config to YAML format
+
+ * **Status Reporting and Statistics:**
+   - Periodic status file output (JSON or text format) with runtime statistics
+   - One-line statistics summary (logging at configurable interval)
+   - Global statistics: connections (TCP/UDP/Unix), traffic bytes, errors
+   - Per-rule and per-backend statistics (with YAML configurations)
+
+## Version 2.0.3 (2026-01-26)
+
+**Better error validation and predictable test suite**
+
+ * add missing error checking and more robust logging
+ * test suite rewritten to more resilent architecture
+
 ## Version 2.0.2 (2026-01-25)
 
 **Socket buffer size unification**
