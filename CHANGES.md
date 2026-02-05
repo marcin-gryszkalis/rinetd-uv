@@ -1,6 +1,6 @@
 ## Version 2.0.3 (2026-02-05)
 
-** Small set of updates **
+**Small set of updates**
 
  * better logging (connection context)
  * more robust error checking in libuv calls
