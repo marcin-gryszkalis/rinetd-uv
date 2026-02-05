@@ -269,10 +269,52 @@ static void json_escape_string(const char *src, char *dest, size_t dest_size)
     dest[i] = '\0';
 }
 
+#define STATS_BUF_INITIAL_SIZE 8192
+
+/*
+ * Grow buffer if remaining space is less than `need` bytes.
+ * On allocation failure: frees buf, sets it to NULL.
+ */
+static int ensure_buf_space(char **buf, size_t *buf_size, size_t pos, size_t need)
+{
+    while (*buf_size - pos < need) {
+        size_t new_size = *buf_size * 2;
+        char *new_buf = realloc(*buf, new_size);
+        if (!new_buf) {
+            free(*buf);
+            *buf = NULL;
+            return -1;
+        }
+        *buf = new_buf;
+        *buf_size = new_size;
+    }
+    return 0;
+}
+
+/*
+ * Safe snprintf into a growable buffer.
+ * Ensures enough space, writes, and advances pos.
+ * Jumps to `fail_label` on allocation failure.
+ */
+#define BUF_PRINTF(fail_label, fmt, ...) \
+    do { \
+        int _n = snprintf(buf + pos, buf_size - pos, fmt, ##__VA_ARGS__); \
+        if (_n < 0) goto fail_label; \
+        if ((size_t)_n >= buf_size - pos) { \
+            if (ensure_buf_space(&buf, &buf_size, pos, (size_t)_n + 1) != 0) \
+                goto fail_label; \
+            _n = snprintf(buf + pos, buf_size - pos, fmt, ##__VA_ARGS__); \
+            if (_n < 0 || (size_t)_n >= buf_size - pos) goto fail_label; \
+        } \
+        pos += (size_t)_n; \
+    } while (0)
+
+
+static size_t json_buf_highwater = STATS_BUF_INITIAL_SIZE;
+
 static char *generate_json_status(void)
 {
-    /* Estimate buffer size - expand as needed */
-    size_t buf_size = 8192;
+    size_t buf_size = json_buf_highwater;
     char *buf = malloc(buf_size);
     if (!buf)
         return NULL;
@@ -295,7 +337,7 @@ static char *generate_json_status(void)
     buffer_pool_get_stats(&pool_stats);
 
     size_t pos = 0;
-    pos += snprintf(buf + pos, buf_size - pos,
+    BUF_PRINTF(json_fail,
         "{\n"
         "  \"timestamp\": \"%s\",\n"
 #ifdef PACKAGE_VERSION
@@ -358,7 +400,7 @@ static char *generate_json_status(void)
 
     /* Add per-rule statistics if using YAML config */
     if (usingYamlConfig && yamlRulesCount > 0) {
-        pos += snprintf(buf + pos, buf_size - pos, ",\n  \"rules\": [\n");
+        BUF_PRINTF(json_fail, ",\n  \"rules\": [\n");
 
         for (int i = 0; i < yamlRulesCount; i++) {
             RuleInfo *rule = &yamlRules[i];
@@ -378,7 +420,7 @@ static char *generate_json_status(void)
                 rule_active_conns += be->active_connections;
             }
 
-            pos += snprintf(buf + pos, buf_size - pos,
+            BUF_PRINTF(json_fail,
                 "    {\n"
                 "      \"name\": \"%s\",\n"
                 "      \"algorithm\": \"%s\",\n"
@@ -399,7 +441,7 @@ static char *generate_json_status(void)
                 char be_name_escaped[256];
                 json_escape_string(be->name ? be->name : "unnamed", be_name_escaped, sizeof(be_name_escaped));
 
-                pos += snprintf(buf + pos, buf_size - pos,
+                BUF_PRINTF(json_fail,
                     "        {\n"
                     "          \"name\": \"%s\",\n"
                     "          \"healthy\": %s,\n"
@@ -415,38 +457,35 @@ static char *generate_json_status(void)
                     (unsigned long long)be->total_bytes_in,
                     (unsigned long long)be->total_bytes_out,
                     (j < rule->backend_count - 1) ? "," : "");
-
-                /* Expand buffer if needed */
-                if (pos > buf_size - 1024) {
-                    buf_size *= 2;
-                    char *new_buf = realloc(buf, buf_size);
-                    if (!new_buf) {
-                        free(buf);
-                        return NULL;
-                    }
-                    buf = new_buf;
-                }
             }
 
-            pos += snprintf(buf + pos, buf_size - pos,
+            BUF_PRINTF(json_fail,
                 "      ]\n"
                 "    }%s\n",
                 (i < yamlRulesCount - 1) ? "," : "");
         }
 
-        pos += snprintf(buf + pos, buf_size - pos, "  ]\n");
+        BUF_PRINTF(json_fail, "  ]\n");
     } else {
-        pos += snprintf(buf + pos, buf_size - pos, "\n");
+        BUF_PRINTF(json_fail, "\n");
     }
 
-    pos += snprintf(buf + pos, buf_size - pos, "}\n");
+    BUF_PRINTF(json_fail, "}\n");
 
+    if (buf_size > json_buf_highwater)
+        json_buf_highwater = buf_size;
     return buf;
+
+json_fail:
+    free(buf);
+    return NULL;
 }
+
+static size_t text_buf_highwater = STATS_BUF_INITIAL_SIZE;
 
 static char *generate_text_status(void)
 {
-    size_t buf_size = 8192;
+    size_t buf_size = text_buf_highwater;
     char *buf = malloc(buf_size);
     if (!buf)
         return NULL;
@@ -473,7 +512,7 @@ static char *generate_text_status(void)
     buffer_pool_get_stats(&pool_stats);
 
     size_t pos = 0;
-    pos += snprintf(buf + pos, buf_size - pos,
+    BUF_PRINTF(text_fail,
         "rinetd-uv Status Report\n"
         "Updated: %s\n"
 #ifdef PACKAGE_VERSION
@@ -525,7 +564,7 @@ static char *generate_text_status(void)
 
     /* Add per-rule statistics if using YAML config */
     if (usingYamlConfig && yamlRulesCount > 0) {
-        pos += snprintf(buf + pos, buf_size - pos, "\nRULES\n");
+        BUF_PRINTF(text_fail, "\nRULES\n");
 
         for (int i = 0; i < yamlRulesCount; i++) {
             RuleInfo *rule = &yamlRules[i];
@@ -547,7 +586,7 @@ static char *generate_text_status(void)
             format_bytes(rule_bytes_in, rule_bytes_in_str, sizeof(rule_bytes_in_str));
             format_bytes(rule_bytes_out, rule_bytes_out_str, sizeof(rule_bytes_out_str));
 
-            pos += snprintf(buf + pos, buf_size - pos,
+            BUF_PRINTF(text_fail,
                 "  %s (%s):\n"
                 "    Active: %d, Total: %llu, Traffic: %s/%s\n"
                 "    Backends:\n",
@@ -559,28 +598,23 @@ static char *generate_text_status(void)
 
             for (int j = 0; j < rule->backend_count; j++) {
                 BackendInfo *be = &rule->backends[j];
-                pos += snprintf(buf + pos, buf_size - pos,
+                BUF_PRINTF(text_fail,
                     "      %s: %s, active=%llu, total=%llu\n",
                     be->name ? be->name : "unnamed",
                     be->healthy ? "healthy" : "unhealthy",
                     (unsigned long long)be->active_connections,
                     (unsigned long long)be->total_connections);
-
-                /* Expand buffer if needed */
-                if (pos > buf_size - 512) {
-                    buf_size *= 2;
-                    char *new_buf = realloc(buf, buf_size);
-                    if (!new_buf) {
-                        free(buf);
-                        return NULL;
-                    }
-                    buf = new_buf;
-                }
             }
         }
     }
 
+    if (buf_size > text_buf_highwater)
+        text_buf_highwater = buf_size;
     return buf;
+
+text_fail:
+    free(buf);
+    return NULL;
 }
 
 static void cleanup_status_context(StatusWriteContext *ctx)
