@@ -56,7 +56,9 @@ fi
 
 if step 6 "Test"; then
 # @@BEGIN:tests@@
-    test_suite/venv/bin/pytest test_suite/ -v -m quick
+    cd test_suite
+    ./venv/bin/pytest -v -m quick
+    cd ..
 # @@END:tests@@
 fi
 
