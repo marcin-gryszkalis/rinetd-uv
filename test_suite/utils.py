@@ -8,6 +8,7 @@ import hashlib
 import math
 import threading
 import resource
+import struct
 
 DEFAULT_TIMEOUT = 120
 BARRIER_TIMEOUT = 60
@@ -442,23 +443,55 @@ def run_transfer(listen_proto, listen_addr, size, chunk_size, seed, deadline=Non
                 s.settimeout(DEFAULT_TIMEOUT)
             sent_bytes = 0
             received_data = b""
+            seq_num = 0
+
             while sent_bytes < size:
                 to_send = min(size - sent_bytes, chunk_size)
+
+                # Prepend 4-byte sequence number to each UDP packet
+                # Format: [seq_num (4 bytes, little-endian)][payload (to_send bytes)]
+                payload = data[sent_bytes:sent_bytes+to_send]
+                packet = struct.pack('<I', seq_num) + payload
+
                 try:
-                    s.sendto(data[sent_bytes:sent_bytes+to_send], listen_addr)
+                    s.sendto(packet, listen_addr)
                 except OSError as e:
                     return False, f"UDP send failed at offset {sent_bytes}: {e}"
+
                 try:
-                    chunk, _ = s.recvfrom(65535)
-                    received_data += chunk
+                    echo_packet, _ = s.recvfrom(65535)
                 except socket.timeout:
-                    return False, f"UDP timeout waiting for echo at offset {sent_bytes}/{size}"
+                    return False, f"UDP timeout waiting for echo at offset {sent_bytes}/{size}, seq {seq_num}"
                 except OSError as e:
                     return False, f"UDP recv failed at offset {sent_bytes}: {e}"
+
+                # Verify packet has sequence number (at least 4 bytes)
+                if len(echo_packet) < 4:
+                    return False, f"UDP echo packet too short at seq {seq_num}: got {len(echo_packet)} bytes, need at least 4"
+
+                # Extract and verify sequence number
+                recv_seq = struct.unpack('<I', echo_packet[:4])[0]
+                if recv_seq != seq_num:
+                    return False, f"UDP sequence mismatch at offset {sent_bytes}: expected seq {seq_num}, got {recv_seq}"
+
+                # Extract payload and verify
+                recv_payload = echo_packet[4:]
+                if len(recv_payload) != to_send:
+                    return False, f"UDP payload size mismatch at seq {seq_num}: expected {to_send} bytes, got {len(recv_payload)}"
+
+                if recv_payload != payload:
+                    # Show first differing byte for debugging
+                    for i, (expected, actual) in enumerate(zip(payload, recv_payload)):
+                        if expected != actual:
+                            return False, f"UDP data mismatch at seq {seq_num}, byte {i}: expected 0x{expected:02x}, got 0x{actual:02x}"
+                    return False, f"UDP data mismatch at seq {seq_num} (lengths differ)"
+
+                received_data += recv_payload
                 sent_bytes += to_send
+                seq_num += 1
 
             if received_data != data:
-                return False, f"UDP data mismatch (got {len(received_data)} bytes, expected {len(data)})"
+                return False, f"UDP final data mismatch: got {len(received_data)} bytes, expected {len(data)}"
             return True, None
         finally:
             if own_socket:

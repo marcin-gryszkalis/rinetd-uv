@@ -80,9 +80,12 @@ def test_transfer_matrix(rinetd, server_type, listen_proto, connect_proto,
 
     # UDP has a maximum datagram size (65535 total, ~65507 payload)
     # SHA256 modes append 32-byte hash to each packet, so reduce limit accordingly
+    # Echo mode prepends 4-byte sequence number, so reduce limit accordingly
     if listen_proto == "udp" or connect_proto == "udp":
         if server_type in ("upload_sha256", "download_sha256"):
             max_udp_chunk = 65507 - 32  # Reserve space for SHA256 hash
+        elif server_type == "echo":
+            max_udp_chunk = 65507 - 4  # Reserve space for sequence number
         else:
             max_udp_chunk = 65507
         if chunk_size > max_udp_chunk:
