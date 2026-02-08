@@ -118,7 +118,7 @@ struct _rule_info {
 
     /* Load balancing state */
     LbAlgorithm algorithm;
-    int rr_index;                       /* Round-robin counter */
+    uint64_t rr_index;                  /* Round-robin counter (uint64 to avoid overflow) */
     int total_weight;                   /* Sum of all backend weights */
 
     /* Health checking configuration */

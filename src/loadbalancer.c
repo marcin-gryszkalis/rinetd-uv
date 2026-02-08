@@ -126,8 +126,8 @@ static BackendInfo *select_least_conn(RuleInfo *rule)
     }
 
     /* Second pass: select the (rr_index % tied_count)-th backend with min connections */
-    int selection = rule->rr_index % tied_count;
-    int current = 0;
+    uint64_t selection = rule->rr_index % tied_count;
+    uint64_t current = 0;
 
     for (int i = 0; i < rule->backend_count; i++) {
         BackendInfo *b = &rule->backends[i];
