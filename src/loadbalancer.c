@@ -94,15 +94,16 @@ static BackendInfo *select_weighted_round_robin(RuleInfo *rule)
     return &rule->backends[0];
 }
 
-/* Select backend using least connections algorithm */
+/* Select backend using least connections algorithm with round-robin tie-breaking */
 static BackendInfo *select_least_conn(RuleInfo *rule)
 {
     if (rule->backend_count == 0)
         return NULL;
 
-    BackendInfo *best = NULL;
     uint64_t min_conn = UINT64_MAX;
+    int tied_count = 0;
 
+    /* First pass: find minimum weighted connection count */
     for (int i = 0; i < rule->backend_count; i++) {
         BackendInfo *b = &rule->backends[i];
         if (!lb_backend_should_retry(b, rule))
@@ -110,16 +111,41 @@ static BackendInfo *select_least_conn(RuleInfo *rule)
 
         /* Weight-adjusted connection count: connections / weight */
         uint64_t weighted_conn = b->active_connections * 1000 / (b->weight > 0 ? b->weight : 1);
+
         if (weighted_conn < min_conn) {
             min_conn = weighted_conn;
-            best = b;
+            tied_count = 1;
+        } else if (weighted_conn == min_conn) {
+            tied_count++;
         }
     }
 
-    if (best)
-        return best;
+    if (tied_count == 0) {
+        /* All backends unhealthy - return first one */
+        return &rule->backends[0];
+    }
 
-    /* All backends unhealthy - return first one */
+    /* Second pass: select the (rr_index % tied_count)-th backend with min connections */
+    int selection = rule->rr_index % tied_count;
+    int current = 0;
+
+    for (int i = 0; i < rule->backend_count; i++) {
+        BackendInfo *b = &rule->backends[i];
+        if (!lb_backend_should_retry(b, rule))
+            continue;
+
+        uint64_t weighted_conn = b->active_connections * 1000 / (b->weight > 0 ? b->weight : 1);
+
+        if (weighted_conn == min_conn) {
+            if (current == selection) {
+                rule->rr_index++;
+                return b;
+            }
+            current++;
+        }
+    }
+
+    /* Fallback - should not reach here */
     return &rule->backends[0];
 }
 
