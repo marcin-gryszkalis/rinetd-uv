@@ -209,20 +209,20 @@ static void format_uptime(time_t seconds, char *buf, size_t buf_size)
 void stats_log_summary(void)
 {
     time_t uptime = time(NULL) - globalStats.start_time;
-    int active = globalStats.active_connections_tcp +
-                 globalStats.active_connections_udp +
-                 globalStats.active_connections_unix;
+    uint64_t active = globalStats.active_connections_tcp +
+                      globalStats.active_connections_udp +
+                      globalStats.active_connections_unix;
     char bytes_in[32], bytes_out[32];
 
     format_bytes(globalStats.total_bytes_in, bytes_in, sizeof(bytes_in));
     format_bytes(globalStats.total_bytes_out, bytes_out, sizeof(bytes_out));
 
-    logInfo("STATS: uptime=%lds conns=%d/%llu tcp=%d/%llu udp=%d/%llu unix=%d/%llu traffic=%s/%s errors=%llu/%llu/%llu\n",
+    logInfo("STATS: uptime=%lds conns=%llu/%llu tcp=%llu/%llu udp=%llu/%llu unix=%llu/%llu traffic=%s/%s errors=%llu/%llu/%llu\n",
             (long)uptime,
-            active, (unsigned long long)globalStats.total_connections_accepted,
-            globalStats.active_connections_tcp, (unsigned long long)globalStats.total_connections_tcp,
-            globalStats.active_connections_udp, (unsigned long long)globalStats.total_connections_udp,
-            globalStats.active_connections_unix, (unsigned long long)globalStats.total_connections_unix,
+            (unsigned long long)active, (unsigned long long)globalStats.total_connections_accepted,
+            (unsigned long long)globalStats.active_connections_tcp, (unsigned long long)globalStats.total_connections_tcp,
+            (unsigned long long)globalStats.active_connections_udp, (unsigned long long)globalStats.total_connections_udp,
+            (unsigned long long)globalStats.active_connections_unix, (unsigned long long)globalStats.total_connections_unix,
             bytes_in, bytes_out,
             (unsigned long long)globalStats.accept_errors,
             (unsigned long long)globalStats.connect_errors,
@@ -321,9 +321,9 @@ static char *generate_json_status(void)
 
     time_t now = time(NULL);
     time_t uptime = now - globalStats.start_time;
-    int active = globalStats.active_connections_tcp +
-                 globalStats.active_connections_udp +
-                 globalStats.active_connections_unix;
+    uint64_t active = globalStats.active_connections_tcp +
+                      globalStats.active_connections_udp +
+                      globalStats.active_connections_unix;
 
     /* Format timestamps */
     char timestamp[64], reload_time[64];
@@ -347,10 +347,10 @@ static char *generate_json_status(void)
         "  \"config_reloads\": %d,\n"
         "  \"stats_since_reload\": \"%s\",\n"
         "  \"connections\": {\n"
-        "    \"active\": %d,\n"
-        "    \"active_tcp\": %d,\n"
-        "    \"active_udp\": %d,\n"
-        "    \"active_unix\": %d,\n"
+        "    \"active\": %llu,\n"
+        "    \"active_tcp\": %llu,\n"
+        "    \"active_udp\": %llu,\n"
+        "    \"active_unix\": %llu,\n"
         "    \"total\": %llu,\n"
         "    \"total_tcp\": %llu,\n"
         "    \"total_udp\": %llu,\n"
@@ -379,10 +379,10 @@ static char *generate_json_status(void)
         (long)uptime,
         globalStats.config_reload_count,
         reload_time,
-        active,
-        globalStats.active_connections_tcp,
-        globalStats.active_connections_udp,
-        globalStats.active_connections_unix,
+        (unsigned long long)active,
+        (unsigned long long)globalStats.active_connections_tcp,
+        (unsigned long long)globalStats.active_connections_udp,
+        (unsigned long long)globalStats.active_connections_unix,
         (unsigned long long)globalStats.total_connections_accepted,
         (unsigned long long)globalStats.total_connections_tcp,
         (unsigned long long)globalStats.total_connections_udp,
@@ -492,9 +492,9 @@ static char *generate_text_status(void)
 
     time_t now = time(NULL);
     time_t uptime = now - globalStats.start_time;
-    int active = globalStats.active_connections_tcp +
-                 globalStats.active_connections_udp +
-                 globalStats.active_connections_unix;
+    uint64_t active = globalStats.active_connections_tcp +
+                      globalStats.active_connections_udp +
+                      globalStats.active_connections_unix;
 
     /* Format timestamp and uptime */
     char timestamp[64], uptime_str[64];
@@ -522,7 +522,7 @@ static char *generate_text_status(void)
         "Config reloads: %d\n"
         "\n"
         "CONNECTIONS\n"
-        "Active: %d (TCP: %d, UDP: %d, Unix: %d)\n"
+        "Active: %llu (TCP: %llu, UDP: %llu, Unix: %llu)\n"
         "Total: %llu (TCP: %llu, UDP: %llu, Unix: %llu)\n"
         "\n"
         "TRAFFIC\n"
@@ -546,10 +546,10 @@ static char *generate_text_status(void)
 #endif
         uptime_str,
         globalStats.config_reload_count,
-        active,
-        globalStats.active_connections_tcp,
-        globalStats.active_connections_udp,
-        globalStats.active_connections_unix,
+        (unsigned long long)active,
+        (unsigned long long)globalStats.active_connections_tcp,
+        (unsigned long long)globalStats.active_connections_udp,
+        (unsigned long long)globalStats.active_connections_unix,
         (unsigned long long)globalStats.total_connections_accepted,
         (unsigned long long)globalStats.total_connections_tcp,
         (unsigned long long)globalStats.total_connections_udp,

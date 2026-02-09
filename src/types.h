@@ -119,7 +119,7 @@ struct _rule_info {
     /* Load balancing state */
     LbAlgorithm algorithm;
     uint64_t rr_index;                  /* Round-robin counter (uint64 to avoid overflow) */
-    int total_weight;                   /* Sum of all backend weights */
+    uint64_t total_weight;              /* Sum of all backend weights (uint64 to avoid overflow) */
 
     /* Health checking configuration */
     int health_threshold;               /* Failures before marking unhealthy */
@@ -173,8 +173,8 @@ struct _server_info {
         was dropped by the remote host. */
     int serverTimeout;
     /* Track number of active UDP connections for this forwarding rule
-       to prevent file descriptor exhaustion */
-    int udp_connection_count;
+       to prevent file descriptor exhaustion (uint64 to avoid overflow) */
+    uint64_t udp_connection_count;
     /* UDP LRU list for O(1) eviction */
     ConnectionInfo *udp_lru_head;   /* Most recently used (front) */
     ConnectionInfo *udp_lru_tail;   /* Least recently used (back) - evict this */

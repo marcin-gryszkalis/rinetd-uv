@@ -235,7 +235,7 @@ BackendInfo *lb_select_backend(RuleInfo *rule, struct sockaddr_storage *client_a
 
     switch (rule->algorithm) {
         case LB_ROUND_ROBIN:
-            if (rule->total_weight == rule->backend_count) {
+            if (rule->total_weight == (uint64_t)rule->backend_count) {
                 /* All weights equal - use simple round-robin */
                 selected = select_round_robin(rule);
             } else {

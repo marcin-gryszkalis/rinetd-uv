@@ -2325,7 +2325,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     }
 
     /* New connection - check if we've reached the limit */
-    if (srv->udp_connection_count >= maxUdpConnections) {
+    if (srv->udp_connection_count >= (uint64_t)maxUdpConnections) {
         /* Close oldest connection to make room */
         close_oldest_udp_connection((ServerInfo*)srv);
     }

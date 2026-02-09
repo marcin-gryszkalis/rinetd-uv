@@ -40,10 +40,10 @@ struct _global_stats {
     uint64_t total_connections_udp;
     uint64_t total_connections_unix;
 
-    /* Active connections by type */
-    int active_connections_tcp;
-    int active_connections_udp;
-    int active_connections_unix;
+    /* Active connections by type (uint64 to avoid overflow on high-load systems) */
+    uint64_t active_connections_tcp;
+    uint64_t active_connections_udp;
+    uint64_t active_connections_unix;
 
     /* Byte counters (lifetime totals) */
     uint64_t total_bytes_in;
