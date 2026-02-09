@@ -8,6 +8,7 @@
 #include <string.h>
 #include <uv.h>
 #include "buffer_pool.h"
+#include "log.h"
 #include "net.h"
 #include "rinetd.h"
 
@@ -218,11 +219,19 @@ static void start_trim_timer(void)
         return;
 
     if (!pool.trim_timer_initialized) {
-        uv_timer_init(main_loop, &pool.trim_timer);
+        int ret = uv_timer_init(main_loop, &pool.trim_timer);
+        if (ret != 0) {
+            logError("uv_timer_init(trim_timer) failed: %s\n", uv_strerror(ret));
+            return;
+        }
         pool.trim_timer_initialized = 1;
     }
 
-    uv_timer_start(&pool.trim_timer, trim_timer_cb, pool.trim_delay_ms, pool.trim_delay_ms);
+    int ret = uv_timer_start(&pool.trim_timer, trim_timer_cb, pool.trim_delay_ms, pool.trim_delay_ms);
+    if (ret != 0) {
+        logError("uv_timer_start(trim_timer) failed: %s\n", uv_strerror(ret));
+        return;
+    }
     pool.trim_timer_active = 1;
 }
 
