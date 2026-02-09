@@ -647,8 +647,11 @@ static void status_fs_cb(uv_fs_t *req)
     if (req->result < 0) {
         logWarning("Status file operation failed (phase %d): %s\n", ctx->phase, uv_strerror(req->result));
         /* Try to clean up temp file if it was created */
-        if (ctx->phase > PHASE_MKSTEMP && ctx->temp_path[0])
-            unlink(ctx->temp_path);
+        if (ctx->phase > PHASE_MKSTEMP && ctx->temp_path[0]) {
+            uv_fs_t unlink_req;
+            uv_fs_unlink(NULL, &unlink_req, ctx->temp_path, NULL);
+            uv_fs_req_cleanup(&unlink_req);
+        }
         cleanup_status_context(ctx);
         return;
     }
@@ -665,27 +668,48 @@ static void status_fs_cb(uv_fs_t *req)
 
         ctx->phase = PHASE_WRITE;
         ctx->req.data = ctx;
-        uv_fs_write(main_loop, &ctx->req, ctx->fd, &ctx->buffer, 1, 0, status_fs_cb);
+        int r = uv_fs_write(main_loop, &ctx->req, ctx->fd, &ctx->buffer, 1, 0, status_fs_cb);
+        if (r < 0) {
+            logWarning("uv_fs_write failed synchronously: %s\n", uv_strerror(r));
+            cleanup_status_context(ctx);
+        }
         break;
 
     case PHASE_WRITE:
         ctx->phase = PHASE_CLOSE;
         ctx->req.data = ctx;
-        uv_fs_close(main_loop, &ctx->req, ctx->fd, status_fs_cb);
+        r = uv_fs_close(main_loop, &ctx->req, ctx->fd, status_fs_cb);
+        if (r < 0) {
+            logWarning("uv_fs_close failed synchronously: %s\n", uv_strerror(r));
+            cleanup_status_context(ctx);
+        }
         break;
 
     case PHASE_CLOSE:
         /* Apply permissions: 0666 & ~umask */
         ctx->phase = PHASE_CHMOD;
         ctx->req.data = ctx;
-        uv_fs_chmod(main_loop, &ctx->req, ctx->temp_path, 0666, status_fs_cb);
+        r = uv_fs_chmod(main_loop, &ctx->req, ctx->temp_path, 0666, status_fs_cb);
+        if (r < 0) {
+            logWarning("uv_fs_chmod failed synchronously: %s\n", uv_strerror(r));
+            cleanup_status_context(ctx);
+        }
         break;
 
     case PHASE_CHMOD:
         /* Rename to final location */
         ctx->phase = PHASE_RENAME;
         ctx->req.data = ctx;
-        uv_fs_rename(main_loop, &ctx->req, ctx->temp_path, ctx->final_path, status_fs_cb);
+        r = uv_fs_rename(main_loop, &ctx->req, ctx->temp_path, ctx->final_path, status_fs_cb);
+        if (r < 0) {
+            logWarning("uv_fs_rename failed synchronously: %s\n", uv_strerror(r));
+            if (ctx->temp_path[0]) {
+                uv_fs_t unlink_req;
+                uv_fs_unlink(NULL, &unlink_req, ctx->temp_path, NULL);
+                uv_fs_req_cleanup(&unlink_req);
+            }
+            cleanup_status_context(ctx);
+        }
         break;
 
     case PHASE_RENAME:

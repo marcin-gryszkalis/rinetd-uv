@@ -434,8 +434,11 @@ static void readConfiguration(char const *file)
     /* Open the log file */
     if (logFd != -1) {
         uv_fs_t req;
-        uv_fs_close(NULL, &req, logFd, NULL);
+        int ret = uv_fs_close(NULL, &req, logFd, NULL);
         uv_fs_req_cleanup(&req);
+        if (ret < 0) {
+            logWarning("uv_fs_close failed: %s\n", uv_strerror(ret));
+        }
         logFd = -1;
     }
     if (logFileName) {
@@ -714,8 +717,11 @@ static void startServerListening(ServerInfo *srv)
         srv->uv_handle.pipe.data = srv;
 
         /* For filesystem sockets, remove any existing socket file */
-        if (!srv->fromIsAbstract && srv->fromUnixPath)
-            unlink(srv->fromUnixPath);
+        if (!srv->fromIsAbstract && srv->fromUnixPath) {
+            uv_fs_t req;
+            uv_fs_unlink(NULL, &req, srv->fromUnixPath, NULL);
+            uv_fs_req_cleanup(&req);
+        }
 
         /* Bind to Unix socket path */
         /* Set umask before bind to avoid race condition with chmod */
@@ -931,8 +937,11 @@ static void server_handle_close_cb(uv_handle_t *handle)
     srv->toPort_saved = NULL;
 
     /* For filesystem Unix sockets, unlink the socket file */
-    if (srv->fromUnixPath && !srv->fromIsAbstract)
-        unlink(srv->fromUnixPath);
+    if (srv->fromUnixPath && !srv->fromIsAbstract) {
+        uv_fs_t req;
+        uv_fs_unlink(NULL, &req, srv->fromUnixPath, NULL);
+        uv_fs_req_cleanup(&req);
+    }
 
     /* Free server resources */
     free(srv->fromHost);
@@ -2789,8 +2798,12 @@ RETSIGTYPE quit(int s)
     /* Flush the log before closing */
     if (logFd != -1) {
         uv_fs_t req;
-        uv_fs_close(NULL, &req, logFd, NULL);
+        int ret = uv_fs_close(NULL, &req, logFd, NULL);
         uv_fs_req_cleanup(&req);
+        if (ret < 0) {
+            /* Don't use logWarning here - log file is being closed */
+            fprintf(stderr, "uv_fs_close failed during shutdown: %s\n", uv_strerror(ret));
+        }
         logFd = -1;
     }
 
