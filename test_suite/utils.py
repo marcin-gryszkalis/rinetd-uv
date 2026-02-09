@@ -10,8 +10,9 @@ import threading
 import resource
 import struct
 
-DEFAULT_TIMEOUT = 120
-BARRIER_TIMEOUT = 60
+# increased from 120/60 for hardcore tests like test_stress.py::test_randomized_stress[1000-False]
+DEFAULT_TIMEOUT = 180
+BARRIER_TIMEOUT = 120
 
 def get_file_limit():
     """

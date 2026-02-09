@@ -105,8 +105,16 @@ def test_memory_leaks_udp(rinetd, udp_echo_server, request):
     Run UDP transfer test under valgrind to check for leaks.
     """
     import shutil
+    import platform
     if not shutil.which("valgrind"):
         pytest.skip("valgrind not found")
+
+    # Skip on FreeBSD due to Valgrind UDP socket compatibility issues
+    # See: https://github.com/paulfloyd/freebsd_valgrind/issues/137
+    # FreeBSD's Valgrind has signal handling issues that cause UDP socket
+    # operations to hang (sigreturn rflags errors)
+    if platform.system() == "FreeBSD":
+        pytest.skip("Valgrind UDP tests hang on FreeBSD due to known signal handling issues")
 
     rinetd_port = get_free_port()
 
