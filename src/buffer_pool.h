@@ -15,6 +15,9 @@
  * trim_delay_ms: Milliseconds pool must be oversized before trimming */
 void buffer_pool_init(int buffer_size, int min_free, int max_free, int trim_delay_ms);
 
+/* Close buffer pool timer (call before event loop cleanup) */
+void buffer_pool_close_timer(void);
+
 /* Shutdown the buffer pool, freeing all buffers */
 void buffer_pool_shutdown(void);
 

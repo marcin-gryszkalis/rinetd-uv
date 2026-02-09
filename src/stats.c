@@ -96,15 +96,22 @@ static void stats_log_timer_close_cb(uv_handle_t *handle)
 
 void stats_shutdown(void)
 {
-    /* Stop timers first */
-    stats_stop_timers();
-
-    /* Close timer handles properly */
+    /* Stop and close status file timer */
     if (status_file_timer_initialized && !status_file_timer_closing) {
+        if (status_file_timer_active) {
+            uv_timer_stop(&status_file_timer);
+            status_file_timer_active = 0;
+        }
         status_file_timer_closing = 1;
         uv_close((uv_handle_t*)&status_file_timer, status_file_timer_close_cb);
     }
+
+    /* Stop and close stats log timer */
     if (stats_log_timer_initialized && !stats_log_timer_closing) {
+        if (stats_log_timer_active) {
+            uv_timer_stop(&stats_log_timer);
+            stats_log_timer_active = 0;
+        }
         stats_log_timer_closing = 1;
         uv_close((uv_handle_t*)&stats_log_timer, stats_log_timer_close_cb);
     }
@@ -119,10 +126,14 @@ void stats_start_timers(void)
             status_file_timer_initialized = 1;
         }
         if (!status_file_timer_active) {
-            uv_timer_start(&status_file_timer, status_file_timer_cb,
-                           statusConfig.interval * 1000, statusConfig.interval * 1000);
-            status_file_timer_active = 1;
-            logDebug("Status file timer started (interval: %ds)\n", statusConfig.interval);
+            int ret = uv_timer_start(&status_file_timer, status_file_timer_cb, statusConfig.interval * 1000, statusConfig.interval * 1000);
+            if (ret != 0)
+                logError("uv_timer_start(status_file_timer) error: %s\n", uv_strerror(ret));
+            else
+            {
+                status_file_timer_active = 1;
+                logDebug("Status file timer started (interval: %ds)\n", statusConfig.interval);
+            }
         }
     }
 
@@ -133,10 +144,14 @@ void stats_start_timers(void)
             stats_log_timer_initialized = 1;
         }
         if (!stats_log_timer_active) {
-            uv_timer_start(&stats_log_timer, stats_log_timer_cb,
-                           statsLogInterval * 1000, statsLogInterval * 1000);
-            stats_log_timer_active = 1;
-            logDebug("Stats log timer started (interval: %ds)\n", statsLogInterval);
+            int ret = uv_timer_start(&stats_log_timer, stats_log_timer_cb, statsLogInterval * 1000, statsLogInterval * 1000);
+            if (ret != 0)
+                logError("uv_timer_start(stats_log_timer) error: %s\n", uv_strerror(ret));
+            else
+            {
+                stats_log_timer_active = 1;
+                logDebug("Stats log timer started (interval: %ds)\n", statsLogInterval);
+            }
         }
     }
 }

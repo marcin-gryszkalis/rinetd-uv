@@ -61,16 +61,25 @@ static void trim_timer_close_cb(uv_handle_t *handle)
     pool.trim_timer_initialized = 0;
 }
 
-void buffer_pool_shutdown(void)
+void buffer_pool_close_timer(void)
 {
-    if (pool.trim_timer_active)
-        stop_trim_timer();
-
+    /* Stop and close trim timer (must be called before event loop cleanup) */
     if (pool.trim_timer_initialized && !pool.trim_timer_closing) {
+        if (pool.trim_timer_active) {
+            uv_timer_stop(&pool.trim_timer);
+            pool.trim_timer_active = 0;
+        }
         pool.trim_timer_closing = 1;
         uv_close((uv_handle_t *)&pool.trim_timer, trim_timer_close_cb);
     }
+}
 
+void buffer_pool_shutdown(void)
+{
+    /* Close timer if not already closed */
+    buffer_pool_close_timer();
+
+    /* Free all buffers in the pool */
     while (pool.free_list) {
         BufferNode *node = pool.free_list;
         pool.free_list = node->next;

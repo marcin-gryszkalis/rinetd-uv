@@ -2694,6 +2694,9 @@ RETSIGTYPE quit(int s)
     /* Stop and close stats timers */
     stats_shutdown();
 
+    /* Close buffer pool trim timer (keeps loop alive if not closed) */
+    buffer_pool_close_timer();
+
     /* Close all server listeners (stops accepting new connections) */
     clearConfiguration();
 
@@ -2756,18 +2759,13 @@ RETSIGTYPE quit(int s)
     int iterations = 0;
 
     while (uv_loop_alive(main_loop) && iterations < RINETD_CLEANUP_MAX_ITERATIONS) {
-        /* Use UV_RUN_ONCE every 10 iterations to ensure close callbacks get processed,
-         * otherwise use UV_RUN_NOWAIT for speed */
-        /* if (iterations % 10 == 0) {
-            uv_run(main_loop, UV_RUN_ONCE);
-        } else { */
-            uv_run(main_loop, UV_RUN_NOWAIT);
-        /* } */
+        /* Use UV_RUN_ONCE to wait for events (including close callbacks)
+         * This ensures close callbacks are processed without busy-waiting */
+        uv_run(main_loop, UV_RUN_ONCE);
 
         iterations++;
 
         /* Diagnostic logging */
-        /*
         if (iterations % 10 == 0) {
             uv_metrics_t metrics;
             uv_metrics_info(main_loop, &metrics);
@@ -2775,11 +2773,6 @@ RETSIGTYPE quit(int s)
                      iterations, metrics.events_waiting, uv_loop_alive(main_loop),
                      main_loop->active_handles);
         }
-        */
-
-        /* Small sleep every iteration to avoid busy-waiting */
-        struct timespec ts = {0, 1000000};  /* 1ms */
-        nanosleep(&ts, NULL);
     }
 
     if (iterations >= RINETD_CLEANUP_MAX_ITERATIONS) {
