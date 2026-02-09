@@ -316,8 +316,9 @@ static void clearConfiguration(void)
         ServerInfo *srv = &seInfo[i];
 
         /* Close DNS refresh timer if initialized */
-        if (srv->dns_timer_initialized) {
+        if (srv->dns_timer_initialized && !srv->dns_timer_closing) {
             uv_timer_stop(&srv->dns_refresh_timer);
+            srv->dns_timer_closing = 1;
             uv_close((uv_handle_t*)&srv->dns_refresh_timer, dns_timer_close_cb);
             any_handles_to_close = 1;
         }
