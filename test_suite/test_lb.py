@@ -118,15 +118,15 @@ class IdentifyingTcpServer(threading.Thread):
                 try:
                     conn, _ = sock.accept()
                     self.connection_count += 1
-                    # Python 3.13 compat: Don't chain .start() - call separately
-                    handler = threading.Thread(target=self._handle, args=(conn,), daemon=True)
+                    # Python 3.13 compat: Renamed method to avoid collision with Thread._handle
+                    handler = threading.Thread(target=self._handle_connection, args=(conn,), daemon=True)
                     handler.start()
                 except socket.timeout:
                     continue
                 except OSError:
                     break
 
-    def _handle(self, conn):
+    def _handle_connection(self, conn):
         try:
             data = conn.recv(1024)
             if data:
@@ -171,8 +171,8 @@ class IdentifyingUnixServer(threading.Thread):
                 try:
                     conn, _ = sock.accept()
                     self.connection_count += 1
-                    # Python 3.13 compat: Don't chain .start() - call separately
-                    handler = threading.Thread(target=self._handle, args=(conn,), daemon=True)
+                    # Python 3.13 compat: Renamed method to avoid collision with Thread._handle
+                    handler = threading.Thread(target=self._handle_connection, args=(conn,), daemon=True)
                     handler.start()
                 except socket.timeout:
                     continue
@@ -185,7 +185,7 @@ class IdentifyingUnixServer(threading.Thread):
             except OSError:
                 pass
 
-    def _handle(self, conn):
+    def _handle_connection(self, conn):
         try:
             data = conn.recv(1024)
             if data:
