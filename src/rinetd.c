@@ -84,6 +84,8 @@ static uv_signal_t sighup_handle, sigint_handle, sigterm_handle, sigpipe_handle;
 char *pidFileName = NULL;
 int bufferSize = RINETD_DEFAULT_BUFFER_SIZE;
 int globalDnsRefreshPeriod = RINETD_DEFAULT_DNS_REFRESH_PERIOD;
+int globalDnsMultiIpExpand = 0;  /* Default: disabled (legacy .conf files) */
+int globalDnsMultiIpProto = 4;   /* Default: IPv4 only */
 int poolMinFree = RINETD_DEFAULT_POOL_MIN_FREE;
 int poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
 int poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
@@ -1170,6 +1172,30 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             backend_unix_path = backend->unixPath;
             backend_is_abstract = backend->isAbstract;
             backend_source = backend->sourceAddrInfo;
+
+            /* Log connection details for debugging */
+            if (backend_addr) {
+                char dest_ip[INET6_ADDRSTRLEN];
+                if (backend_addr->ai_family == AF_INET) {
+                    inet_ntop(AF_INET,
+                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
+                             dest_ip, sizeof(dest_ip));
+                } else {
+                    inet_ntop(AF_INET6,
+                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
+                             dest_ip, sizeof(dest_ip));
+                }
+                logDebug("New connection -> backend=%s host=%s ip=%s port=%s\n",
+                        backend->name ? backend->name : "unknown",
+                        backend->host ? backend->host : "N/A",
+                        dest_ip,
+                        backend->port ? backend->port : "N/A");
+            } else if (backend_unix_path) {
+                logDebug("New connection -> backend=%s unix=%s%s\n",
+                        backend->name ? backend->name : "unknown",
+                        backend_is_abstract ? "@" : "",
+                        backend_unix_path);
+            }
         }
     }
 
@@ -1280,6 +1306,13 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
         ret = uv_tcp_connect(connect_req, &cnx->local_uv_handle.tcp, backend_addr->ai_addr, tcp_connect_cb);
         if (ret != 0) {
             logErrorConn(cnx, "uv_tcp_connect error: %s\n", uv_strerror(ret));
+            stats_error_connect();
+            logEvent(cnx, cnx->server, logLocalConnectFailed);
+
+            /* Track backend health for load balancing */
+            if (cnx->selected_backend && cnx->rule)
+                lb_backend_mark_failure(cnx->selected_backend, cnx->rule);
+
             free(connect_req);
             if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
             cnx->local_handle_closing = 1;
@@ -1440,6 +1473,30 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             backend_unix_path = backend->unixPath;
             backend_is_abstract = backend->isAbstract;
             backend_source = backend->sourceAddrInfo;
+
+            /* Log connection details for debugging */
+            if (backend_addr) {
+                char dest_ip[INET6_ADDRSTRLEN];
+                if (backend_addr->ai_family == AF_INET) {
+                    inet_ntop(AF_INET,
+                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
+                             dest_ip, sizeof(dest_ip));
+                } else {
+                    inet_ntop(AF_INET6,
+                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
+                             dest_ip, sizeof(dest_ip));
+                }
+                logDebug("New connection -> backend=%s host=%s ip=%s port=%s\n",
+                        backend->name ? backend->name : "unknown",
+                        backend->host ? backend->host : "N/A",
+                        dest_ip,
+                        backend->port ? backend->port : "N/A");
+            } else if (backend_unix_path) {
+                logDebug("New connection -> backend=%s unix=%s%s\n",
+                        backend->name ? backend->name : "unknown",
+                        backend_is_abstract ? "@" : "",
+                        backend_unix_path);
+            }
         }
     }
 
@@ -2393,6 +2450,25 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
             lb_backend_connection_start(backend);
             backend_addr = backend->addrInfo;
             backend_source = backend->sourceAddrInfo;
+
+            /* Log connection details for debugging */
+            if (backend_addr) {
+                char dest_ip[INET6_ADDRSTRLEN];
+                if (backend_addr->ai_family == AF_INET) {
+                    inet_ntop(AF_INET,
+                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
+                             dest_ip, sizeof(dest_ip));
+                } else {
+                    inet_ntop(AF_INET6,
+                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
+                             dest_ip, sizeof(dest_ip));
+                }
+                logDebug("New UDP session -> backend=%s host=%s ip=%s port=%s\n",
+                        backend->name ? backend->name : "unknown",
+                        backend->host ? backend->host : "N/A",
+                        dest_ip,
+                        backend->port ? backend->port : "N/A");
+            }
         }
     }
 

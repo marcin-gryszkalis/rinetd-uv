@@ -45,6 +45,8 @@ extern int seTotal;
 extern char *pidFileName;
 extern int bufferSize;
 extern int globalDnsRefreshPeriod;
+extern int globalDnsMultiIpExpand;
+extern int globalDnsMultiIpProto;
 extern int poolMinFree;
 extern int poolMaxFree;
 extern int poolTrimDelay;

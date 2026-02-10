@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <arpa/inet.h>
 #include <yaml.h>
 
 #include "yaml_config.h"
@@ -123,6 +124,21 @@ static int parse_bool(const char *s, int default_val)
     if (strcasecmp(s, "false") == 0 || strcasecmp(s, "no") == 0 ||
         strcasecmp(s, "off") == 0 || strcmp(s, "0") == 0)
         return 0;
+    return default_val;
+}
+
+/* Helper: parse DNS protocol filter (case-insensitive) */
+static DnsProtoFilter parse_dns_proto_filter(const char *s, DnsProtoFilter default_val)
+{
+    if (!s)
+        return default_val;
+    if (strcasecmp(s, "ipv4") == 0)
+        return DNS_PROTO_IPV4;
+    if (strcasecmp(s, "ipv6") == 0)
+        return DNS_PROTO_IPV6;
+    if (strcasecmp(s, "any") == 0)
+        return DNS_PROTO_ANY;
+    logWarning("Invalid dns_multi_ip_proto value '%s', using default\n", s);
     return default_val;
 }
 
@@ -357,6 +373,157 @@ static int add_backend_from_dest(ParserContext *ctx, const char *dest_str)
     return 0;
 }
 
+/* Duplicate a single addrinfo node (not the chain) */
+static struct addrinfo *dup_single_addrinfo(struct addrinfo *src)
+{
+    struct addrinfo *dst = calloc(1, sizeof(struct addrinfo));
+    if (!dst) return NULL;
+
+    dst->ai_flags = src->ai_flags;
+    dst->ai_family = src->ai_family;
+    dst->ai_socktype = src->ai_socktype;
+    dst->ai_protocol = src->ai_protocol;
+    dst->ai_addrlen = src->ai_addrlen;
+    dst->ai_next = NULL;  /* Break chain */
+
+    if (src->ai_addr) {
+        dst->ai_addr = malloc(src->ai_addrlen);
+        if (dst->ai_addr)
+            memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
+    }
+
+    if (src->ai_canonname)
+        dst->ai_canonname = strdup(src->ai_canonname);
+
+    return dst;
+}
+
+/* Format IP address for logging */
+static void format_addrinfo_ip(struct addrinfo *ai, char *buf, size_t buflen)
+{
+    if (ai->ai_family == AF_INET) {
+        inet_ntop(AF_INET, &((struct sockaddr_in *)ai->ai_addr)->sin_addr,
+                  buf, buflen);
+    } else {
+        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr,
+                  buf, buflen);
+    }
+}
+
+/* Expand backend when DNS returns multiple IPs
+ * Returns: 1 if expansion occurred, 0 if single IP or disabled, -1 on error */
+static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend,
+                                    struct addrinfo *ai_list, const char *hostname,
+                                    int dns_multi_ip_expand, int dns_multi_ip_proto)
+{
+    if (!dns_multi_ip_expand)
+        return 0;  /* Feature disabled */
+
+    /* Count IPs matching the protocol filter */
+    int ip_count = 0;
+    int total_ips = 0;
+    for (struct addrinfo *ai = ai_list; ai; ai = ai->ai_next) {
+        total_ips++;
+        /* Filter by protocol */
+        if (dns_multi_ip_proto == 4 && ai->ai_family != AF_INET)
+            continue;  /* IPv4 filter: skip non-IPv4 */
+        if (dns_multi_ip_proto == 6 && ai->ai_family != AF_INET6)
+            continue;  /* IPv6 filter: skip non-IPv6 */
+        /* dns_multi_ip_proto == 0 (any): accept all */
+        ip_count++;
+    }
+
+    if (ip_count <= 1)
+        return 0;  /* Single IP after filtering - no expansion needed */
+
+    /* Log expansion */
+    if (total_ips != ip_count) {
+        const char *filter = (dns_multi_ip_proto == 4) ? "IPv4" :
+                            (dns_multi_ip_proto == 6) ? "IPv6" : "any";
+        logInfo("DNS for %s resolved to %d IPs (%d after %s filter), expanding to separate backends\n",
+                hostname, total_ips, ip_count, filter);
+    } else {
+        logInfo("DNS for %s resolved to %d IPs, expanding to separate backends\n",
+                hostname, ip_count);
+    }
+
+    /* Expand: create one backend per IP (filtered) */
+    struct addrinfo *cur = ai_list;
+    int backend_idx = 0;
+    for (int idx = 0; cur; idx++, cur = cur->ai_next) {
+        /* Apply protocol filter */
+        if (dns_multi_ip_proto == 4 && cur->ai_family != AF_INET)
+            continue;
+        if (dns_multi_ip_proto == 6 && cur->ai_family != AF_INET6)
+            continue;
+
+        BackendInfo new_backend = *template_backend;  /* Copy template */
+
+        /* Generate unique name: "hostname[0]", "hostname[1]", etc. */
+        char name_buf[256];
+        snprintf(name_buf, sizeof(name_buf), "%s[%d]", hostname, backend_idx);
+        new_backend.name = safe_strdup(name_buf, 255);
+
+        /* Duplicate single addrinfo (break chain) */
+        new_backend.addrInfo = dup_single_addrinfo(cur);
+        if (!new_backend.addrInfo) {
+            logError("Failed to duplicate addrinfo for %s\n", name_buf);
+            free(new_backend.name);
+            continue;
+        }
+
+        /* Set tracking fields */
+        new_backend.dns_parent_name = safe_strdup(hostname, 255);
+        new_backend.is_implicit = 1;
+        new_backend.dns_ip_index = backend_idx;
+
+        /* Duplicate hostname/port (don't use template pointers - they'll be freed) */
+        new_backend.host = safe_strdup(hostname, 255);
+        new_backend.port = safe_strdup(template_backend->port, 10);
+        new_backend.host_saved = safe_strdup(hostname, 255);
+        new_backend.port_saved = safe_strdup(template_backend->port, 10);
+
+        /* Log the IP for this backend */
+        char ip_buf[INET6_ADDRSTRLEN];
+        format_addrinfo_ip(new_backend.addrInfo, ip_buf, sizeof(ip_buf));
+        logInfo("  Created implicit backend %s -> %s\n", name_buf, ip_buf);
+
+        /* Add to rule */
+        if (rule->backend_count >= rule->backend_capacity) {
+            int new_capacity = rule->backend_capacity ? rule->backend_capacity * 2 : 4;
+            if (new_capacity > LB_MAX_BACKENDS_PER_RULE)
+                new_capacity = LB_MAX_BACKENDS_PER_RULE;
+            if (rule->backend_count >= new_capacity) {
+                logError("Too many backends for rule (max %d)\n", LB_MAX_BACKENDS_PER_RULE);
+                free(new_backend.name);
+                free(new_backend.dns_parent_name);
+                free(new_backend.host_saved);
+                free(new_backend.port_saved);
+                freeaddrinfo(new_backend.addrInfo);
+                break;
+            }
+            BackendInfo *new_backends = realloc(rule->backends,
+                                                new_capacity * sizeof(BackendInfo));
+            if (!new_backends) {
+                logError("Failed to expand backends array\n");
+                free(new_backend.name);
+                free(new_backend.dns_parent_name);
+                free(new_backend.host_saved);
+                free(new_backend.port_saved);
+                freeaddrinfo(new_backend.addrInfo);
+                break;
+            }
+            rule->backends = new_backends;
+            rule->backend_capacity = new_capacity;
+        }
+
+        rule->backends[rule->backend_count++] = new_backend;
+        backend_idx++;
+    }
+
+    return 1;  /* Expansion occurred */
+}
+
 /* Add a backend to current rule */
 static int add_backend_to_rule(ParserContext *ctx)
 {
@@ -394,7 +561,25 @@ static int add_backend_to_rule(ParserContext *ctx)
             ctx->current_backend = NULL;
             return -1;
         }
+
+        /* Try multi-IP expansion */
+        int expanded = expand_backend_multi_ip(rule, backend, ai, backend->host,
+                                                ctx->config->dns_multi_ip_expand,
+                                                ctx->config->dns_multi_ip_proto);
+
+        if (expanded == 1) {
+            /* Expansion occurred - backends already added, free template and addrinfo */
+            lb_backend_cleanup(backend);
+            free(backend);
+            ctx->current_backend = NULL;
+            freeaddrinfo(ai);
+            return 0;  /* Success */
+        }
+
+        /* No expansion - use first IP as normal (backward compatible) */
         backend->addrInfo = ai;
+        backend->is_implicit = 0;  /* Explicit backend */
+        backend->dns_parent_name = NULL;
 
         /* Save for DNS refresh */
         backend->host_saved = strdup(backend->host);
@@ -623,6 +808,10 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 } else {
                     ctx->config->pool_trim_delay = val;
                 }
+            } else if (strcmp(ctx->current_key, "dns_multi_ip_expand") == 0) {
+                ctx->config->dns_multi_ip_expand = parse_bool(value, 1);
+            } else if (strcmp(ctx->current_key, "dns_multi_ip_proto") == 0) {
+                ctx->config->dns_multi_ip_proto = parse_dns_proto_filter(value, DNS_PROTO_IPV4);
             } else if (strcmp(ctx->current_key, "stats_log_interval") == 0) {
                 val = parse_int_strict(value, 0, 86400, "stats_log_interval", err_msg, sizeof(err_msg));
                 if (val < 0) {
@@ -1136,6 +1325,10 @@ YamlConfig *yaml_config_parse(const char *filename)
     config->status.format_json = 1;
     config->stats_log_interval = 60;
 
+    /* DNS multi-IP expansion (enabled by default for YAML) */
+    config->dns_multi_ip_expand = 1;
+    config->dns_multi_ip_proto = DNS_PROTO_IPV4;  /* Default: IPv4 only */
+
     yaml_parser_t parser;
     yaml_event_t event;
 
@@ -1325,6 +1518,8 @@ void yaml_config_apply_globals(YamlConfig *config)
 
     bufferSize = config->buffer_size;
     globalDnsRefreshPeriod = config->dns_refresh;
+    globalDnsMultiIpExpand = config->dns_multi_ip_expand;
+    globalDnsMultiIpProto = config->dns_multi_ip_proto;
     maxUdpConnections = config->max_udp_connections;
     listenBacklog = config->listen_backlog;
     poolMinFree = config->pool_min_free;

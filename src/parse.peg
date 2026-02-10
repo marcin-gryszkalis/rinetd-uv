@@ -71,7 +71,7 @@ static char *stripQuotes(char const *str);
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | statusfile | statusinterval | statusformat | statsloginterval | include-directive)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | dns-multi-ip-expand-global | dns-multi-ip-proto-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | statusfile | statusinterval | statusformat | statsloginterval | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-spec - connect-spec (-? server-options)?
@@ -201,6 +201,34 @@ dns-refresh-global  =  "dns-refresh" - < number >
         PARSE_ERROR;
     }
 }
+
+dns-multi-ip-expand-global  =  "dns-multi-ip-expand" - < keepalive_value >
+{
+    if (strcmp(yytext, "on") == 0) {
+        globalDnsMultiIpExpand = 1;
+    } else if (strcmp(yytext, "off") == 0) {
+        globalDnsMultiIpExpand = 0;
+    } else {
+        logError("invalid dns-multi-ip-expand value at line %d (must be 'on' or 'off')\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+dns-multi-ip-proto-global  =  "dns-multi-ip-proto" - < proto_filter_value >
+{
+    if (strcasecmp(yytext, "ipv4") == 0) {
+        globalDnsMultiIpProto = 4;
+    } else if (strcasecmp(yytext, "ipv6") == 0) {
+        globalDnsMultiIpProto = 6;
+    } else if (strcasecmp(yytext, "any") == 0) {
+        globalDnsMultiIpProto = 0;
+    } else {
+        logError("invalid dns-multi-ip-proto value at line %d (must be 'ipv4', 'ipv6', or 'any')\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+
+proto_filter_value  =  [iI][pP][vV] '4' | [iI][pP][vV] '6' | [aA][nN][yY]
 
 pool-min-free  =  "pool-min-free" - < number >
 {

@@ -381,6 +381,11 @@ void lb_backend_init(BackendInfo *backend)
     backend->healthy = 1;
     backend->weight = LB_DEFAULT_WEIGHT;
     backend->effective_weight = LB_DEFAULT_WEIGHT;
+
+    /* DNS multi-IP tracking */
+    backend->dns_parent_name = NULL;
+    backend->is_implicit = 0;
+    backend->dns_ip_index = 0;
 }
 
 void lb_rule_cleanup(RuleInfo *rule)
@@ -423,6 +428,10 @@ void lb_backend_cleanup(BackendInfo *backend)
         freeaddrinfo(backend->addrInfo);
     if (backend->sourceAddrInfo)
         freeaddrinfo(backend->sourceAddrInfo);
+
+    /* DNS multi-IP tracking cleanup */
+    free(backend->dns_parent_name);
+    backend->dns_parent_name = NULL;
 
     /* Note: dns_timer cleanup is handled by the caller (libuv async close) */
 

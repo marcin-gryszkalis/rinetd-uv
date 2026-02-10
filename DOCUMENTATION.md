@@ -205,6 +205,7 @@ Setting `dns-refresh=0` disables periodic DNS refresh for this rule.
 - **New connections:** Immediately use the newly resolved IP address.
 - **Failure-triggered refresh:** After 3 consecutive connection failures to a backend, DNS is re-resolved immediately (regardless of the timer interval).
 - **SIGHUP compatibility:** Sending SIGHUP still forces immediate re-resolution of all hostnames (existing behavior preserved).
+- **Multiple IPs:** In case DNS returns multiple addresses for given hostname - the first one will be used; with random order in returned set you may get frequent changes of IP assigned to given rule. See also: [DNS Multi-IP Automatic Load Balancing](#dns-multi-ip-automatic-load-balancing).
 
 **Default:** 600 seconds (10 minutes)
 
@@ -737,6 +738,8 @@ The `global` section configures server-wide options. All settings are optional a
 |---------|------|---------|-------------|
 | `buffer_size` | integer | 65536 | I/O buffer size in bytes (1024-1048576) |
 | `dns_refresh` | integer | 600 | Default DNS refresh interval in seconds |
+| `dns_multi_ip_expand` | boolean | true (YAML), false (.conf) | Expand backends when DNS returns multiple IPs |
+| `dns_multi_ip_proto` | string | ipv4 | Protocol filter for DNS expansion: `ipv4`, `ipv6`, or `any` |
 | `log_file` | string | none | Path to log file |
 | `log_common` | boolean | false | Use Apache-style common log format |
 | `pid_file` | string | /var/run/rinetd-uv.pid | Path to PID file |
@@ -750,6 +753,84 @@ The `global` section configures server-wide options. All settings are optional a
 | `status.interval` | integer | 30 | Status file write interval in seconds |
 | `status.format` | string | json | Status file format (`json` or `text`) |
 | `stats_log_interval` | integer | 60 | Log summary interval in seconds (0 to disable) |
+
+#### DNS Multi-IP Automatic Load Balancing
+
+The `dns_multi_ip_expand` option enables automatic backend creation when a DNS name resolves to multiple IP addresses. When enabled, rinetd creates separate backend entries for each IP address, allowing automatic load balancing without explicit configuration.
+
+**Format-specific defaults:**
+- **YAML format:** Enabled by default (`true`) - modern opt-out behavior
+- **Legacy .conf format:** Disabled by default (`false`) - backward compatibility, opt-in
+
+**YAML Example:**
+```yaml
+global:
+  dns_multi_ip_expand: true  # Default for YAML (can set to false to disable)
+  dns_refresh: 300
+
+rules:
+  - name: web-cluster
+    bind: "0.0.0.0:8080/tcp"
+    connect:
+      - dest: "web.example.com:80"  # If DNS returns 3 IPs, creates 3 backends
+    load_balancing:
+      algorithm: roundrobin
+```
+
+**Legacy .conf Example:**
+```conf
+# Must explicitly enable for .conf files
+dns-multi-ip-expand on
+dns-refresh 300
+
+0.0.0.0 8080/tcp web.example.com 80
+```
+
+**Protocol Filtering:**
+
+The `dns_multi_ip_proto` option controls which IP address types are used for expansion:
+- **`ipv4`** (default): Only use IPv4 addresses, skip IPv6
+- **`ipv6`**: Only use IPv6 addresses, skip IPv4
+- **`any`**: Use all addresses (both IPv4 and IPv6)
+
+This is useful when your network doesn't support IPv6 routing or you want to explicitly control the protocol used.
+
+**YAML Example with protocol filter:**
+```yaml
+global:
+  dns_multi_ip_expand: true
+  dns_multi_ip_proto: ipv4  # Only create backends for IPv4 addresses
+```
+
+**Legacy .conf Example:**
+```conf
+dns-multi-ip-expand on
+dns-multi-ip-proto ipv4  # Case-insensitive: IPv4, IPV4, ipv4 all work
+```
+
+**Behavior:**
+
+When a backend's DNS name resolves to multiple IPs:
+- If `dns_multi_ip_expand` is enabled: rinetd creates separate backends named `hostname[0]`, `hostname[1]`, etc., each pointing to one IP address (filtered by protocol)
+- If disabled: only the first resolved IP is used (legacy behavior)
+
+**Dynamic updates:**
+
+When DNS refresh occurs and the resolved IPs change:
+- New IPs are automatically added as new backends
+- IPs no longer in DNS are gracefully removed (backends marked unhealthy, connections drained)
+- Changes are logged with `[INFO]` messages
+
+**Example log output:**
+```
+[INFO] DNS for web.example.com resolved to 4 IPs (2 after IPv4 filter), expanding to separate backends
+[INFO]   Created implicit backend web.example.com[0] -> 10.0.0.1
+[INFO]   Created implicit backend web.example.com[1] -> 10.0.0.2
+[INFO] DNS refresh: adding implicit backend for new IP 10.0.0.3
+[INFO] DNS refresh: removing implicit backend web.example.com[1] - IP 10.0.0.2 no longer in DNS
+```
+
+The first log line shows how many IPs were filtered out when using a protocol filter.
 
 ### Rules
 

@@ -8,6 +8,13 @@
 
 #include "types.h"
 
+/* DNS multi-IP protocol filter */
+typedef enum {
+    DNS_PROTO_ANY = 0,
+    DNS_PROTO_IPV4 = 4,
+    DNS_PROTO_IPV6 = 6
+} DnsProtoFilter;
+
 /* Status file configuration (parsed from YAML) */
 typedef struct _yaml_status_config YamlStatusConfig;
 struct _yaml_status_config {
@@ -35,6 +42,10 @@ struct _yaml_config {
     /* Status reporting */
     YamlStatusConfig status;
     int stats_log_interval;     /* Seconds, 0 = disabled (default: 60) */
+
+    /* DNS multi-IP expansion */
+    int dns_multi_ip_expand;    /* Enable DNS multi-IP expansion to backends */
+    DnsProtoFilter dns_multi_ip_proto;  /* Protocol filter: ipv4, ipv6, or any */
 
     /* Rules */
     RuleInfo *rules;

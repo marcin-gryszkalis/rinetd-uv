@@ -100,6 +100,11 @@ struct _backend_info {
     int dns_refresh_period;             /* 0 = use rule/global default */
     char *host_saved;                   /* Hostname for async resolution */
     char *port_saved;                   /* Port for async resolution */
+
+    /* DNS multi-IP expansion tracking */
+    char *dns_parent_name;              /* Original hostname (NULL for explicit backends) */
+    int is_implicit;                    /* 1 if auto-created from DNS multi-IP, 0 if explicit */
+    int dns_ip_index;                   /* Index within DNS result set (0, 1, 2...) */
 };
 
 /* Rule information for YAML config (replaces ServerInfo for LB rules) */
