@@ -440,7 +440,7 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
     /* Expand: create one backend per IP (filtered) */
     struct addrinfo *cur = ai_list;
     int backend_idx = 0;
-    for (int idx = 0; cur; idx++, cur = cur->ai_next) {
+    for (; cur; cur = cur->ai_next) {
         /* Apply protocol filter */
         if (dns_multi_ip_proto == 4 && cur->ai_family != AF_INET)
             continue;
