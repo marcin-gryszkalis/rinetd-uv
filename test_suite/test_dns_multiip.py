@@ -3,11 +3,9 @@ DNS Multi-IP Load Balancing tests for rinetd-uv.
 
 Tests the automatic expansion of backends when DNS returns multiple IP addresses.
 
-APPROACH: Uses Docker networking to test DNS multi-IP without modifying host system.
-- Creates Docker network with custom DNS (dnsmasq)
-- Runs test backend servers on host
-- Runs rinetd in Docker container with custom DNS pointing to host servers
-- Verifies backend expansion via status file
+APPROACH: Uses public DNS (www.cloudflare.com, google.com) that naturally return
+multiple IP addresses. This approach requires no special setup, no root access,
+and works reliably in all environments including CI/CD.
 """
 import pytest
 import socket
@@ -16,22 +14,9 @@ import time
 import json
 import tempfile
 import os
-import threading
 from .utils import get_free_port
 
 
-def docker_available():
-    """Check if Docker is available and running."""
-    try:
-        result = subprocess.run(['docker', 'version'],
-                              capture_output=True,
-                              timeout=5)
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 def test_dns_multiip_public_dns(rinetd_path, tmp_path):
     """
     Test DNS multi-IP expansion using public DNS (www.cloudflare.com).
@@ -123,7 +108,6 @@ rules:
                 proc.kill()
 
 
-@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 def test_dns_multiip_protocol_filter(rinetd_path, tmp_path):
     """
     Test protocol filtering using a hostname with both IPv4 and IPv6.
@@ -181,7 +165,6 @@ rules:
             proc.wait(timeout=5)
 
 
-@pytest.mark.skipif(not docker_available(), reason="Docker not available")
 def test_dns_multiip_disabled(rinetd_path, tmp_path):
     """
     Test that expansion doesn't occur when dns_multi_ip_expand is false.
@@ -272,6 +255,4 @@ def test_dns_multiip_info():
     For controlled testing with specific IPs, use explicit multi-backend config.
     """
     # This test always passes and just provides information
-    if not docker_available():
-        pytest.skip("Docker not available - DNS multi-IP tests use public DNS")
     assert True, message
