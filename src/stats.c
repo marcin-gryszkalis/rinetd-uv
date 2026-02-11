@@ -21,6 +21,7 @@
 #include "log.h"
 #include "buffer_pool.h"
 #include "loadbalancer.h"
+#include "net.h"
 
 /* Global statistics instance */
 GlobalStats globalStats;
@@ -456,17 +457,37 @@ static char *generate_json_status(void)
                 char be_name_escaped[256];
                 json_escape_string(be->name ? be->name : "unnamed", be_name_escaped, sizeof(be_name_escaped));
 
+                /* Get host IP address */
+                char host_ip[INET6_ADDRSTRLEN] = "";
+                format_addr_ip(be->addrInfo, host_ip, sizeof(host_ip));
+
+                char dns_parent_escaped[256] = "";
+                if (be->dns_parent_name) {
+                    json_escape_string(be->dns_parent_name, dns_parent_escaped,
+                                     sizeof(dns_parent_escaped));
+                }
+
                 BUF_PRINTF(json_fail,
                     "        {\n"
                     "          \"name\": \"%s\",\n"
+                    "          \"host\": \"%s\",\n"
                     "          \"healthy\": %s,\n"
+                    "          \"is_implicit\": %d,\n"
+                    "          \"dns_parent_name\": %s%s%s,\n"
+                    "          \"dns_ip_index\": %d,\n"
                     "          \"connections_active\": %llu,\n"
                     "          \"connections_total\": %llu,\n"
                     "          \"bytes_in\": %llu,\n"
                     "          \"bytes_out\": %llu\n"
                     "        }%s\n",
                     be_name_escaped,
+                    host_ip,
                     be->healthy ? "true" : "false",
+                    be->is_implicit,
+                    be->dns_parent_name ? "\"" : "",
+                    be->dns_parent_name ? dns_parent_escaped : "null",
+                    be->dns_parent_name ? "\"" : "",
+                    be->dns_ip_index,
                     (unsigned long long)be->active_connections,
                     (unsigned long long)be->total_connections,
                     (unsigned long long)be->total_bytes_in,

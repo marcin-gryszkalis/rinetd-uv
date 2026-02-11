@@ -90,6 +90,35 @@ int compareAddrinfo(struct addrinfo *a, struct addrinfo *b)
     return 0;
 }
 
+/* Format IP address from addrinfo structure
+ * Uses libuv's cross-platform uv_inet_ntop function
+ * Returns pointer to buf on success, or empty string on failure */
+const char *format_addr_ip(struct addrinfo *ai, char *buf, size_t buflen)
+{
+    if (!ai || !ai->ai_addr || !buf || buflen == 0) {
+        if (buf && buflen > 0) buf[0] = '\0';
+        return buf;
+    }
+
+    int err = 0;
+    if (ai->ai_family == AF_INET) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)ai->ai_addr;
+        err = uv_inet_ntop(AF_INET, &addr->sin_addr, buf, buflen);
+    } else if (ai->ai_family == AF_INET6) {
+        struct sockaddr_in6 *addr = (struct sockaddr_in6 *)ai->ai_addr;
+        err = uv_inet_ntop(AF_INET6, &addr->sin6_addr, buf, buflen);
+    } else {
+        buf[0] = '\0';
+        return buf;
+    }
+
+    if (err != 0) {
+        buf[0] = '\0';
+    }
+
+    return buf;
+}
+
 /* Callback for async DNS resolution */
 void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
 {
@@ -106,20 +135,8 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
     if (!compareAddrinfo(res, srv->toAddrInfo)) {
         /* Address changed - log and update */
         char old_addr[INET6_ADDRSTRLEN], new_addr[INET6_ADDRSTRLEN];
-
-        /* Format old address */
-        if (srv->toAddrInfo->ai_family == AF_INET) {
-            inet_ntop(AF_INET, &((struct sockaddr_in *)srv->toAddrInfo->ai_addr)->sin_addr, old_addr, sizeof(old_addr));
-        } else {
-            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)srv->toAddrInfo->ai_addr)->sin6_addr, old_addr, sizeof(old_addr));
-        }
-
-        /* Format new address */
-        if (res->ai_family == AF_INET) {
-            inet_ntop(AF_INET, &((struct sockaddr_in *)res->ai_addr)->sin_addr, new_addr, sizeof(new_addr));
-        } else {
-            inet_ntop(AF_INET6, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr, new_addr, sizeof(new_addr));
-        }
+        format_addr_ip(srv->toAddrInfo, old_addr, sizeof(old_addr));
+        format_addr_ip(res, new_addr, sizeof(new_addr));
 
         logDebug("DNS refresh: %s resolved to new address %s (was %s)\n", srv->toHost, new_addr, old_addr);
 

@@ -95,6 +95,7 @@ uint16_t getPort(struct addrinfo* ai);
 
 /* Async DNS refresh functions */
 int compareAddrinfo(struct addrinfo *a, struct addrinfo *b);
+const char *format_addr_ip(struct addrinfo *ai, char *buf, size_t buflen);
 void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res);
 int shouldEnableDnsRefresh(ServerInfo *srv);
 int startAsyncDnsResolution(ServerInfo *srv);

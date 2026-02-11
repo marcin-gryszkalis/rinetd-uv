@@ -398,17 +398,7 @@ static struct addrinfo *dup_single_addrinfo(struct addrinfo *src)
     return dst;
 }
 
-/* Format IP address for logging */
-static void format_addrinfo_ip(struct addrinfo *ai, char *buf, size_t buflen)
-{
-    if (ai->ai_family == AF_INET) {
-        inet_ntop(AF_INET, &((struct sockaddr_in *)ai->ai_addr)->sin_addr,
-                  buf, buflen);
-    } else {
-        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)ai->ai_addr)->sin6_addr,
-                  buf, buflen);
-    }
-}
+/* Note: format_addr_ip is now format_addr_ip in net.c */
 
 /* Expand backend when DNS returns multiple IPs
  * Returns: 1 if expansion occurred, 0 if single IP or disabled, -1 on error */
@@ -485,7 +475,7 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
 
         /* Log the IP for this backend */
         char ip_buf[INET6_ADDRSTRLEN];
-        format_addrinfo_ip(new_backend.addrInfo, ip_buf, sizeof(ip_buf));
+        format_addr_ip(new_backend.addrInfo, ip_buf, sizeof(ip_buf));
         logInfo("  Created implicit backend %s -> %s\n", name_buf, ip_buf);
 
         /* Add to rule */

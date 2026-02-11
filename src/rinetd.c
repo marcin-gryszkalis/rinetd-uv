@@ -1176,15 +1176,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             /* Log connection details for debugging */
             if (backend_addr) {
                 char dest_ip[INET6_ADDRSTRLEN];
-                if (backend_addr->ai_family == AF_INET) {
-                    inet_ntop(AF_INET,
-                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
-                             dest_ip, sizeof(dest_ip));
-                } else {
-                    inet_ntop(AF_INET6,
-                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
-                             dest_ip, sizeof(dest_ip));
-                }
+                format_addr_ip(backend_addr, dest_ip, sizeof(dest_ip));
                 logDebug("New connection -> backend=%s host=%s ip=%s port=%s\n",
                         backend->name ? backend->name : "unknown",
                         backend->host ? backend->host : "N/A",
@@ -1477,15 +1469,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             /* Log connection details for debugging */
             if (backend_addr) {
                 char dest_ip[INET6_ADDRSTRLEN];
-                if (backend_addr->ai_family == AF_INET) {
-                    inet_ntop(AF_INET,
-                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
-                             dest_ip, sizeof(dest_ip));
-                } else {
-                    inet_ntop(AF_INET6,
-                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
-                             dest_ip, sizeof(dest_ip));
-                }
+                format_addr_ip(backend_addr, dest_ip, sizeof(dest_ip));
                 logDebug("New connection -> backend=%s host=%s ip=%s port=%s\n",
                         backend->name ? backend->name : "unknown",
                         backend->host ? backend->host : "N/A",
@@ -2454,15 +2438,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
             /* Log connection details for debugging */
             if (backend_addr) {
                 char dest_ip[INET6_ADDRSTRLEN];
-                if (backend_addr->ai_family == AF_INET) {
-                    inet_ntop(AF_INET,
-                             &((struct sockaddr_in *)backend_addr->ai_addr)->sin_addr,
-                             dest_ip, sizeof(dest_ip));
-                } else {
-                    inet_ntop(AF_INET6,
-                             &((struct sockaddr_in6 *)backend_addr->ai_addr)->sin6_addr,
-                             dest_ip, sizeof(dest_ip));
-                }
+                format_addr_ip(backend_addr, dest_ip, sizeof(dest_ip));
                 logDebug("New UDP session -> backend=%s host=%s ip=%s port=%s\n",
                         backend->name ? backend->name : "unknown",
                         backend->host ? backend->host : "N/A",
