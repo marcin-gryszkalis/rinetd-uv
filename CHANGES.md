@@ -1,4 +1,4 @@
-## Version 2.1.0 (2026-02-05)
+## Version 2.1.0 (2026-02-14)
 
 **Round-Robin Load Balancing with YAML Configuration**
 
@@ -17,10 +17,11 @@
          - Optional client IP affinity with configurable TTL
          - LRU eviction when affinity table is full
    - Requires configuration in YAML (see below)
+   - Additional "implicit" mode (when DNS returns number of entries for given name)
 
  * **YAML Configuration Format:**
    - New YAML configuration format
-   - Legacy configuration format remains fully supported and unchanged (no support for load balancing)
+   - Legacy configuration format remains fully supported and unchanged (no support for explicit load balancing)
    - Default config search order: `/etc/rinetd-uv.yaml`, then `.yml`, then `.conf`
    - `tools/conf2yaml.py` script to convert legacy config to YAML format
 
