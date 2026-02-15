@@ -33,6 +33,14 @@ global:
     format: json            # json or text (default: json)
   stats_log_interval: 60    # Log summary interval, 0 to disable (default: 60)
 
+  # Global access control (applied to all rules before per-rule rules)
+  access:
+    allow:
+      - "10.*"
+      - "192.168.*"
+    deny:
+      - "192.168.1.100"
+
 rules:
   # Simple 1:1 forwarding (equivalent to legacy format)
   - name: simple-forward

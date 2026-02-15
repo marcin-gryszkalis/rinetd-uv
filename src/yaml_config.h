@@ -47,6 +47,11 @@ struct _yaml_config {
     int dns_multi_ip_expand;    /* Enable DNS multi-IP expansion to backends */
     DnsProtoFilter dns_multi_ip_proto;  /* Protocol filter: ipv4, ipv6, or any */
 
+    /* Global access rules (prepended to allRules before per-rule rules) */
+    Rule *global_rules;
+    int global_rules_count;
+    int global_rules_capacity;
+
     /* Rules */
     RuleInfo *rules;
     int rule_count;

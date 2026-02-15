@@ -42,7 +42,10 @@ typedef enum {
     STATE_LB_KEY,
     STATE_ACCESS,
     STATE_ACCESS_KEY,
-    STATE_ACCESS_LIST
+    STATE_ACCESS_LIST,
+    STATE_GLOBAL_ACCESS,
+    STATE_GLOBAL_ACCESS_KEY,
+    STATE_GLOBAL_ACCESS_LIST
 } ParserState;
 
 typedef struct {
@@ -1029,6 +1032,27 @@ static void process_scalar(ParserContext *ctx, const char *value)
             }
             break;
 
+        case STATE_GLOBAL_ACCESS_LIST:
+            /* Add allow/deny pattern to config's global rules array */
+            if (value) {
+                YamlConfig *config = ctx->config;
+                if (config->global_rules_count >= config->global_rules_capacity) {
+                    int new_cap = config->global_rules_capacity ? config->global_rules_capacity * 2 : 8;
+                    Rule *tmp = realloc(config->global_rules, new_cap * sizeof(Rule));
+                    if (!tmp) {
+                        ctx->error = 1;
+                        snprintf(ctx->error_msg, sizeof(ctx->error_msg), "Out of memory for global access rules");
+                        break;
+                    }
+                    config->global_rules = tmp;
+                    config->global_rules_capacity = new_cap;
+                }
+                config->global_rules[config->global_rules_count].pattern = safe_strdup(value, 256);
+                config->global_rules[config->global_rules_count].type = ctx->current_rule_type;
+                config->global_rules_count++;
+            }
+            break;
+
         default:
             break;
     }
@@ -1070,10 +1094,12 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                     }
                     break;
                 case STATE_GLOBAL_KEY:
-                    /* Entering a nested mapping under global (e.g., status:) */
+                    /* Entering a nested mapping under global (e.g., status:, access:) */
                     if (ctx->current_key) {
                         if (strcmp(ctx->current_key, "status") == 0) {
                             ctx->state = STATE_STATUS;
+                        } else if (strcmp(ctx->current_key, "access") == 0) {
+                            ctx->state = STATE_GLOBAL_ACCESS;
                         } else {
                             logWarning("Unknown global mapping: %s\n", ctx->current_key);
                             ctx->state = STATE_GLOBAL;
@@ -1140,6 +1166,9 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                 case STATE_ACCESS:
                     ctx->state = STATE_RULE;
                     break;
+                case STATE_GLOBAL_ACCESS:
+                    ctx->state = STATE_GLOBAL;
+                    break;
                 case STATE_ROOT:
                     ctx->state = STATE_INITIAL;
                     break;
@@ -1181,6 +1210,19 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                         ctx->current_key = NULL;
                     }
                     break;
+                case STATE_GLOBAL_ACCESS_KEY:
+                    if (ctx->current_key) {
+                        if (strcmp(ctx->current_key, "allow") == 0) {
+                            ctx->current_rule_type = allowRule;
+                            ctx->state = STATE_GLOBAL_ACCESS_LIST;
+                        } else if (strcmp(ctx->current_key, "deny") == 0) {
+                            ctx->current_rule_type = denyRule;
+                            ctx->state = STATE_GLOBAL_ACCESS_LIST;
+                        }
+                        free(ctx->current_key);
+                        ctx->current_key = NULL;
+                    }
+                    break;
                 default:
                     break;
             }
@@ -1201,6 +1243,9 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                     break;
                 case STATE_ACCESS_LIST:
                     ctx->state = STATE_ACCESS;
+                    break;
+                case STATE_GLOBAL_ACCESS_LIST:
+                    ctx->state = STATE_GLOBAL_ACCESS;
                     break;
                 default:
                     break;
@@ -1257,6 +1302,13 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                     ctx->state = STATE_ACCESS_KEY;
                     break;
                 case STATE_ACCESS_LIST:
+                    process_scalar(ctx, value);
+                    break;
+                case STATE_GLOBAL_ACCESS:
+                    ctx->current_key = safe_strdup(value, 64);
+                    ctx->state = STATE_GLOBAL_ACCESS_KEY;
+                    break;
+                case STATE_GLOBAL_ACCESS_LIST:
                     process_scalar(ctx, value);
                     break;
                 default:
@@ -1455,6 +1507,47 @@ YamlConfig *yaml_config_parse(const char *filename)
         }
     }
 
+    /* Prepend global access rules to allRules array.
+       Per-rule patterns are already in allRules from parsing - shift them
+       to make room for global patterns at the front. */
+    if (config->global_rules_count > 0) {
+        extern Rule *allRules;
+        extern int allRulesCount;
+        extern int globalRulesCount;
+
+        int n = config->global_rules_count;
+        Rule *tmp = realloc(allRules, (allRulesCount + n) * sizeof(Rule));
+        if (!tmp) {
+            logError("Out of memory prepending global access rules\n");
+            yaml_config_free(config);
+            return NULL;
+        }
+        allRules = tmp;
+
+        /* Shift existing per-rule entries forward */
+        if (allRulesCount > 0)
+            memmove(&allRules[n], &allRules[0], allRulesCount * sizeof(Rule));
+
+        /* Copy global rules to the front */
+        for (int i = 0; i < n; i++) {
+            allRules[i].pattern = config->global_rules[i].pattern;
+            allRules[i].type = config->global_rules[i].type;
+        }
+
+        /* Adjust rulesStart on all parsed rules */
+        for (int i = 0; i < config->rule_count; i++)
+            config->rules[i].rulesStart += n;
+
+        globalRulesCount = n;
+        allRulesCount += n;
+
+        /* Ownership of pattern strings transferred to allRules */
+        free(config->global_rules);
+        config->global_rules = NULL;
+        config->global_rules_count = 0;
+        config->global_rules_capacity = 0;
+    }
+
     logInfo("Loaded YAML config: %d rule(s)\n", config->rule_count);
     return config;
 }
@@ -1498,6 +1591,11 @@ void yaml_config_free(YamlConfig *config)
         free(rule->name);
     }
     free(config->rules);
+
+    /* Free global access rules (if not transferred to allRules) */
+    for (int i = 0; i < config->global_rules_count; i++)
+        free(config->global_rules[i].pattern);
+    free(config->global_rules);
 
     free(config);
 }

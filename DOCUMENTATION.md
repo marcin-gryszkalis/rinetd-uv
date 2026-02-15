@@ -411,7 +411,21 @@ deny 10.0.0.100
 
 #### YAML Format
 
-In YAML, access control is configured per-rule using the `access` block:
+In YAML, access control can be **global** (under `global.access`) or **per-rule** (under `rules[].access`).
+
+**Global access rules** apply to all forwarding rules:
+
+```yaml
+global:
+  access:
+    allow:
+      - "192.168.*"
+      - "10.0.0.*"
+    deny:
+      - "192.168.1.100"
+```
+
+**Per-rule access control** applies only to a specific rule:
 
 ```yaml
 rules:
@@ -427,9 +441,7 @@ rules:
         - "*"
 ```
 
-Rules are evaluated in order: allow rules checked first, then deny rules.
-
-**Note:** Global access rules are not supported in YAML format - use per-rule access control instead.
+Rules are evaluated in order: global allow rules first, then global deny, then per-rule allow, then per-rule deny. The semantics are identical to the legacy format.
 
 ### Global Options
 
@@ -964,6 +976,14 @@ global:
     interval: 30            # Write interval in seconds (default: 30)
     format: json            # json or text (default: json)
   stats_log_interval: 60    # Log summary interval, 0 to disable (default: 60)
+
+  # Global access control (applied to all rules before per-rule rules)
+  access:
+    allow:
+      - "10.*"
+      - "192.168.*"
+    deny:
+      - "192.168.1.100"
 
 rules:
   # Simple 1:1 forwarding (equivalent to legacy format)

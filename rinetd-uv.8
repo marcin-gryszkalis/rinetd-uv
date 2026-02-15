@@ -531,8 +531,23 @@ Per\-rule allow/deny rules apply only to the preceding forwarding rule.
 The same logic applies: if allow rules exist for a rule, connections
 must match at least one.
 .SS YAML Format
-In YAML, access control is configured per\-rule using the
-\f[CR]access\f[R] block:
+In YAML, access control can be \f[B]global\f[R] (under
+\f[CR]global.access\f[R]) or \f[B]per\-rule\f[R] (under
+\f[CR]rules[].access\f[R]).
+.PP
+\f[B]Global access rules\f[R] apply to all forwarding rules:
+.IP
+.EX
+global\f[B]:\f[R]
+  access\f[B]:\f[R]
+    allow\f[B]:\f[R]
+      \f[B]\-\f[R] \[dq]192.168.*\[dq]
+      \f[B]\-\f[R] \[dq]10.0.0.*\[dq]
+    deny\f[B]:\f[R]
+      \f[B]\-\f[R] \[dq]192.168.1.100\[dq]
+.EE
+.PP
+\f[B]Per\-rule access control\f[R] applies only to a specific rule:
 .IP
 .EX
 rules\f[B]:\f[R]
@@ -548,11 +563,9 @@ rules\f[B]:\f[R]
         \f[B]\-\f[R] \[dq]*\[dq]
 .EE
 .PP
-Rules are evaluated in order: allow rules checked first, then deny
-rules.
-.PP
-\f[B]Note:\f[R] Global access rules are not supported in YAML format \-
-use per\-rule access control instead.
+Rules are evaluated in order: global allow rules first, then global
+deny, then per\-rule allow, then per\-rule deny.
+The semantics are identical to the legacy format.
 .SS Global Options
 Global options configure server\-wide behavior.
 All settings are optional and have sensible defaults.
@@ -1385,6 +1398,14 @@ global\f[B]:\f[R]
     interval\f[B]:\f[R] 30\f[I]            # Write interval in seconds (default: 30)\f[R]
     format\f[B]:\f[R] json\f[I]            # json or text (default: json)\f[R]
   stats_log_interval\f[B]:\f[R] 60\f[I]    # Log summary interval, 0 to disable (default: 60)\f[R]
+
+\f[I]  # Global access control (applied to all rules before per\-rule rules)\f[R]
+  access\f[B]:\f[R]
+    allow\f[B]:\f[R]
+      \f[B]\-\f[R] \[dq]10.*\[dq]
+      \f[B]\-\f[R] \[dq]192.168.*\[dq]
+    deny\f[B]:\f[R]
+      \f[B]\-\f[R] \[dq]192.168.1.100\[dq]
 
 rules\f[B]:\f[R]
 \f[I]  # Simple 1:1 forwarding (equivalent to legacy format)\f[R]

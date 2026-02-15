@@ -336,14 +336,16 @@ def generate_yaml(parser):
             else:
                 lines.append(f"  {key}: {quote_if_needed(value)}")
 
-        # Note: Global allow/deny not directly supported in YAML format
-        # They should be added to each rule
         if parser.global_allow or parser.global_deny:
-            lines.append("  # Note: Global access rules should be added to each rule's access section")
-            for pattern in parser.global_allow:
-                lines.append(f"  # global allow: {pattern}")
-            for pattern in parser.global_deny:
-                lines.append(f"  # global deny: {pattern}")
+            lines.append("  access:")
+            if parser.global_allow:
+                lines.append("    allow:")
+                for pattern in parser.global_allow:
+                    lines.append(f"      - {quote_if_needed(pattern)}")
+            if parser.global_deny:
+                lines.append("    deny:")
+                for pattern in parser.global_deny:
+                    lines.append(f"      - {quote_if_needed(pattern)}")
 
         lines.append("")
 
