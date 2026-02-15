@@ -23,6 +23,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     automake \
     pkg-config \
     libuv1-dev \
+    libyaml-dev \
     peg \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -44,6 +45,7 @@ ARG VERSION=2.0.0
 # Prepare runtime files to be modified by nobody
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libuv1 \
+    libyaml-dev \
     netbase \
  && rm -rf /var/lib/apt/lists/* \
  && touch /var/log/rinetd-uv.log /var/run/rinetd-uv.pid \
