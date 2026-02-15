@@ -1,18 +1,37 @@
 # rinetd-uv.yaml - example configuration with load balancing
 
 global:
-  buffer_size: 65536
-  dns_refresh: 600
+  # Logging
   log_file: /var/log/rinetd-uv.log
+  # log_common: false       # Apache-style logging (default: false)
+
+  # PID file (default: /var/run/rinetd-uv.pid)
   pid_file: /var/run/rinetd-uv.pid
-  pool_min_free: 64
-  pool_max_free: 1024
+
+  # Buffer size (1024-1048576, default: 65536)
+  buffer_size: 65536
+
+  # Buffer pool configuration
+  pool_min_free: 64         # Min buffers to keep (0-10000, default: 64)
+  pool_max_free: 1024       # Max buffers before trimming (1-100000, default: 1024)
+  pool_trim_delay: 60000    # Trim delay in milliseconds (100-300000, default: 60000)
+
+  # DNS configuration
+  dns_refresh: 600          # DNS refresh interval in seconds (default: 600)
+  dns_multi_ip_expand: true # Expand multi-IP DNS to backends (default: true for YAML)
+  dns_multi_ip_proto: ipv4  # ipv4, ipv6, or any (default: ipv4)
+
+  # Network settings
+  listen_backlog: 128       # TCP listen backlog (1-65535, default: 128)
+  max_udp_connections: 5000 # Max UDP connections per rule (1-1000000, default: 5000)
+
+  # Status reporting
   status:
     enabled: true
     file: /var/log/rinetd-uv_status.json
-    interval: 30
-    format: json
-  stats_log_interval: 60
+    interval: 30            # Write interval in seconds (default: 30)
+    format: json            # json or text (default: json)
+  stats_log_interval: 60    # Log summary interval, 0 to disable (default: 60)
 
 rules:
   # Simple 1:1 forwarding (equivalent to legacy format)
@@ -63,6 +82,7 @@ rules:
       algorithm: iphash
       affinity_ttl: 3600
       affinity_max_entries: 50000
+    keepalive: true
 
   # Docker socket proxy
   - name: docker-proxy

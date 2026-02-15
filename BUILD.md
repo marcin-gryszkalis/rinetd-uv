@@ -2,6 +2,13 @@
 
 This document describes how to build and install rinetd-uv from source.
 
+## Quick Build
+
+```bash
+autoreconf -fiv && ./configure && make
+sudo make install
+```
+
 ## Build Requirements
 
 ### Required Dependencies
@@ -63,26 +70,13 @@ pkg install autoconf automake pkgconf libuv libyaml
 
 ### OpenBSD
 
-```
+```bash
 pkg_add autoconf automake libuv libyaml
 ```
 
 ## Build Instructions
 
-### Quick Build
-
-For most users, the following commands will build and install rinetd-uv:
-
-```bash
-autoreconf -fiv
-./configure
-make
-sudo make install
-```
-
-### Step-by-Step Build Process
-
-#### 1. Generate Configuration Files
+### 1. Generate Configuration Files
 
 Run the `autoreconf` to generate the autotools infrastructure:
 
@@ -90,7 +84,7 @@ Run the `autoreconf` to generate the autotools infrastructure:
 autoreconf -fiv
 ```
 
-##### Alternative
+#### Alternative
 
 If `autoreconf` causes problems on your system, consider using old-style `./bootstrap` script that runs applicable autotools.
 
@@ -98,7 +92,7 @@ If `autoreconf` causes problems on your system, consider using old-style `./boot
 ./bootstrap
 ```
 
-#### 2. Configure the Build
+### 2. Configure the Build
 
 Run the configure script to detect system capabilities and create Makefiles:
 
@@ -126,7 +120,7 @@ Run the configure script to detect system capabilities and create Makefiles:
 ./configure CFLAGS="-g -O0 -DDEBUG"
 ```
 
-#### 3. Build
+### 3. Build
 
 Compile rinetd-uv:
 
@@ -136,7 +130,7 @@ make
 
 The compiled binary will be in `src/rinetd-uv`.
 
-#### 4. Install
+### 4. Install
 
 Install rinetd-uv system-wide (requires root privileges):
 
@@ -324,10 +318,10 @@ Install dependencies with `pkg`, `portmaster` etc. The build process is identica
 
 ### Windows
 
+Native build support on Windows is limited, see: https://github.com/marcin-gryszkalis/rinetd-uv/issues/2
 rinetd-uv can be built on Windows using:
-- **MinGW/MSYS2**: Recommended, follows Unix build process
-- **Visual Studio**: Use `rinetd.vcxproj` project file (included)
-- **WSL**: Build as if on Linux
+- **MinGW/MSYS2**: follows Unix build process
+- **WSL**: builds as if on Linux
 
 ## Further Information
 
