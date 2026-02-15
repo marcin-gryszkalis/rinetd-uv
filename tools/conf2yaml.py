@@ -12,8 +12,12 @@ equivalent YAML configuration with load balancing support.
 
 import sys
 import re
+import glob
+import os
 import argparse
 from collections import OrderedDict
+
+MAX_INCLUDE_DEPTH = 16
 
 
 class LegacyConfigParser:
@@ -26,6 +30,9 @@ class LegacyConfigParser:
         self.global_allow = []
         self.global_deny = []
         self.warnings = []
+        self.include_depth = 0
+        self.included_files = set()  # Canonical paths for circular detection
+        self.current_file = None
 
     def parse_line(self, line):
         """Parse a single configuration line."""
@@ -138,16 +145,11 @@ class LegacyConfigParser:
                 self.global_options['stats_log_interval'] = int(match.group(1))
             return
 
-        # Include directive - not supported in YAML, warn user
         if line.startswith('include'):
             match = re.match(r'include\s+(.+)', line)
             if match:
                 pattern = match.group(1).strip().strip('"')
-                self.warnings.append(
-                    f"WARNING: 'include {pattern}' directive cannot be converted. "
-                    f"YAML format does not support includes. "
-                    f"Merge included files manually."
-                )
+                self.process_include(pattern)
             return
 
         # Parse allow/deny rules
@@ -288,8 +290,51 @@ class LegacyConfigParser:
         self.rules.append(rule)
         self.current_rule = rule
 
+    def process_include(self, pattern):
+        """Expand include pattern and parse matched files."""
+        if self.include_depth >= MAX_INCLUDE_DEPTH:
+            self.warnings.append(
+                f"WARNING: maximum include depth ({MAX_INCLUDE_DEPTH}) exceeded for '{pattern}'"
+            )
+            return
+
+        # Resolve relative paths against current file's directory
+        if not os.path.isabs(pattern) and self.current_file:
+            base_dir = os.path.dirname(os.path.abspath(self.current_file))
+            pattern = os.path.join(base_dir, pattern)
+
+        matches = sorted(glob.glob(os.path.expanduser(pattern)))
+        if not matches:
+            self.warnings.append(f"WARNING: include pattern matches no files: {pattern}")
+            return
+
+        for filepath in matches:
+            if os.path.isdir(filepath):
+                continue
+            canonical = os.path.realpath(filepath)
+            if canonical in self.included_files:
+                self.warnings.append(f"WARNING: circular include detected: {filepath}")
+                continue
+            self.parse_config_file(filepath)
+
+    def parse_config_file(self, filename):
+        """Parse a configuration file with include tracking."""
+        canonical = os.path.realpath(filename)
+        self.included_files.add(canonical)
+
+        saved_file = self.current_file
+        self.current_file = filename
+        self.include_depth += 1
+
+        with open(filename, 'r') as f:
+            for line in f:
+                self.parse_line(line)
+
+        self.current_file = saved_file
+        self.include_depth -= 1
+
     def parse_file(self, f):
-        """Parse a configuration file."""
+        """Parse from a file object (stdin or opened file)."""
         for line in f:
             self.parse_line(line)
 
@@ -403,17 +448,16 @@ def main():
     parser_arg.add_argument(
         'input',
         nargs='?',
-        type=argparse.FileType('r'),
-        default=sys.stdin,
+        default=None,
         help='Input configuration file (default: stdin)'
     )
     args = parser_arg.parse_args()
 
     config_parser = LegacyConfigParser()
-    config_parser.parse_file(args.input)
-
-    if args.input != sys.stdin:
-        args.input.close()
+    if args.input:
+        config_parser.parse_config_file(args.input)
+    else:
+        config_parser.parse_file(sys.stdin)
 
     # Print warnings to stderr
     for warning in config_parser.warnings:
