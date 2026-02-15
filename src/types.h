@@ -144,6 +144,7 @@ struct _rule_info {
     int timeout;                        /* UDP timeout in seconds */
     int keepalive;                      /* TCP keepalive: 1=enabled, 0=disabled */
     int dns_refresh_period;             /* Default DNS refresh for backends */
+    int socketMode;                     /* Unix socket file permissions (octal, 0 = use default) */
 };
 
 struct _server_info {

@@ -275,6 +275,7 @@ static int add_listener_to_rule(ParserContext *ctx, const char *bind_str)
     srv->keepalive = rule->keepalive;
     srv->serverTimeout = rule->timeout > 0 ? rule->timeout : RINETD_DEFAULT_UDP_TIMEOUT;
     srv->dns_refresh_period = rule->dns_refresh_period;
+    srv->socketMode = rule->socketMode;
     srv->fd = -1;
 
     /* Check for Unix socket */
@@ -877,7 +878,7 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 ctx->current_rule->keepalive = parse_bool(value, 1);
             } else if (strcmp(ctx->current_key, "mode") == 0) {
                 /* Parse octal mode like "0660" */
-                ctx->current_rule->timeout = (int)strtol(value, NULL, 8);
+                ctx->current_rule->socketMode = (int)strtol(value, NULL, 8);
             } else if (strcmp(ctx->current_key, "connect") == 0) {
                 /* Single connect destination as scalar: connect: "host:port/proto" */
                 if (add_backend_from_dest(ctx, value) != 0 || add_backend_to_rule(ctx) != 0)
