@@ -1,6 +1,14 @@
+## Version 2.1.1 (2026-02-15)
+
+**Small set of updates**
+
+ * fix bug in yaml parsing
+ * fix bugs conf2yaml converter
+ * refactor documentation
+
 ## Version 2.1.0 (2026-02-14)
 
-**Round-Robin Load Balancing with YAML Configuration**
+**Load Balancing with YAML Configuration**
 
  * **Load Balancing Feature:**
    - Many-to-many forwarding: multiple listeners to multiple backends
