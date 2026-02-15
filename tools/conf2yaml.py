@@ -25,6 +25,7 @@ class LegacyConfigParser:
         self.current_rule = None
         self.global_allow = []
         self.global_deny = []
+        self.warnings = []
 
     def parse_line(self, line):
         """Parse a single configuration line."""
@@ -33,7 +34,7 @@ class LegacyConfigParser:
         if not line:
             return
 
-        # Parse options
+        # Parse global options
         if line.startswith('logfile'):
             match = re.match(r'logfile\s+(\S+)', line)
             if match:
@@ -60,6 +61,19 @@ class LegacyConfigParser:
             match = re.match(r'dns-refresh\s+(\d+)', line)
             if match:
                 self.global_options['dns_refresh'] = int(match.group(1))
+            return
+
+        if line.startswith('dns-multi-ip-expand'):
+            match = re.match(r'dns-multi-ip-expand\s+(\S+)', line)
+            if match:
+                val = match.group(1).lower()
+                self.global_options['dns_multi_ip_expand'] = val in ('on', 'true', '1', 'yes')
+            return
+
+        if line.startswith('dns-multi-ip-proto'):
+            match = re.match(r'dns-multi-ip-proto\s+(\S+)', line)
+            if match:
+                self.global_options['dns_multi_ip_proto'] = match.group(1).lower()
             return
 
         if line.startswith('listen-backlog'):
@@ -124,6 +138,18 @@ class LegacyConfigParser:
                 self.global_options['stats_log_interval'] = int(match.group(1))
             return
 
+        # Include directive - not supported in YAML, warn user
+        if line.startswith('include'):
+            match = re.match(r'include\s+(.+)', line)
+            if match:
+                pattern = match.group(1).strip().strip('"')
+                self.warnings.append(
+                    f"WARNING: 'include {pattern}' directive cannot be converted. "
+                    f"YAML format does not support includes. "
+                    f"Merge included files manually."
+                )
+            return
+
         # Parse allow/deny rules
         if line.startswith('allow'):
             match = re.match(r'allow\s+(.+)', line)
@@ -152,48 +178,74 @@ class LegacyConfigParser:
         # Parse server rule: bind_addr bind_port connect_addr connect_port [options]
         self.parse_server_rule(line)
 
+    def parse_options(self, options_str):
+        """Parse options from a bracket-enclosed, comma-separated string."""
+        options = {}
+        for opt in options_str.split(','):
+            opt = opt.strip()
+            if '=' not in opt:
+                continue
+            key, value = opt.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+            if key == 'timeout':
+                options['timeout'] = int(value)
+            elif key == 'src':
+                options['src'] = value
+            elif key == 'keepalive':
+                options['keepalive'] = value.lower() in ('on', 'true', '1', 'yes')
+            elif key == 'dns-refresh':
+                options['dns_refresh'] = int(value)
+            elif key == 'mode':
+                options['mode'] = value
+        return options
+
     def parse_server_rule(self, line):
         """Parse a server forwarding rule."""
-        # Handle Unix socket format: unix:/path - bind_port connect_port [options]
-        # Handle IP format: addr port addr port [options]
+        # Extract bracketed options first
+        options_str = ''
+        options_match = re.search(r'\[([^\]]*)\]', line)
+        if options_match:
+            options_str = options_match.group(1)
+            line = line[:options_match.start()].strip()
+
+        options = self.parse_options(options_str)
 
         parts = line.split()
-        if len(parts) < 4:
+        if len(parts) < 2:
             return
 
+        # Determine bind address and port based on unix: prefix
         bind_addr = parts[0]
-        bind_port = parts[1]
-        connect_addr = parts[2]
-        connect_port = parts[3]
+        if bind_addr.startswith('unix:'):
+            bind_port = None
+            remaining = parts[1:]
+        else:
+            if len(parts) < 3:
+                return
+            bind_port = parts[1]
+            remaining = parts[2:]
 
-        # Parse options
-        options = {}
-        i = 4
-        while i < len(parts):
-            opt = parts[i]
-            if opt.startswith('timeout='):
-                options['timeout'] = int(opt.split('=')[1])
-            elif opt.startswith('src='):
-                options['src'] = opt.split('=')[1]
-            elif opt.startswith('keepalive='):
-                val = opt.split('=')[1]
-                options['keepalive'] = val.lower() in ('on', 'true', '1', 'yes')
-            elif opt.startswith('dns-refresh='):
-                options['dns_refresh'] = int(opt.split('=')[1])
-            elif opt.startswith('mode='):
-                options['mode'] = opt.split('=')[1]
-            i += 1
+        # Determine connect address and port
+        if not remaining:
+            return
+        connect_addr = remaining[0]
+        if connect_addr.startswith('unix:'):
+            connect_port = None
+        else:
+            if len(remaining) < 2:
+                return
+            connect_port = remaining[1]
 
         # Determine protocol from port (default tcp)
         protocol = 'tcp'
-        if '/' in bind_port:
+        if bind_port and '/' in bind_port:
             bind_port, protocol = bind_port.rsplit('/', 1)
 
         # Format bind address
         if bind_addr.startswith('unix:'):
             bind_str = bind_addr
         elif ':' in bind_addr and not bind_addr.startswith('['):
-            # IPv6 without brackets
             bind_str = f"[{bind_addr}]:{bind_port}/{protocol}"
         else:
             bind_str = f"{bind_addr}:{bind_port}/{protocol}"
@@ -204,14 +256,13 @@ class LegacyConfigParser:
         rule['bind'] = bind_str
 
         # Create backend destination
-        connect_protocol = protocol  # Use same protocol as bind
-        if '/' in connect_port:
+        connect_protocol = protocol
+        if connect_port and '/' in connect_port:
             connect_port, connect_protocol = connect_port.rsplit('/', 1)
 
         if connect_addr.startswith('unix:'):
             dest_str = connect_addr
         elif ':' in connect_addr and not connect_addr.startswith('['):
-            # IPv6 without brackets
             dest_str = f"[{connect_addr}]:{connect_port}/{connect_protocol}"
         else:
             dest_str = f"{connect_addr}:{connect_port}/{connect_protocol}"
@@ -256,6 +307,12 @@ def generate_yaml(parser):
     lines.append("# rinetd-uv YAML configuration")
     lines.append("# Converted from legacy format")
     lines.append("")
+
+    # Print warnings as comments
+    for warning in parser.warnings:
+        lines.append(f"# {warning}")
+    if parser.warnings:
+        lines.append("")
 
     # Global section
     if parser.global_options or parser.global_allow or parser.global_deny:
@@ -355,6 +412,10 @@ def main():
 
     if args.input != sys.stdin:
         args.input.close()
+
+    # Print warnings to stderr
+    for warning in config_parser.warnings:
+        print(warning, file=sys.stderr)
 
     print(generate_yaml(config_parser))
 
