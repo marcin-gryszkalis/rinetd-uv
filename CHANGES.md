@@ -1,3 +1,11 @@
+## Version 2.1.2 (2026-02-17)
+
+**Support global access rules in YAML configuration**
+
+ * add `global.access.allow` and `global.access.deny`
+ * fix bugs conf2yaml converter
+ * refactor documentation
+
 ## Version 2.1.1 (2026-02-15)
 
 **Small set of updates**
