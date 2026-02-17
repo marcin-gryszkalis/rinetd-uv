@@ -35,6 +35,7 @@
     int keepalive; \
     int dns_refresh_period; \
     int socketMode; \
+    int connectTimeout; \
     char *bindAddress, *connectAddress, *sourceAddress; \
     /* Include tracking */ \
     int includeDepth; \
@@ -71,7 +72,7 @@ static char *stripQuotes(char const *str);
 
 file     =  (sol (line eol | invalid-syntax))*
 line     =  -? (command -?)? comment?
-command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | dns-multi-ip-expand-global | dns-multi-ip-proto-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | statusfile | statusinterval | statusformat | statsloginterval | include-directive)
+command  =  (server-rule | auth-rule | logfile | pidfile | logcommon | buffersize | dns-refresh-global | dns-multi-ip-expand-global | dns-multi-ip-proto-global | connect-timeout-global | pool-min-free | pool-max-free | pool-trim-delay | listen-backlog | max-udp-connections | statusfile | statusinterval | statusformat | statsloginterval | include-directive)
 comment  =  "#" (!eol .)*
 
 server-rule  =  bind-spec - connect-spec (-? server-options)?
@@ -84,11 +85,16 @@ server-rule  =  bind-spec - connect-spec (-? server-options)?
                       ? globalDnsRefreshPeriod
                       : yy->dns_refresh_period;
 
+    /* connect_timeout: -1 = not set (use global default), >= 0 = explicit value */
+    int connect_timeout = (yy->connectTimeout == -1)
+                          ? globalConnectTimeout
+                          : yy->connectTimeout;
+
     addServer(yy->bindAddress, yy->bindPort, yy->bindProto,
         yy->connectAddress, yy->connectPort, yy->connectProto,
         yy->serverTimeout > 0 ? yy->serverTimeout : RINETD_DEFAULT_UDP_TIMEOUT,
         yy->sourceAddress,
-        keepalive, dns_refresh, yy->socketMode);
+        keepalive, dns_refresh, yy->socketMode, connect_timeout);
     free(yy->bindAddress);
     free(yy->connectAddress);
     free(yy->sourceAddress);
@@ -99,6 +105,7 @@ server-rule  =  bind-spec - connect-spec (-? server-options)?
     yy->serverTimeout = 0;
     yy->keepalive = -1;
     yy->dns_refresh_period = -1;
+    yy->connectTimeout = -1;
     yy->socketMode = 0;
 }
 
@@ -126,11 +133,12 @@ connect-port     =  full-port { yy->connectPort = yy->tmpPort; yy->connectProto 
 server-options   =  "[" -? option-list -? "]"
 
 option-list       =  option (-? ',' -? option-list)?
-option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-mode)
+option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-connect-timeout | option-mode)
 option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = atoi(yytext); }
 option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup(yytext); }
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
 option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = atoi(yytext); }
+option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = atoi(yytext); }
 option-mode       =  "mode"       -? "=" -? < octal_number > { yy->socketMode = (int)strtol(yytext, NULL, 8); }
 
 keepalive_value   =  "on" | "off"
@@ -229,6 +237,15 @@ dns-multi-ip-proto-global  =  "dns-multi-ip-proto" - < proto_filter_value >
 }
 
 proto_filter_value  =  [iI][pP][vV] '4' | [iI][pP][vV] '6' | [aA][nN][yY]
+
+connect-timeout-global  =  "connect-timeout" - < number >
+{
+    globalConnectTimeout = atoi(yytext);
+    if (globalConnectTimeout < 0 || globalConnectTimeout > 86400) {
+        logError("invalid connect-timeout value at line %d (must be 0-86400)\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
 
 pool-min-free  =  "pool-min-free" - < number >
 {
@@ -556,6 +573,7 @@ void parseConfiguration(char const *file)
     memset(&ctx, 0, sizeof(yycontext));
     ctx.keepalive = -1;
     ctx.dns_refresh_period = -1;
+    ctx.connectTimeout = -1;
 
     /* Initialize include tracking */
     ctx.includeDepth = 0;

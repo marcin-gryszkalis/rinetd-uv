@@ -43,6 +43,9 @@ struct _yaml_config {
     YamlStatusConfig status;
     int stats_log_interval;     /* Seconds, 0 = disabled (default: 60) */
 
+    /* Backend connect timeout */
+    int connect_timeout;        /* Backend TCP connect timeout in seconds (0 = OS default) */
+
     /* DNS multi-IP expansion */
     int dns_multi_ip_expand;    /* Enable DNS multi-IP expansion to backends */
     DnsProtoFilter dns_multi_ip_proto;  /* Protocol filter: ipv4, ipv6, or any */

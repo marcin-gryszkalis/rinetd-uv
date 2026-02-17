@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <meta name="dcterms.date" content="2026-02-15" />
+  <meta name="dcterms.date" content="2026-02-17" />
   <title>rinetd-uv - internet redirection server</title>
   <style>
     code{white-space: pre-wrap;}
@@ -93,7 +93,7 @@
 <body>
 <header id="title-block-header">
 <h1 class="title">rinetd-uv - internet redirection server</h1>
-<p class="date">2026-02-15</p>
+<p class="date">2026-02-17</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -442,6 +442,32 @@ class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb22-1"><a href=
 <span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">keepalive</span><span class="kw">:</span><span class="at"> </span><span class="ch">false</span></span></code></pre></div>
 <p>When enabled, keepalive probes are sent after 60 seconds of
 inactivity.</p>
+<h5 id="backend-connect-timeout">Backend Connect Timeout</h5>
+<p>By default, TCP backend connections rely on the OS timeout (typically
+75-127 seconds on Linux). The <code>connect-timeout</code> option sets
+an application-level timeout for backend TCP connect attempts, allowing
+faster failure detection.</p>
+<p>This applies to TCP backend connections only. Unix domain socket
+connections are instantaneous and do not use the timer.</p>
+<p>A value of 0 (the default) means no application timeout — the OS
+default is used. Recommended values: 5-30 seconds for most
+deployments.</p>
+<p>The timeout can be set globally and overridden per-rule:</p>
+<p><strong>Legacy format:</strong></p>
+<pre><code>connect-timeout 10
+
+0.0.0.0 8080/tcp  10.1.1.127 80/tcp
+0.0.0.0 8081/tcp  10.1.1.128 80/tcp  [connect-timeout=5]</code></pre>
+<p><strong>YAML format:</strong></p>
+<div class="sourceCode" id="cb24"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">connect_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-forward</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;10.1.1.127:80/tcp&quot;</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">5</span></span></code></pre></div>
 <h5 id="dns-refresh">DNS Refresh</h5>
 <p>For forwarding rules with backend hostnames (not IP addresses),
 <strong>rinetd-uv</strong> can automatically re-resolve DNS hostnames at
@@ -454,13 +480,13 @@ overrides:</p>
 <pre><code>0.0.0.0 8080/tcp backend.example.com 80 [dns-refresh=300]
 0.0.0.0 8081/tcp backend2.example.com 80 [dns-refresh=0]</code></pre>
 <p><strong>YAML format:</strong></p>
-<div class="sourceCode" id="cb24"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-forward</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;backend.example.com:80&quot;</span></span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span></code></pre></div>
+<div class="sourceCode" id="cb26"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-forward</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;backend.example.com:80&quot;</span></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span></code></pre></div>
 <p>Setting <code>dns-refresh=0</code> / <code>dns_refresh: 0</code>
 disables periodic DNS refresh for that rule/backend.</p>
 <p><strong>Behavior:</strong></p>
@@ -489,12 +515,12 @@ Balancing</strong> in the <strong>Global Options</strong> section.</li>
 <p><strong>Legacy format:</strong></p>
 <pre><code>unix:/var/run/restricted.sock 192.168.1.100 8080/tcp [mode=0660]</code></pre>
 <p><strong>YAML format:</strong></p>
-<div class="sourceCode" id="cb26"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> restricted-proxy</span></span>
-<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;unix:/var/run/restricted.sock&quot;</span></span>
-<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.100:8080/tcp&quot;</span></span>
-<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0660&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb28"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> restricted-proxy</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;unix:/var/run/restricted.sock&quot;</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.100:8080/tcp&quot;</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">mode</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0660&quot;</span></span></code></pre></div>
 <h3 id="access-rules">Access Rules</h3>
 <p>Configuration files can contain allow and deny rules to control which
 clients can connect. Patterns can contain the characters:
@@ -541,28 +567,28 @@ must match at least one.</li>
 <code>rules[].access</code>).</p>
 <p><strong>Global access rules</strong> apply to all forwarding
 rules:</p>
-<div class="sourceCode" id="cb29"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">access</span><span class="kw">:</span></span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">allow</span><span class="kw">:</span></span>
-<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
-<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.0.0.*&quot;</span></span>
-<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">deny</span><span class="kw">:</span></span>
-<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">access</span><span class="kw">:</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">allow</span><span class="kw">:</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.0.0.*&quot;</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">deny</span><span class="kw">:</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span></code></pre></div>
 <p><strong>Per-rule access control</strong> applies only to a specific
 rule:</p>
-<div class="sourceCode" id="cb30"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-forward</span></span>
-<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
-<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.10:8080/tcp&quot;</span></span>
-<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
-<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span></span>
-<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
-<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.0.0.*&quot;</span></span>
-<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span></span>
-<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span>
-<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;*&quot;</span></span></code></pre></div>
+<div class="sourceCode" id="cb32"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-forward</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.10:8080/tcp&quot;</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.0.0.*&quot;</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;*&quot;</span></span></code></pre></div>
 <p>Rules are evaluated in order: global allow rules first, then global
 deny, then per-rule allow, then per-rule deny. The semantics are
 identical to the legacy format.</p>
@@ -627,6 +653,13 @@ optional and have sensible defaults.</p>
 <td>ipv4</td>
 <td>Protocol filter for DNS expansion: <code>ipv4</code>,
 <code>ipv6</code>, or <code>any</code></td>
+</tr>
+<tr>
+<td><code>connect-timeout</code></td>
+<td><code>connect_timeout</code></td>
+<td>0</td>
+<td>Backend TCP connect timeout in seconds (0 = OS default, max
+86400)</td>
 </tr>
 <tr>
 <td><code>pool-min-free</code></td>
@@ -753,18 +786,18 @@ dns-refresh 300
 
 0.0.0.0 8080/tcp web.example.com 80</code></pre>
 <p><strong>YAML format:</strong></p>
-<div class="sourceCode" id="cb32"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
-<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_expand</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span>
-<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
-<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
-<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web.example.com:80&quot;</span></span>
-<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span></code></pre></div>
+<div class="sourceCode" id="cb34"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_expand</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web.example.com:80&quot;</span></span>
+<span id="cb34-10"><a href="#cb34-10" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb34-11"><a href="#cb34-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span></code></pre></div>
 <p><strong>Protocol filtering</strong> (<code>dns-multi-ip-proto</code>
 / <code>dns_multi_ip_proto</code>) controls which IP address types are
 used for expansion: - <strong><code>ipv4</code></strong> (default): Only
@@ -833,70 +866,70 @@ statusinterval 30
 statusformat json
 statsloginterval 60</code></pre>
 <p><strong>YAML format configuration:</strong></p>
-<div class="sourceCode" id="cb35"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
-<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">status</span><span class="kw">:</span></span>
-<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv_status.json</span></span>
-<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
-<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">format</span><span class="kw">:</span><span class="at"> json</span></span>
-<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">stats_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span></code></pre></div>
+<div class="sourceCode" id="cb37"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">status</span><span class="kw">:</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv_status.json</span></span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">format</span><span class="kw">:</span><span class="at"> json</span></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">stats_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span></code></pre></div>
 <h5 id="json-output-format">JSON Output Format</h5>
 <p>The JSON status file includes:</p>
-<div class="sourceCode" id="cb36"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;timestamp&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-02-02T12:00:00Z&quot;</span><span class="fu">,</span></span>
-<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;2.1.0&quot;</span><span class="fu">,</span></span>
-<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;uptime_seconds&quot;</span><span class="fu">:</span> <span class="dv">3600</span><span class="fu">,</span></span>
-<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;config_reloads&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
-<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;stats_since_reload&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-02-02T11:30:00Z&quot;</span><span class="fu">,</span></span>
-<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;connections&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active&quot;</span><span class="fu">:</span> <span class="dv">150</span><span class="fu">,</span></span>
-<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_tcp&quot;</span><span class="fu">:</span> <span class="dv">120</span><span class="fu">,</span></span>
-<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_udp&quot;</span><span class="fu">:</span> <span class="dv">25</span><span class="fu">,</span></span>
-<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_unix&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span></span>
-<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total&quot;</span><span class="fu">:</span> <span class="dv">50000</span><span class="fu">,</span></span>
-<span id="cb36-13"><a href="#cb36-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_tcp&quot;</span><span class="fu">:</span> <span class="dv">45000</span><span class="fu">,</span></span>
-<span id="cb36-14"><a href="#cb36-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_udp&quot;</span><span class="fu">:</span> <span class="dv">4500</span><span class="fu">,</span></span>
-<span id="cb36-15"><a href="#cb36-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_unix&quot;</span><span class="fu">:</span> <span class="dv">500</span></span>
-<span id="cb36-16"><a href="#cb36-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
-<span id="cb36-17"><a href="#cb36-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;traffic&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb36-18"><a href="#cb36-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">1073741824</span><span class="fu">,</span></span>
-<span id="cb36-19"><a href="#cb36-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">2147483648</span></span>
-<span id="cb36-20"><a href="#cb36-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
-<span id="cb36-21"><a href="#cb36-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;errors&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb36-22"><a href="#cb36-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;accept&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
-<span id="cb36-23"><a href="#cb36-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;connect&quot;</span><span class="fu">:</span> <span class="dv">15</span><span class="fu">,</span></span>
-<span id="cb36-24"><a href="#cb36-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;denied&quot;</span><span class="fu">:</span> <span class="dv">100</span></span>
-<span id="cb36-25"><a href="#cb36-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
-<span id="cb36-26"><a href="#cb36-26" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;buffer_pool&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
-<span id="cb36-27"><a href="#cb36-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;buffer_size&quot;</span><span class="fu">:</span> <span class="dv">65536</span><span class="fu">,</span></span>
-<span id="cb36-28"><a href="#cb36-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;free&quot;</span><span class="fu">:</span> <span class="dv">128</span><span class="fu">,</span></span>
-<span id="cb36-29"><a href="#cb36-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;allocs_from_pool&quot;</span><span class="fu">:</span> <span class="dv">50000</span><span class="fu">,</span></span>
-<span id="cb36-30"><a href="#cb36-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;allocs_from_malloc&quot;</span><span class="fu">:</span> <span class="dv">100</span></span>
-<span id="cb36-31"><a href="#cb36-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
-<span id="cb36-32"><a href="#cb36-32" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;servers&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span></span>
-<span id="cb36-33"><a href="#cb36-33" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rules&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb36-34"><a href="#cb36-34" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb36-35"><a href="#cb36-35" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;web-cluster&quot;</span><span class="fu">,</span></span>
-<span id="cb36-36"><a href="#cb36-36" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;algorithm&quot;</span><span class="fu">:</span> <span class="st">&quot;roundrobin&quot;</span><span class="fu">,</span></span>
-<span id="cb36-37"><a href="#cb36-37" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;connections_active&quot;</span><span class="fu">:</span> <span class="dv">50</span><span class="fu">,</span></span>
-<span id="cb36-38"><a href="#cb36-38" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;connections_total&quot;</span><span class="fu">:</span> <span class="dv">10000</span><span class="fu">,</span></span>
-<span id="cb36-39"><a href="#cb36-39" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">536870912</span><span class="fu">,</span></span>
-<span id="cb36-40"><a href="#cb36-40" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">1073741824</span><span class="fu">,</span></span>
-<span id="cb36-41"><a href="#cb36-41" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;backends&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb36-42"><a href="#cb36-42" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
-<span id="cb36-43"><a href="#cb36-43" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;web-cluster-backend-1&quot;</span><span class="fu">,</span></span>
-<span id="cb36-44"><a href="#cb36-44" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;healthy&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
-<span id="cb36-45"><a href="#cb36-45" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;connections_active&quot;</span><span class="fu">:</span> <span class="dv">25</span><span class="fu">,</span></span>
-<span id="cb36-46"><a href="#cb36-46" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;connections_total&quot;</span><span class="fu">:</span> <span class="dv">5000</span><span class="fu">,</span></span>
-<span id="cb36-47"><a href="#cb36-47" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">268435456</span><span class="fu">,</span></span>
-<span id="cb36-48"><a href="#cb36-48" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">536870912</span></span>
-<span id="cb36-49"><a href="#cb36-49" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
-<span id="cb36-50"><a href="#cb36-50" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
-<span id="cb36-51"><a href="#cb36-51" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
-<span id="cb36-52"><a href="#cb36-52" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb36-53"><a href="#cb36-53" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb38"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;timestamp&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-02-02T12:00:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;2.1.0&quot;</span><span class="fu">,</span></span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;uptime_seconds&quot;</span><span class="fu">:</span> <span class="dv">3600</span><span class="fu">,</span></span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;config_reloads&quot;</span><span class="fu">:</span> <span class="dv">2</span><span class="fu">,</span></span>
+<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;stats_since_reload&quot;</span><span class="fu">:</span> <span class="st">&quot;2026-02-02T11:30:00Z&quot;</span><span class="fu">,</span></span>
+<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;connections&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active&quot;</span><span class="fu">:</span> <span class="dv">150</span><span class="fu">,</span></span>
+<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_tcp&quot;</span><span class="fu">:</span> <span class="dv">120</span><span class="fu">,</span></span>
+<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_udp&quot;</span><span class="fu">:</span> <span class="dv">25</span><span class="fu">,</span></span>
+<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;active_unix&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span></span>
+<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total&quot;</span><span class="fu">:</span> <span class="dv">50000</span><span class="fu">,</span></span>
+<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_tcp&quot;</span><span class="fu">:</span> <span class="dv">45000</span><span class="fu">,</span></span>
+<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_udp&quot;</span><span class="fu">:</span> <span class="dv">4500</span><span class="fu">,</span></span>
+<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;total_unix&quot;</span><span class="fu">:</span> <span class="dv">500</span></span>
+<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;traffic&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">1073741824</span><span class="fu">,</span></span>
+<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">2147483648</span></span>
+<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;errors&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;accept&quot;</span><span class="fu">:</span> <span class="dv">0</span><span class="fu">,</span></span>
+<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;connect&quot;</span><span class="fu">:</span> <span class="dv">15</span><span class="fu">,</span></span>
+<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;denied&quot;</span><span class="fu">:</span> <span class="dv">100</span></span>
+<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb38-26"><a href="#cb38-26" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;buffer_pool&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb38-27"><a href="#cb38-27" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;buffer_size&quot;</span><span class="fu">:</span> <span class="dv">65536</span><span class="fu">,</span></span>
+<span id="cb38-28"><a href="#cb38-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;free&quot;</span><span class="fu">:</span> <span class="dv">128</span><span class="fu">,</span></span>
+<span id="cb38-29"><a href="#cb38-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;allocs_from_pool&quot;</span><span class="fu">:</span> <span class="dv">50000</span><span class="fu">,</span></span>
+<span id="cb38-30"><a href="#cb38-30" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;allocs_from_malloc&quot;</span><span class="fu">:</span> <span class="dv">100</span></span>
+<span id="cb38-31"><a href="#cb38-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">},</span></span>
+<span id="cb38-32"><a href="#cb38-32" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;servers&quot;</span><span class="fu">:</span> <span class="dv">5</span><span class="fu">,</span></span>
+<span id="cb38-33"><a href="#cb38-33" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;rules&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb38-34"><a href="#cb38-34" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb38-35"><a href="#cb38-35" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;web-cluster&quot;</span><span class="fu">,</span></span>
+<span id="cb38-36"><a href="#cb38-36" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;algorithm&quot;</span><span class="fu">:</span> <span class="st">&quot;roundrobin&quot;</span><span class="fu">,</span></span>
+<span id="cb38-37"><a href="#cb38-37" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;connections_active&quot;</span><span class="fu">:</span> <span class="dv">50</span><span class="fu">,</span></span>
+<span id="cb38-38"><a href="#cb38-38" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;connections_total&quot;</span><span class="fu">:</span> <span class="dv">10000</span><span class="fu">,</span></span>
+<span id="cb38-39"><a href="#cb38-39" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">536870912</span><span class="fu">,</span></span>
+<span id="cb38-40"><a href="#cb38-40" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">1073741824</span><span class="fu">,</span></span>
+<span id="cb38-41"><a href="#cb38-41" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;backends&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb38-42"><a href="#cb38-42" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb38-43"><a href="#cb38-43" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;web-cluster-backend-1&quot;</span><span class="fu">,</span></span>
+<span id="cb38-44"><a href="#cb38-44" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;healthy&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb38-45"><a href="#cb38-45" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;connections_active&quot;</span><span class="fu">:</span> <span class="dv">25</span><span class="fu">,</span></span>
+<span id="cb38-46"><a href="#cb38-46" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;connections_total&quot;</span><span class="fu">:</span> <span class="dv">5000</span><span class="fu">,</span></span>
+<span id="cb38-47"><a href="#cb38-47" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;bytes_in&quot;</span><span class="fu">:</span> <span class="dv">268435456</span><span class="fu">,</span></span>
+<span id="cb38-48"><a href="#cb38-48" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;bytes_out&quot;</span><span class="fu">:</span> <span class="dv">536870912</span></span>
+<span id="cb38-49"><a href="#cb38-49" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb38-50"><a href="#cb38-50" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span></span>
+<span id="cb38-51"><a href="#cb38-51" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb38-52"><a href="#cb38-52" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb38-53"><a href="#cb38-53" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <h5 id="text-output-format">Text Output Format</h5>
 <p>The text format provides a human-readable summary:</p>
 <pre><code>rinetd-uv Status Report
@@ -945,21 +978,21 @@ field only - For YAML rules, backend names are auto-generated as
 <p>When a YAML rule has multiple backends, load balancing is
 automatically enabled. Configure the algorithm and behavior with the
 <code>load_balancing</code> section:</p>
-<div class="sourceCode" id="cb39"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
-<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
-<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.internal:8080&quot;</span></span>
-<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.internal:8080&quot;</span></span>
-<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span>
-<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">health_threshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">recovery_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
-<span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span>
-<span id="cb39-14"><a href="#cb39-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">10000</span></span></code></pre></div>
+<div class="sourceCode" id="cb41"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.internal:8080&quot;</span></span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.internal:8080&quot;</span></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">health_threshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">recovery_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">10000</span></span></code></pre></div>
 <h4 id="algorithms">Algorithms</h4>
 <table>
 <colgroup>
@@ -997,16 +1030,16 @@ to same backend (unless unhealthy).</td>
 <p><strong>Default:</strong> <code>roundrobin</code></p>
 <h4 id="weighted-distribution">Weighted Distribution</h4>
 <p>Weights control the proportion of traffic each backend receives:</p>
-<div class="sourceCode" id="cb40"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.example.com:8080&quot;</span></span>
-<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span><span class="co">    # Receives 3/6 = 50% of traffic</span></span>
-<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.example.com:8080&quot;</span></span>
-<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">    # Receives 2/6 = 33% of traffic</span></span>
-<span id="cb40-7"><a href="#cb40-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb40-8"><a href="#cb40-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web3.example.com:8080&quot;</span></span>
-<span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">    # Receives 1/6 = 17% of traffic</span></span></code></pre></div>
+<div class="sourceCode" id="cb42"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.example.com:8080&quot;</span></span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span><span class="co">    # Receives 3/6 = 50% of traffic</span></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.example.com:8080&quot;</span></span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span><span class="co">    # Receives 2/6 = 33% of traffic</span></span>
+<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web3.example.com:8080&quot;</span></span>
+<span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span><span class="co">    # Receives 1/6 = 17% of traffic</span></span></code></pre></div>
 <p>Weights are respected by <code>roundrobin</code> and
 <code>random</code> algorithms. The <code>leastconn</code> algorithm
 considers weights as a tiebreaker.</p>
@@ -1032,10 +1065,10 @@ backend reaches the failure threshold.</p>
 Persistence)</h4>
 <p>Client affinity ensures the same client IP is routed to the same
 backend within a time window:</p>
-<div class="sourceCode" id="cb41"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span><span class="co">            # 5 minutes</span></span>
-<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">10000</span><span class="co">  # Maximum tracked clients</span></span></code></pre></div>
+<div class="sourceCode" id="cb43"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">300</span><span class="co">            # 5 minutes</span></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">10000</span><span class="co">  # Maximum tracked clients</span></span></code></pre></div>
 <ul>
 <li><strong>TTL:</strong> Time-to-live in seconds. Each connection
 refreshes the timer. (Default: 0 = disabled, max: 2592000)</li>
@@ -1222,117 +1255,117 @@ unix:/var/run/myapp.sock 192.168.1.100 8080/tcp [mode=0660]
 allow 10.0.0.*
 </code></pre>
 <h3 id="yaml-format-2">YAML Format</h3>
-<div class="sourceCode" id="cb45"><pre
-class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rinetd-uv.yaml - example configuration with load balancing</span></span>
-<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
-<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="co">  # Logging</span></span>
-<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">log_file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv.log</span></span>
-<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="co">  # log_common: false       # Apache-style logging (default: false)</span></span>
-<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a><span class="co">  # PID file (default: /var/run/rinetd-uv.pid)</span></span>
-<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pid_file</span><span class="kw">:</span><span class="at"> /var/run/rinetd-uv.pid</span></span>
-<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a><span class="co">  # Buffer size (1024-1048576, default: 65536)</span></span>
-<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">buffer_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">65536</span></span>
-<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a><span class="co">  # Buffer pool configuration</span></span>
-<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_min_free</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span><span class="co">         # Min buffers to keep (0-10000, default: 64)</span></span>
-<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_max_free</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span><span class="co">       # Max buffers before trimming (1-100000, default: 1024)</span></span>
-<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_trim_delay</span><span class="kw">:</span><span class="at"> </span><span class="dv">60000</span><span class="co">    # Trim delay in milliseconds (100-300000, default: 60000)</span></span>
-<span id="cb45-18"><a href="#cb45-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-19"><a href="#cb45-19" aria-hidden="true" tabindex="-1"></a><span class="co">  # DNS configuration</span></span>
-<span id="cb45-20"><a href="#cb45-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">600</span><span class="co">          # DNS refresh interval in seconds (default: 600)</span></span>
-<span id="cb45-21"><a href="#cb45-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_expand</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # Expand multi-IP DNS to backends (default: true for YAML)</span></span>
-<span id="cb45-22"><a href="#cb45-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_proto</span><span class="kw">:</span><span class="at"> ipv4</span><span class="co">  # ipv4, ipv6, or any (default: ipv4)</span></span>
-<span id="cb45-23"><a href="#cb45-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-24"><a href="#cb45-24" aria-hidden="true" tabindex="-1"></a><span class="co">  # Network settings</span></span>
-<span id="cb45-25"><a href="#cb45-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">listen_backlog</span><span class="kw">:</span><span class="at"> </span><span class="dv">128</span><span class="co">       # TCP listen backlog (1-65535, default: 128)</span></span>
-<span id="cb45-26"><a href="#cb45-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_udp_connections</span><span class="kw">:</span><span class="at"> </span><span class="dv">5000</span><span class="co"> # Max UDP connections per rule (1-1000000, default: 5000)</span></span>
-<span id="cb45-27"><a href="#cb45-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-28"><a href="#cb45-28" aria-hidden="true" tabindex="-1"></a><span class="co">  # Status reporting</span></span>
-<span id="cb45-29"><a href="#cb45-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">status</span><span class="kw">:</span></span>
-<span id="cb45-30"><a href="#cb45-30" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb45-31"><a href="#cb45-31" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv_status.json</span></span>
-<span id="cb45-32"><a href="#cb45-32" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span><span class="co">            # Write interval in seconds (default: 30)</span></span>
-<span id="cb45-33"><a href="#cb45-33" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">format</span><span class="kw">:</span><span class="at"> json</span><span class="co">            # json or text (default: json)</span></span>
-<span id="cb45-34"><a href="#cb45-34" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">stats_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span><span class="co">    # Log summary interval, 0 to disable (default: 60)</span></span>
-<span id="cb45-35"><a href="#cb45-35" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-36"><a href="#cb45-36" aria-hidden="true" tabindex="-1"></a><span class="co">  # Global access control (applied to all rules before per-rule rules)</span></span>
-<span id="cb45-37"><a href="#cb45-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">access</span><span class="kw">:</span></span>
-<span id="cb45-38"><a href="#cb45-38" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">allow</span><span class="kw">:</span></span>
-<span id="cb45-39"><a href="#cb45-39" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.*&quot;</span></span>
-<span id="cb45-40"><a href="#cb45-40" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
-<span id="cb45-41"><a href="#cb45-41" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">deny</span><span class="kw">:</span></span>
-<span id="cb45-42"><a href="#cb45-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span>
-<span id="cb45-43"><a href="#cb45-43" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-44"><a href="#cb45-44" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
-<span id="cb45-45"><a href="#cb45-45" aria-hidden="true" tabindex="-1"></a><span class="co">  # Simple 1:1 forwarding (equivalent to legacy format)</span></span>
-<span id="cb45-46"><a href="#cb45-46" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> simple-forward</span></span>
-<span id="cb45-47"><a href="#cb45-47" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
-<span id="cb45-48"><a href="#cb45-48" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.10:8080&quot;</span></span>
-<span id="cb45-49"><a href="#cb45-49" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-50"><a href="#cb45-50" aria-hidden="true" tabindex="-1"></a><span class="co">  # Load balanced web servers with weighted round-robin</span></span>
-<span id="cb45-51"><a href="#cb45-51" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
-<span id="cb45-52"><a href="#cb45-52" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span></span>
-<span id="cb45-53"><a href="#cb45-53" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;0.0.0.0:443/tcp&quot;</span></span>
-<span id="cb45-54"><a href="#cb45-54" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;[::]:443/tcp&quot;</span></span>
-<span id="cb45-55"><a href="#cb45-55" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb45-56"><a href="#cb45-56" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.internal:8443&quot;</span></span>
-<span id="cb45-57"><a href="#cb45-57" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb45-58"><a href="#cb45-58" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.internal:8443&quot;</span></span>
-<span id="cb45-59"><a href="#cb45-59" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
-<span id="cb45-60"><a href="#cb45-60" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web3.internal:8443&quot;</span></span>
-<span id="cb45-61"><a href="#cb45-61" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
-<span id="cb45-62"><a href="#cb45-62" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb45-63"><a href="#cb45-63" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span>
-<span id="cb45-64"><a href="#cb45-64" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">health_threshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
-<span id="cb45-65"><a href="#cb45-65" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">recovery_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
-<span id="cb45-66"><a href="#cb45-66" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
-<span id="cb45-67"><a href="#cb45-67" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;10.*&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span><span class="kw">]</span></span>
-<span id="cb45-68"><a href="#cb45-68" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;*&quot;</span><span class="kw">]</span></span>
-<span id="cb45-69"><a href="#cb45-69" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-70"><a href="#cb45-70" aria-hidden="true" tabindex="-1"></a><span class="co">  # DNS servers with least-connections algorithm</span></span>
-<span id="cb45-71"><a href="#cb45-71" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> dns-lb</span></span>
-<span id="cb45-72"><a href="#cb45-72" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:53/udp&quot;</span></span>
-<span id="cb45-73"><a href="#cb45-73" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb45-74"><a href="#cb45-74" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;8.8.8.8:53/udp&quot;</span></span>
-<span id="cb45-75"><a href="#cb45-75" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;8.8.4.4:53/udp&quot;</span></span>
-<span id="cb45-76"><a href="#cb45-76" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;1.1.1.1:53/udp&quot;</span></span>
-<span id="cb45-77"><a href="#cb45-77" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb45-78"><a href="#cb45-78" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> leastconn</span></span>
-<span id="cb45-79"><a href="#cb45-79" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span></span>
-<span id="cb45-80"><a href="#cb45-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-81"><a href="#cb45-81" aria-hidden="true" tabindex="-1"></a><span class="co">  # Application servers with sticky sessions</span></span>
-<span id="cb45-82"><a href="#cb45-82" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> app-cluster</span></span>
-<span id="cb45-83"><a href="#cb45-83" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
-<span id="cb45-84"><a href="#cb45-84" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
-<span id="cb45-85"><a href="#cb45-85" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;app1.internal:3000&quot;</span></span>
-<span id="cb45-86"><a href="#cb45-86" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span>
-<span id="cb45-87"><a href="#cb45-87" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;app2.internal:3000&quot;</span></span>
-<span id="cb45-88"><a href="#cb45-88" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span>
-<span id="cb45-89"><a href="#cb45-89" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
-<span id="cb45-90"><a href="#cb45-90" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> iphash</span></span>
-<span id="cb45-91"><a href="#cb45-91" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
-<span id="cb45-92"><a href="#cb45-92" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">50000</span></span>
-<span id="cb45-93"><a href="#cb45-93" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">keepalive</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
-<span id="cb45-94"><a href="#cb45-94" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb45-95"><a href="#cb45-95" aria-hidden="true" tabindex="-1"></a><span class="co">  # Docker socket proxy</span></span>
-<span id="cb45-96"><a href="#cb45-96" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> docker-proxy</span></span>
-<span id="cb45-97"><a href="#cb45-97" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:2375/tcp&quot;</span></span>
-<span id="cb45-98"><a href="#cb45-98" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;unix:/var/run/docker.sock&quot;</span></span>
-<span id="cb45-99"><a href="#cb45-99" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
-<span id="cb45-100"><a href="#cb45-100" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;10.0.0.*&quot;</span><span class="kw">]</span></span>
-<span id="cb45-101"><a href="#cb45-101" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;*&quot;</span><span class="kw">]</span></span></code></pre></div>
+<div class="sourceCode" id="cb47"><pre
+class="sourceCode yaml"><code class="sourceCode yaml"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rinetd-uv.yaml - example configuration with load balancing</span></span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a><span class="fu">global</span><span class="kw">:</span></span>
+<span id="cb47-4"><a href="#cb47-4" aria-hidden="true" tabindex="-1"></a><span class="co">  # Logging</span></span>
+<span id="cb47-5"><a href="#cb47-5" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">log_file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv.log</span></span>
+<span id="cb47-6"><a href="#cb47-6" aria-hidden="true" tabindex="-1"></a><span class="co">  # log_common: false       # Apache-style logging (default: false)</span></span>
+<span id="cb47-7"><a href="#cb47-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-8"><a href="#cb47-8" aria-hidden="true" tabindex="-1"></a><span class="co">  # PID file (default: /var/run/rinetd-uv.pid)</span></span>
+<span id="cb47-9"><a href="#cb47-9" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pid_file</span><span class="kw">:</span><span class="at"> /var/run/rinetd-uv.pid</span></span>
+<span id="cb47-10"><a href="#cb47-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-11"><a href="#cb47-11" aria-hidden="true" tabindex="-1"></a><span class="co">  # Buffer size (1024-1048576, default: 65536)</span></span>
+<span id="cb47-12"><a href="#cb47-12" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">buffer_size</span><span class="kw">:</span><span class="at"> </span><span class="dv">65536</span></span>
+<span id="cb47-13"><a href="#cb47-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-14"><a href="#cb47-14" aria-hidden="true" tabindex="-1"></a><span class="co">  # Buffer pool configuration</span></span>
+<span id="cb47-15"><a href="#cb47-15" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_min_free</span><span class="kw">:</span><span class="at"> </span><span class="dv">64</span><span class="co">         # Min buffers to keep (0-10000, default: 64)</span></span>
+<span id="cb47-16"><a href="#cb47-16" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_max_free</span><span class="kw">:</span><span class="at"> </span><span class="dv">1024</span><span class="co">       # Max buffers before trimming (1-100000, default: 1024)</span></span>
+<span id="cb47-17"><a href="#cb47-17" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">pool_trim_delay</span><span class="kw">:</span><span class="at"> </span><span class="dv">60000</span><span class="co">    # Trim delay in milliseconds (100-300000, default: 60000)</span></span>
+<span id="cb47-18"><a href="#cb47-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-19"><a href="#cb47-19" aria-hidden="true" tabindex="-1"></a><span class="co">  # DNS configuration</span></span>
+<span id="cb47-20"><a href="#cb47-20" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">600</span><span class="co">          # DNS refresh interval in seconds (default: 600)</span></span>
+<span id="cb47-21"><a href="#cb47-21" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_expand</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span><span class="co"> # Expand multi-IP DNS to backends (default: true for YAML)</span></span>
+<span id="cb47-22"><a href="#cb47-22" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">dns_multi_ip_proto</span><span class="kw">:</span><span class="at"> ipv4</span><span class="co">  # ipv4, ipv6, or any (default: ipv4)</span></span>
+<span id="cb47-23"><a href="#cb47-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-24"><a href="#cb47-24" aria-hidden="true" tabindex="-1"></a><span class="co">  # Network settings</span></span>
+<span id="cb47-25"><a href="#cb47-25" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">listen_backlog</span><span class="kw">:</span><span class="at"> </span><span class="dv">128</span><span class="co">       # TCP listen backlog (1-65535, default: 128)</span></span>
+<span id="cb47-26"><a href="#cb47-26" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">max_udp_connections</span><span class="kw">:</span><span class="at"> </span><span class="dv">5000</span><span class="co"> # Max UDP connections per rule (1-1000000, default: 5000)</span></span>
+<span id="cb47-27"><a href="#cb47-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-28"><a href="#cb47-28" aria-hidden="true" tabindex="-1"></a><span class="co">  # Status reporting</span></span>
+<span id="cb47-29"><a href="#cb47-29" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">status</span><span class="kw">:</span></span>
+<span id="cb47-30"><a href="#cb47-30" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">enabled</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb47-31"><a href="#cb47-31" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">file</span><span class="kw">:</span><span class="at"> /var/log/rinetd-uv_status.json</span></span>
+<span id="cb47-32"><a href="#cb47-32" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span><span class="co">            # Write interval in seconds (default: 30)</span></span>
+<span id="cb47-33"><a href="#cb47-33" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">format</span><span class="kw">:</span><span class="at"> json</span><span class="co">            # json or text (default: json)</span></span>
+<span id="cb47-34"><a href="#cb47-34" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">stats_log_interval</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span><span class="co">    # Log summary interval, 0 to disable (default: 60)</span></span>
+<span id="cb47-35"><a href="#cb47-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-36"><a href="#cb47-36" aria-hidden="true" tabindex="-1"></a><span class="co">  # Global access control (applied to all rules before per-rule rules)</span></span>
+<span id="cb47-37"><a href="#cb47-37" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="fu">access</span><span class="kw">:</span></span>
+<span id="cb47-38"><a href="#cb47-38" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">allow</span><span class="kw">:</span></span>
+<span id="cb47-39"><a href="#cb47-39" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;10.*&quot;</span></span>
+<span id="cb47-40"><a href="#cb47-40" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span></span>
+<span id="cb47-41"><a href="#cb47-41" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">deny</span><span class="kw">:</span></span>
+<span id="cb47-42"><a href="#cb47-42" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;192.168.1.100&quot;</span></span>
+<span id="cb47-43"><a href="#cb47-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-44"><a href="#cb47-44" aria-hidden="true" tabindex="-1"></a><span class="fu">rules</span><span class="kw">:</span></span>
+<span id="cb47-45"><a href="#cb47-45" aria-hidden="true" tabindex="-1"></a><span class="co">  # Simple 1:1 forwarding (equivalent to legacy format)</span></span>
+<span id="cb47-46"><a href="#cb47-46" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> simple-forward</span></span>
+<span id="cb47-47"><a href="#cb47-47" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:80/tcp&quot;</span></span>
+<span id="cb47-48"><a href="#cb47-48" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;192.168.1.10:8080&quot;</span></span>
+<span id="cb47-49"><a href="#cb47-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-50"><a href="#cb47-50" aria-hidden="true" tabindex="-1"></a><span class="co">  # Load balanced web servers with weighted round-robin</span></span>
+<span id="cb47-51"><a href="#cb47-51" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> web-cluster</span></span>
+<span id="cb47-52"><a href="#cb47-52" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span></span>
+<span id="cb47-53"><a href="#cb47-53" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;0.0.0.0:443/tcp&quot;</span></span>
+<span id="cb47-54"><a href="#cb47-54" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="st">&quot;[::]:443/tcp&quot;</span></span>
+<span id="cb47-55"><a href="#cb47-55" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb47-56"><a href="#cb47-56" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web1.internal:8443&quot;</span></span>
+<span id="cb47-57"><a href="#cb47-57" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb47-58"><a href="#cb47-58" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web2.internal:8443&quot;</span></span>
+<span id="cb47-59"><a href="#cb47-59" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">2</span></span>
+<span id="cb47-60"><a href="#cb47-60" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;web3.internal:8443&quot;</span></span>
+<span id="cb47-61"><a href="#cb47-61" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">weight</span><span class="kw">:</span><span class="at"> </span><span class="dv">1</span></span>
+<span id="cb47-62"><a href="#cb47-62" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb47-63"><a href="#cb47-63" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> roundrobin</span></span>
+<span id="cb47-64"><a href="#cb47-64" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">health_threshold</span><span class="kw">:</span><span class="at"> </span><span class="dv">3</span></span>
+<span id="cb47-65"><a href="#cb47-65" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">recovery_timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">30</span></span>
+<span id="cb47-66"><a href="#cb47-66" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
+<span id="cb47-67"><a href="#cb47-67" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;10.*&quot;</span><span class="kw">,</span><span class="at"> </span><span class="st">&quot;192.168.*&quot;</span><span class="kw">]</span></span>
+<span id="cb47-68"><a href="#cb47-68" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;*&quot;</span><span class="kw">]</span></span>
+<span id="cb47-69"><a href="#cb47-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-70"><a href="#cb47-70" aria-hidden="true" tabindex="-1"></a><span class="co">  # DNS servers with least-connections algorithm</span></span>
+<span id="cb47-71"><a href="#cb47-71" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> dns-lb</span></span>
+<span id="cb47-72"><a href="#cb47-72" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:53/udp&quot;</span></span>
+<span id="cb47-73"><a href="#cb47-73" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb47-74"><a href="#cb47-74" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;8.8.8.8:53/udp&quot;</span></span>
+<span id="cb47-75"><a href="#cb47-75" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;8.8.4.4:53/udp&quot;</span></span>
+<span id="cb47-76"><a href="#cb47-76" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;1.1.1.1:53/udp&quot;</span></span>
+<span id="cb47-77"><a href="#cb47-77" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb47-78"><a href="#cb47-78" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> leastconn</span></span>
+<span id="cb47-79"><a href="#cb47-79" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">timeout</span><span class="kw">:</span><span class="at"> </span><span class="dv">10</span></span>
+<span id="cb47-80"><a href="#cb47-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-81"><a href="#cb47-81" aria-hidden="true" tabindex="-1"></a><span class="co">  # Application servers with sticky sessions</span></span>
+<span id="cb47-82"><a href="#cb47-82" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> app-cluster</span></span>
+<span id="cb47-83"><a href="#cb47-83" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:8080/tcp&quot;</span></span>
+<span id="cb47-84"><a href="#cb47-84" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span></span>
+<span id="cb47-85"><a href="#cb47-85" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;app1.internal:3000&quot;</span></span>
+<span id="cb47-86"><a href="#cb47-86" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span>
+<span id="cb47-87"><a href="#cb47-87" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="kw">-</span><span class="at"> </span><span class="fu">dest</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;app2.internal:3000&quot;</span></span>
+<span id="cb47-88"><a href="#cb47-88" aria-hidden="true" tabindex="-1"></a><span class="at">        </span><span class="fu">dns_refresh</span><span class="kw">:</span><span class="at"> </span><span class="dv">60</span></span>
+<span id="cb47-89"><a href="#cb47-89" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">load_balancing</span><span class="kw">:</span></span>
+<span id="cb47-90"><a href="#cb47-90" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">algorithm</span><span class="kw">:</span><span class="at"> iphash</span></span>
+<span id="cb47-91"><a href="#cb47-91" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_ttl</span><span class="kw">:</span><span class="at"> </span><span class="dv">3600</span></span>
+<span id="cb47-92"><a href="#cb47-92" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">affinity_max_entries</span><span class="kw">:</span><span class="at"> </span><span class="dv">50000</span></span>
+<span id="cb47-93"><a href="#cb47-93" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">keepalive</span><span class="kw">:</span><span class="at"> </span><span class="ch">true</span></span>
+<span id="cb47-94"><a href="#cb47-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb47-95"><a href="#cb47-95" aria-hidden="true" tabindex="-1"></a><span class="co">  # Docker socket proxy</span></span>
+<span id="cb47-96"><a href="#cb47-96" aria-hidden="true" tabindex="-1"></a><span class="at">  </span><span class="kw">-</span><span class="at"> </span><span class="fu">name</span><span class="kw">:</span><span class="at"> docker-proxy</span></span>
+<span id="cb47-97"><a href="#cb47-97" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">bind</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;0.0.0.0:2375/tcp&quot;</span></span>
+<span id="cb47-98"><a href="#cb47-98" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">connect</span><span class="kw">:</span><span class="at"> </span><span class="st">&quot;unix:/var/run/docker.sock&quot;</span></span>
+<span id="cb47-99"><a href="#cb47-99" aria-hidden="true" tabindex="-1"></a><span class="at">    </span><span class="fu">access</span><span class="kw">:</span></span>
+<span id="cb47-100"><a href="#cb47-100" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">allow</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;10.0.0.*&quot;</span><span class="kw">]</span></span>
+<span id="cb47-101"><a href="#cb47-101" aria-hidden="true" tabindex="-1"></a><span class="at">      </span><span class="fu">deny</span><span class="kw">:</span><span class="at"> </span><span class="kw">[</span><span class="st">&quot;*&quot;</span><span class="kw">]</span></span></code></pre></div>
 <h2 id="reinitializing-rinetd-uv">REINITIALIZING RINETD-UV</h2>
 <p>The SIGHUP signal can be used to cause <strong>rinetd-uv</strong> to
 reload its configuration file without interrupting existing
 connections.</p>
-<div class="sourceCode" id="cb46"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb48"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="bu">kill</span> <span class="at">-HUP</span> <span class="va">$(</span><span class="fu">cat</span> /var/run/rinetd-uv.pid<span class="va">)</span></span></code></pre></div>
 <p>Or simply:</p>
-<div class="sourceCode" id="cb47"><pre
-class="sourceCode bash"><code class="sourceCode bash"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
+<div class="sourceCode" id="cb49"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="fu">killall</span> <span class="at">-HUP</span> rinetd-uv</span></code></pre></div>
 <h2 id="bugs-and-limitations">BUGS AND LIMITATIONS</h2>
 <p><strong>rinetd-uv</strong> only redirects protocols which use a
 single TCP or UDP channel. This rules out ancient protocols like FTP or

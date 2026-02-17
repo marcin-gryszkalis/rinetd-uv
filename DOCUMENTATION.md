@@ -323,6 +323,36 @@ rules:
 
 When enabled, keepalive probes are sent after 60 seconds of inactivity.
 
+##### Backend Connect Timeout
+
+By default, TCP backend connections rely on the OS timeout (typically 75-127 seconds on Linux). The `connect-timeout` option sets an application-level timeout for backend TCP connect attempts, allowing faster failure detection.
+
+This applies to TCP backend connections only. Unix domain socket connections are instantaneous and do not use the timer.
+
+A value of 0 (the default) means no application timeout — the OS default is used. Recommended values: 5-30 seconds for most deployments.
+
+The timeout can be set globally and overridden per-rule:
+
+**Legacy format:**
+```
+connect-timeout 10
+
+0.0.0.0 8080/tcp  10.1.1.127 80/tcp
+0.0.0.0 8081/tcp  10.1.1.128 80/tcp  [connect-timeout=5]
+```
+
+**YAML format:**
+```yaml
+global:
+  connect_timeout: 10
+
+rules:
+  - name: web-forward
+    bind: "0.0.0.0:8080/tcp"
+    connect: "10.1.1.127:80/tcp"
+    connect_timeout: 5
+```
+
 ##### DNS Refresh
 
 For forwarding rules with backend hostnames (not IP addresses), **rinetd-uv** can automatically re-resolve DNS hostnames at configurable intervals. This ensures that if a backend's IP address changes, new connections will use the updated address.
@@ -456,6 +486,7 @@ Global options configure server-wide behavior. All settings are optional and hav
 | `dns-refresh` | `dns_refresh` | 600 | Default DNS refresh interval in seconds (0 = disabled) |
 | `dns-multi-ip-expand` | `dns_multi_ip_expand` | true (YAML) / false (.conf) | Expand backends when DNS returns multiple IPs |
 | `dns-multi-ip-proto` | `dns_multi_ip_proto` | ipv4 | Protocol filter for DNS expansion: `ipv4`, `ipv6`, or `any` |
+| `connect-timeout` | `connect_timeout` | 0 | Backend TCP connect timeout in seconds (0 = OS default, max 86400) |
 | `pool-min-free` | `pool_min_free` | 64 | Minimum pooled buffers (0-10000) |
 | `pool-max-free` | `pool_max_free` | 1024 | Maximum pooled buffers (1-100000) |
 | `pool-trim-delay` | `pool_trim_delay` | 60000 | Pool trim delay in milliseconds (100-300000) |

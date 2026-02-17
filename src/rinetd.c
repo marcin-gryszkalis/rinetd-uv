@@ -91,6 +91,7 @@ int poolMaxFree = RINETD_DEFAULT_POOL_MAX_FREE;
 int poolTrimDelay = RINETD_DEFAULT_POOL_TRIM_DELAY;
 int listenBacklog = RINETD_DEFAULT_LISTEN_BACKLOG;
 int maxUdpConnections = RINETD_DEFAULT_MAX_UDP_CONNECTIONS;
+int globalConnectTimeout = RINETD_DEFAULT_CONNECT_TIMEOUT;
 
 static RinetdOptions options = {
     .conf_file = NULL,  /* Will be determined by findConfigFile() if not specified with -c */
@@ -458,7 +459,8 @@ static void readConfiguration(char const *file)
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
                int serverTimeout, char *sourceAddress,
-               int keepalive, int dns_refresh_period, int socketMode)
+               int keepalive, int dns_refresh_period, int socketMode,
+               int connectTimeout)
 {
     ServerInfo si = {
         .fromHost = strdup(bindAddress),
@@ -479,6 +481,7 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         .fromIsAbstract = 0,
         .toIsAbstract = 0,
         .socketMode = (mode_t)socketMode,
+        .connectTimeout = connectTimeout,
     };
 
     int fromIsUnix = isUnixSocketPath(bindAddress);
@@ -624,6 +627,7 @@ static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv
 static void tcp_server_accept_cb(uv_stream_t *server, int status);
 static void unix_server_accept_cb(uv_stream_t *server, int status);
 static void unix_connect_cb(uv_connect_t *req, int status);
+static void connect_timeout_cb(uv_timer_t *timer);
 
 static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *buf, const struct sockaddr *addr, unsigned flags);
 static void alloc_buffer_udp_server_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
@@ -978,11 +982,60 @@ static void server_handle_close_cb(uv_handle_t *handle)
 static void handle_close_cb(uv_handle_t *handle);
 static void tcp_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 
+/* Backend connect timeout callback - fires when TCP connect takes too long */
+static void connect_timeout_cb(uv_timer_t *timer)
+{
+    ConnectionInfo *cnx = (ConnectionInfo*)timer->data;
+    logErrorConn(cnx, "backend connect timeout\n");
+    stats_error_connect();
+    logEvent(cnx, cnx->server, logLocalConnectFailed);
+
+    if (cnx->selected_backend && cnx->rule) {
+        lb_backend_mark_failure(cnx->selected_backend, cnx->rule);
+        lb_backend_connection_end(cnx->selected_backend, 0, 0);
+    }
+
+    /* Close connect timer */
+    cnx->connect_timer_closing = 1;
+    uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
+
+    /* Close local (backend) handle */
+    if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
+        cnx->local_handle_closing = 1;
+        if (cnx->local_handle_type == UV_TCP)
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+        else if (cnx->local_handle_type == UV_NAMED_PIPE)
+            uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
+    }
+
+    /* Close remote (client) handle */
+    if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
+        cnx->remote_handle_closing = 1;
+        if (cnx->remote_handle_type == UV_TCP)
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+        else if (cnx->remote_handle_type == UV_NAMED_PIPE)
+            uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
+    }
+}
+
 /* TCP backend connection callback */
 static void tcp_connect_cb(uv_connect_t *req, int status)
 {
     ConnectionInfo *cnx = (ConnectionInfo*)req->data;
     free(req);
+
+    /* Stop connect timeout timer (connection completed - success or failure) */
+    if (cnx->connect_timer_initialized && !cnx->connect_timer_closing) {
+        uv_timer_stop(&cnx->connect_timer);
+        cnx->connect_timer_closing = 1;
+        uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
+    }
+
+    /* If handles are already closing, connect_timeout_cb already handled cleanup.
+       This happens when the timeout fires, closes the local TCP handle, and libuv
+       then calls this callback with UV_ECANCELED. */
+    if (cnx->local_handle_closing)
+        return;
 
     if (status < 0) {
         logErrorConn(cnx, "connect error: %s\n", uv_strerror(status));
@@ -1010,7 +1063,7 @@ static void tcp_connect_cb(uv_connect_t *req, int status)
         cnx->local_handle_closing = 1;  /* Set BEFORE uv_close() */
         uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
         /* Close remote handle */
-        if (cnx->remote_handle_initialized) {
+        if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
             cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
         }
@@ -1312,6 +1365,28 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
             uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
             return;
+        }
+
+        /* Start connect timeout timer if configured */
+        int ct = 0;
+        if (srv->rule && srv->rule->connect_timeout > 0)
+            ct = srv->rule->connect_timeout;
+        else if (srv->connectTimeout > 0)
+            ct = srv->connectTimeout;
+        else if (globalConnectTimeout > 0)
+            ct = globalConnectTimeout;
+
+        if (ct > 0) {
+            ret = uv_timer_init(main_loop, &cnx->connect_timer);
+            if (ret == 0) {
+                cnx->connect_timer.data = cnx;
+                cnx->connect_timer_initialized = 1;
+                ret = uv_timer_start(&cnx->connect_timer, connect_timeout_cb, ct * 1000, 0);
+                if (ret != 0) {
+                    cnx->connect_timer_closing = 1;
+                    uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
+                }
+            }
         }
     }
 
@@ -1942,6 +2017,9 @@ static void handle_close_cb(uv_handle_t *handle)
     } else if ((uv_handle_t*)&cnx->timeout_timer == handle) {
         cnx->timer_closing = 0;
         cnx->timer_initialized = 0;
+    } else if ((uv_handle_t*)&cnx->connect_timer == handle) {
+        cnx->connect_timer_closing = 0;
+        cnx->connect_timer_initialized = 0;
     }
 
     /* Check if all handles are closed - if so, free the connection */
@@ -1949,7 +2027,8 @@ static void handle_close_cb(uv_handle_t *handle)
        so we don't need to check for pending writes separately. */
     if (!cnx->local_handle_initialized && !cnx->local_handle_closing &&
         !cnx->remote_handle_initialized && !cnx->remote_handle_closing &&
-        !cnx->timer_initialized && !cnx->timer_closing) {
+        !cnx->timer_initialized && !cnx->timer_closing &&
+        !cnx->connect_timer_initialized && !cnx->connect_timer_closing) {
         /* All handles are closed - safe to free the connection */
 
         /* Remove from doubly-linked list */
@@ -1968,6 +2047,7 @@ static void handle_close_cb(uv_handle_t *handle)
         cnx->local_uv_handle.tcp.data = NULL;   /* Union - sets both tcp.data and udp.data */
         cnx->remote_uv_handle.tcp.data = NULL;  /* Union - sets both tcp.data and udp.data */
         cnx->timeout_timer.data = NULL;
+        cnx->connect_timer.data = NULL;
 
         /* Free cached logging info */
         free(cnx->log_fromHost);
@@ -2595,6 +2675,13 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
     if (cnx->timer_initialized && !cnx->timer_closing && !uv_is_closing((uv_handle_t*)&cnx->timeout_timer)) {
         cnx->timer_closing = 1;  /* Set BEFORE calling uv_close() */
         uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
+    }
+
+    /* Close connect timer if active */
+    if (cnx->connect_timer_initialized && !cnx->connect_timer_closing && !uv_is_closing((uv_handle_t*)&cnx->connect_timer)) {
+        uv_timer_stop(&cnx->connect_timer);
+        cnx->connect_timer_closing = 1;
+        uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
     }
 
     /* Close the other socket as well - no need to wait for buffers to drain */

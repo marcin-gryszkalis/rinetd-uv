@@ -83,6 +83,12 @@ class LegacyConfigParser:
                 self.global_options['dns_multi_ip_proto'] = match.group(1).lower()
             return
 
+        if line.startswith('connect-timeout'):
+            match = re.match(r'connect-timeout\s+(\d+)', line)
+            if match:
+                self.global_options['connect_timeout'] = int(match.group(1))
+            return
+
         if line.startswith('listen-backlog'):
             match = re.match(r'listen-backlog\s+(\d+)', line)
             if match:
@@ -198,6 +204,8 @@ class LegacyConfigParser:
                 options['keepalive'] = value.lower() in ('on', 'true', '1', 'yes')
             elif key == 'dns-refresh':
                 options['dns_refresh'] = int(value)
+            elif key == 'connect-timeout':
+                options['connect_timeout'] = int(value)
             elif key == 'mode':
                 options['mode'] = value
         return options
@@ -284,6 +292,8 @@ class LegacyConfigParser:
             rule['timeout'] = options['timeout']
         if 'keepalive' in options:
             rule['keepalive'] = options['keepalive']
+        if 'connect_timeout' in options:
+            rule['connect_timeout'] = options['connect_timeout']
         if 'mode' in options:
             rule['mode'] = options['mode']
 
@@ -420,6 +430,8 @@ def generate_yaml(parser):
                 lines.append(f"    timeout: {rule['timeout']}")
             if 'keepalive' in rule:
                 lines.append(f"    keepalive: {str(rule['keepalive']).lower()}")
+            if 'connect_timeout' in rule:
+                lines.append(f"    connect_timeout: {rule['connect_timeout']}")
             if 'mode' in rule:
                 lines.append(f"    mode: \"{rule['mode']}\"")
 

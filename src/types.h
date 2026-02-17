@@ -143,6 +143,7 @@ struct _rule_info {
     /* Per-rule options */
     int timeout;                        /* UDP timeout in seconds */
     int keepalive;                      /* TCP keepalive: 1=enabled, 0=disabled */
+    int connect_timeout;                /* Backend connect timeout in seconds (0 = OS default) */
     int dns_refresh_period;             /* Default DNS refresh for backends */
     int socketMode;                     /* Unix socket file permissions (octal, 0 = use default) */
 };
@@ -186,6 +187,8 @@ struct _server_info {
     ConnectionInfo *udp_lru_tail;   /* Least recently used (back) - evict this */
     /* TCP keepalive: 1 = enabled (default), 0 = disabled */
     int keepalive;
+    /* Backend connect timeout in seconds (0 = OS default) */
+    int connectTimeout;
 
     /* DNS refresh timer and state */
     uv_timer_t dns_refresh_timer;        /* Periodic refresh timer */
@@ -270,6 +273,11 @@ struct _connection_info
     uv_timer_t timeout_timer;
     int timer_initialized;
     int timer_closing;  /* Set when uv_close() called, cleared in callback */
+
+    /* libuv timer for backend TCP connect timeout */
+    uv_timer_t connect_timer;
+    int connect_timer_initialized;
+    int connect_timer_closing;
 
     struct sockaddr_storage remoteAddress;
     time_t remoteTimeout;

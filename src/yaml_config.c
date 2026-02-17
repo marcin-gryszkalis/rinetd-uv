@@ -276,6 +276,7 @@ static int add_listener_to_rule(ParserContext *ctx, const char *bind_str)
     srv->fromHost = host;
     srv->rule = rule;
     srv->keepalive = rule->keepalive;
+    srv->connectTimeout = rule->connect_timeout;
     srv->serverTimeout = rule->timeout > 0 ? rule->timeout : RINETD_DEFAULT_UDP_TIMEOUT;
     srv->dns_refresh_period = rule->dns_refresh_period;
     srv->socketMode = rule->socketMode;
@@ -802,6 +803,14 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 } else {
                     ctx->config->pool_trim_delay = val;
                 }
+            } else if (strcmp(ctx->current_key, "connect_timeout") == 0) {
+                val = parse_int_strict(value, 0, 86400, "connect_timeout", err_msg, sizeof(err_msg));
+                if (val < 0) {
+                    logError("%s\n", err_msg);
+                    ctx->error = 1;
+                } else {
+                    ctx->config->connect_timeout = val;
+                }
             } else if (strcmp(ctx->current_key, "dns_multi_ip_expand") == 0) {
                 ctx->config->dns_multi_ip_expand = parse_bool(value, 1);
             } else if (strcmp(ctx->current_key, "dns_multi_ip_proto") == 0) {
@@ -879,6 +888,8 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 ctx->current_rule->timeout = parse_int(value, 1, 86400, RINETD_DEFAULT_UDP_TIMEOUT);
             } else if (strcmp(ctx->current_key, "keepalive") == 0) {
                 ctx->current_rule->keepalive = parse_bool(value, 1);
+            } else if (strcmp(ctx->current_key, "connect_timeout") == 0) {
+                ctx->current_rule->connect_timeout = parse_int(value, 0, 86400, 0);
             } else if (strcmp(ctx->current_key, "mode") == 0) {
                 /* Parse octal mode like "0660" */
                 ctx->current_rule->socketMode = (int)strtol(value, NULL, 8);
@@ -1368,6 +1379,9 @@ YamlConfig *yaml_config_parse(const char *filename)
     config->status.format_json = 1;
     config->stats_log_interval = 60;
 
+    /* Backend connect timeout */
+    config->connect_timeout = RINETD_DEFAULT_CONNECT_TIMEOUT;
+
     /* DNS multi-IP expansion (enabled by default for YAML) */
     config->dns_multi_ip_expand = 1;
     config->dns_multi_ip_proto = DNS_PROTO_IPV4;  /* Default: IPv4 only */
@@ -1607,6 +1621,7 @@ void yaml_config_apply_globals(YamlConfig *config)
 
     bufferSize = config->buffer_size;
     globalDnsRefreshPeriod = config->dns_refresh;
+    globalConnectTimeout = config->connect_timeout;
     globalDnsMultiIpExpand = config->dns_multi_ip_expand;
     globalDnsMultiIpProto = config->dns_multi_ip_proto;
     maxUdpConnections = config->max_udp_connections;

@@ -23,6 +23,7 @@ static int const RINETD_DEFAULT_MAX_UDP_CONNECTIONS = 5000;
 static int const RINETD_DEFAULT_POOL_MIN_FREE = 64;
 static int const RINETD_DEFAULT_POOL_MAX_FREE = 1024;
 static int const RINETD_DEFAULT_POOL_TRIM_DELAY = 60000;
+static int const RINETD_DEFAULT_CONNECT_TIMEOUT = 0;
 
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
 static int const RINETD_CLEANUP_MAX_ITERATIONS = 1000;
@@ -52,6 +53,7 @@ extern int poolMaxFree;
 extern int poolTrimDelay;
 extern int listenBacklog;
 extern int maxUdpConnections;
+extern int globalConnectTimeout;
 
 /* libuv event loop */
 extern uv_loop_t *main_loop;
@@ -65,7 +67,7 @@ extern int usingYamlConfig;
 void addServer(char *bindAddress, char *bindPort, int bindProtocol,
                char *connectAddress, char *connectPort, int connectProtocol,
                int serverTimeout, char *sourceAddress, int keepalive,
-               int dns_refresh_period, int socketMode);
+               int dns_refresh_period, int socketMode, int connectTimeout);
 
 /* Initialize servers from YAML rules (called after yaml_config_parse) */
 void initializeFromYamlRules(void);
