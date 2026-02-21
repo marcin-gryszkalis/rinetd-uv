@@ -55,6 +55,13 @@
         exit(1); \
     }
 
+static char *strdup_or_die(const char *s)
+{
+    char *r = strdup(s);
+    if (!r) MEMORY_ERROR;
+    return r;
+}
+
 #if defined __clang__
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wunused-label"
@@ -144,19 +151,19 @@ connect-spec     =  unix-connect | (connect-address - connect-port)
 
 # Unix socket addresses - no port required, protocol is always stream
 unix-bind        =  < 'unix:' unix-path > {
-    yy->bindAddress = strdup(yytext);
-    yy->bindPort = strdup("0");
+    yy->bindAddress = strdup_or_die(yytext);
+    yy->bindPort = strdup_or_die("0");
     yy->bindProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
 }
 unix-connect     =  < 'unix:' unix-path > {
-    yy->connectAddress = strdup(yytext);
-    yy->connectPort = strdup("0");
+    yy->connectAddress = strdup_or_die(yytext);
+    yy->connectPort = strdup_or_die("0");
     yy->connectProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
 }
 unix-path        =  '@' [^ \t\r\n\[\]]+ | '/' [^ \t\r\n\[\]]+
 
-bind-address     =  < address > { yy->bindAddress = strdup(yytext); }
-connect-address  =  < address > { yy->connectAddress = strdup(yytext); }
+bind-address     =  < address > { yy->bindAddress = strdup_or_die(yytext); }
+connect-address  =  < address > { yy->connectAddress = strdup_or_die(yytext); }
 bind-port        =  full-port { yy->bindPort = yy->tmpPort; yy->bindProto = yy->tmpProto; }
 connect-port     =  full-port { yy->connectPort = yy->tmpPort; yy->connectProto = yy->tmpProto; }
 server-options   =  "[" -? option-list -? "]"
@@ -164,7 +171,7 @@ server-options   =  "[" -? option-list -? "]"
 option-list       =  option (-? ',' -? option-list)?
 option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-connect-timeout | option-mode)
 option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = atoi(yytext); }
-option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup(yytext); }
+option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup_or_die(yytext); }
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
 option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = atoi(yytext); }
 option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = atoi(yytext); }
@@ -183,7 +190,7 @@ keepalive_value   =  "on" | "off"
 
 full-port  =  port proto
 
-port   = < (number | service) >   { yy->tmpPort = strdup(yytext); }
+port   = < (number | service) >   { yy->tmpPort = strdup_or_die(yytext); }
 proto  = '/tcp'                   { yy->tmpProto = IPPROTO_TCP; }
        | '/udp'                   { yy->tmpProto = IPPROTO_UDP; }
        | ''                       { yy->tmpProto = IPPROTO_TCP; }
@@ -430,7 +437,7 @@ static void addIncludedFile(yycontext *ctx, char const *canonical_path)
     }
 
     /* Add to list */
-    ctx->includedFiles[ctx->includedFilesCount++] = strdup(canonical_path);
+    ctx->includedFiles[ctx->includedFilesCount++] = strdup_or_die(canonical_path);
 }
 
 /* Strip quotes from filename */
@@ -444,7 +451,7 @@ static char *stripQuotes(char const *str)
         result[len - 2] = '\0';
         return result;
     }
-    return strdup(str);
+    return strdup_or_die(str);
 }
 
 /* Resolve relative paths based on current file's directory */
@@ -452,17 +459,17 @@ static char *resolveIncludePath(char const *pattern, char const *current_file)
 {
     /* If absolute path, return as-is */
     if (pattern[0] == '/')
-        return strdup(pattern);
+        return strdup_or_die(pattern);
 
     /* Extract directory from current_file */
-    char *dir = strdup(current_file);
+    char *dir = strdup_or_die(current_file);
     char *last_slash = strrchr(dir, '/');
     if (last_slash) {
         *last_slash = '\0';
     } else {
         /* Current file has no directory component, use current working directory */
         free(dir);
-        return strdup(pattern);
+        return strdup_or_die(pattern);
     }
 
     /* Construct absolute path: dir/pattern */
@@ -589,7 +596,7 @@ void parseConfigurationFile(char const *file, yycontext *ctx)
     /* Set new state */
     ctx->fp = in;
     ctx->currentLine = 0;  /* Will be incremented by sol rule */
-    ctx->currentFile = strdup(file);
+    ctx->currentFile = strdup_or_die(file);
     ctx->includeDepth++;
 
     /* Parse the file */
@@ -622,7 +629,7 @@ void parseConfiguration(char const *file)
     ctx.includedFiles = NULL;
     ctx.includedFilesCount = 0;
     ctx.includedFilesCapacity = 0;
-    ctx.currentFile = strdup(file);
+    ctx.currentFile = strdup_or_die(file);
 
     /* Add main config file to included list to prevent self-inclusion */
     char *canonical = realpath(file, NULL);

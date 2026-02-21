@@ -489,6 +489,10 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
         .socketMode = (mode_t)socketMode,
         .connectTimeout = connectTimeout,
     };
+    if (!si.fromHost || !si.toHost || !si.toHost_saved || !si.toPort_saved) {
+        logError("out of memory in addServer\n");
+        exit(1);
+    }
 
     int fromIsUnix = isUnixSocketPath(bindAddress);
     int toIsUnix = isUnixSocketPath(connectAddress);
@@ -644,10 +648,12 @@ static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv
     if (!cnx || !srv)
         return;
 
-    cnx->log_fromHost = strdup(srv->fromHost);
+    cnx->log_fromHost = srv->fromHost ? strdup(srv->fromHost) : NULL;
     cnx->log_fromPort = srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0;
-    cnx->log_toHost = strdup(srv->toHost);
+    cnx->log_toHost = srv->toHost ? strdup(srv->toHost) : NULL;
     cnx->log_toPort = srv->toAddrInfo ? getPort(srv->toAddrInfo) : 0;
+    if ((srv->fromHost && !cnx->log_fromHost) || (srv->toHost && !cnx->log_toHost))
+        logWarning("strdup failed in cacheServerInfoForLogging, log entries may be incomplete\n");
 }
 
 /* libuv callback forward declarations */

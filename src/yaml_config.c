@@ -160,6 +160,7 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
     /* Check for Unix socket */
     if (strncmp(addr_str, "unix:", 5) == 0) {
         *host = strdup(addr_str);
+        if (!*host) return -1;
         *port = NULL;
         *protocol = 0;
         return 0;
@@ -197,10 +198,12 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
         }
         *bracket = '\0';
         *host = strdup(copy + 1);
+        if (!*host) { free(copy); return -1; }
         port_sep = bracket + 1;
-        if (*port_sep == ':')
+        if (*port_sep == ':') {
             *port = strdup(port_sep + 1);
-        else
+            if (!*port) { free(*host); *host = NULL; free(copy); return -1; }
+        } else
             *port = NULL;
     } else {
         /* IPv4 or hostname: host:port */
@@ -208,9 +211,12 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
         if (port_sep) {
             *port_sep = '\0';
             *host = strdup(copy);
+            if (!*host) { free(copy); return -1; }
             *port = strdup(port_sep + 1);
+            if (!*port) { free(*host); *host = NULL; free(copy); return -1; }
         } else {
             *host = strdup(copy);
+            if (!*host) { free(copy); return -1; }
             *port = NULL;
         }
     }
@@ -590,8 +596,13 @@ static int add_backend_to_rule(ParserContext *ctx)
         backend->dns_parent_name = NULL;
 
         /* Save for DNS refresh */
-        backend->host_saved = strdup(backend->host);
+        backend->host_saved = backend->host ? strdup(backend->host) : NULL;
         backend->port_saved = backend->port ? strdup(backend->port) : NULL;
+        if ((backend->host && !backend->host_saved) || (backend->port && !backend->port_saved)) {
+            logError("out of memory saving backend host/port\n");
+            uv_freeaddrinfo(ai);
+            return -1;
+        }
     }
 
     /* Add to rule's backends array */
@@ -689,6 +700,10 @@ static int finalize_rule(ParserContext *ctx)
             char auto_name[256];
             snprintf(auto_name, sizeof(auto_name), "%s-backend-%d", rule->name, i + 1);
             rule->backends[i].name = strdup(auto_name);
+            if (!rule->backends[i].name) {
+                logError("out of memory generating backend name\n");
+                return -1;
+            }
         }
     }
 
@@ -715,10 +730,13 @@ static int finalize_rule(ParserContext *ctx)
     for (int i = 0; i < rule->listener_count; i++) {
         ServerInfo *srv = rule->listeners[i];
         /* Point to first backend for logging purposes */
-        if (rule->backends[0].host)
+        if (rule->backends[0].host) {
             srv->toHost = strdup(rule->backends[0].host);
-        else if (rule->backends[0].unixPath)
+            if (!srv->toHost) { logError("out of memory\n"); return -1; }
+        } else if (rule->backends[0].unixPath) {
             srv->toHost = strdup(rule->backends[0].unixPath);
+            if (!srv->toHost) { logError("out of memory\n"); return -1; }
+        }
     }
 
     /* Add rule to config */
@@ -1060,6 +1078,11 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 }
                 allRules = tmp_rules;
                 allRules[allRulesCount].pattern = strdup(value);
+                if (!allRules[allRulesCount].pattern) {
+                    logError("out of memory for access rule pattern\n");
+                    ctx->error = 1;
+                    break;
+                }
                 allRules[allRulesCount].type = ctx->current_rule_type;
                 if (ctx->current_rule->rulesCount == 0)
                     ctx->current_rule->rulesStart = allRulesCount;
@@ -1677,11 +1700,13 @@ void yaml_config_apply_globals(YamlConfig *config)
         extern char *logFileName;
         free(logFileName);
         logFileName = strdup(config->log_file);
+        if (!logFileName) { logError("out of memory for log filename\n"); exit(1); }
     }
 
     if (config->pid_file) {
         free(pidFileName);
         pidFileName = strdup(config->pid_file);
+        if (!pidFileName) { logError("out of memory for pid filename\n"); exit(1); }
     }
 
     if (config->log_common) {
@@ -1697,6 +1722,7 @@ void yaml_config_apply_globals(YamlConfig *config)
         statusConfig.enabled = config->status.enabled;
         free(statusConfig.file);
         statusConfig.file = config->status.file ? strdup(config->status.file) : NULL;
+        if (config->status.file && !statusConfig.file) { logError("out of memory for status filename\n"); exit(1); }
         statusConfig.interval = config->status.interval;
         statusConfig.format = config->status.format_json ? STATUS_FORMAT_JSON : STATUS_FORMAT_TEXT;
         statsLogInterval = config->stats_log_interval;

@@ -53,6 +53,13 @@
         exit(1); \
     }
 
+static char *strdup_or_die(const char *s)
+{
+    char *r = strdup(s);
+    if (!r) MEMORY_ERROR;
+    return r;
+}
+
 #if defined __clang__
 #pragma clang diagnostic ignored "-Wunused-parameter"
 #pragma clang diagnostic ignored "-Wunused-label"
@@ -443,7 +450,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 400
+#line 407
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -457,7 +464,7 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 374
+#line 381
   
     logError("invalid syntax at line %d: %s\n", yy->currentLine, yytext);
     PARSE_ERROR; /* FIXME */
@@ -474,7 +481,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 369
+#line 376
   
     parseInclude(yytext, yy);
 ;
@@ -490,7 +497,7 @@ YY_ACTION(void) yy_1_statsloginterval(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statsloginterval\n"));
   {
-#line 360
+#line 367
   
     statsLogInterval = atoi(yytext);
     if (statsLogInterval < 0 || statsLogInterval > 86400) {
@@ -510,7 +517,7 @@ YY_ACTION(void) yy_1_statusformat(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusformat\n"));
   {
-#line 352
+#line 359
   
     if (strcmp(yytext, "json") == 0)
         statusConfig.format = STATUS_FORMAT_JSON;
@@ -529,7 +536,7 @@ YY_ACTION(void) yy_1_statusinterval(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusinterval\n"));
   {
-#line 343
+#line 350
   
     statusConfig.interval = atoi(yytext);
     if (statusConfig.interval < 1 || statusConfig.interval > 86400) {
@@ -549,7 +556,7 @@ YY_ACTION(void) yy_1_statusfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusfile\n"));
   {
-#line 334
+#line 341
   
     free(statusConfig.file);
     statusConfig.file = stripQuotes(yytext);
@@ -569,7 +576,7 @@ YY_ACTION(void) yy_1_max_udp_connections(yycontext *yy, char *yytext, int yyleng
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_max_udp_connections\n"));
   {
-#line 325
+#line 332
   
     maxUdpConnections = atoi(yytext);
     if (maxUdpConnections < 1 || maxUdpConnections > 1000000) {
@@ -589,7 +596,7 @@ YY_ACTION(void) yy_1_listen_backlog(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_listen_backlog\n"));
   {
-#line 316
+#line 323
   
     listenBacklog = atoi(yytext);
     if (listenBacklog < 1 || listenBacklog > 65535) {
@@ -609,7 +616,7 @@ YY_ACTION(void) yy_1_pool_trim_delay(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_trim_delay\n"));
   {
-#line 307
+#line 314
   
     poolTrimDelay = atoi(yytext);
     if (poolTrimDelay < 100 || poolTrimDelay > 300000) {
@@ -629,7 +636,7 @@ YY_ACTION(void) yy_1_pool_max_free(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_max_free\n"));
   {
-#line 298
+#line 305
   
     poolMaxFree = atoi(yytext);
     if (poolMaxFree < 1 || poolMaxFree > 100000) {
@@ -649,7 +656,7 @@ YY_ACTION(void) yy_1_pool_min_free(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_min_free\n"));
   {
-#line 289
+#line 296
   
     poolMinFree = atoi(yytext);
     if (poolMinFree < 0 || poolMinFree > 10000) {
@@ -669,7 +676,7 @@ YY_ACTION(void) yy_1_connect_timeout_global(yycontext *yy, char *yytext, int yyl
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_timeout_global\n"));
   {
-#line 280
+#line 287
   
     globalConnectTimeout = atoi(yytext);
     if (globalConnectTimeout < 0 || globalConnectTimeout > 86400) {
@@ -689,7 +696,7 @@ YY_ACTION(void) yy_1_dns_multi_ip_proto_global(yycontext *yy, char *yytext, int 
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_multi_ip_proto_global\n"));
   {
-#line 264
+#line 271
   
     if (strcasecmp(yytext, "ipv4") == 0) {
         globalDnsMultiIpProto = 4;
@@ -714,7 +721,7 @@ YY_ACTION(void) yy_1_dns_multi_ip_expand_global(yycontext *yy, char *yytext, int
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_multi_ip_expand_global\n"));
   {
-#line 252
+#line 259
   
     if (strcmp(yytext, "on") == 0) {
         globalDnsMultiIpExpand = 1;
@@ -737,7 +744,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 243
+#line 250
   
     globalDnsRefreshPeriod = atoi(yytext);
     if (globalDnsRefreshPeriod < 0) {
@@ -757,7 +764,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_buffersize\n"));
   {
-#line 234
+#line 241
   
     bufferSize = atoi(yytext);
     if (bufferSize < 1024 || bufferSize > 1048576) {
@@ -777,7 +784,7 @@ YY_ACTION(void) yy_1_logcommon(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logcommon\n"));
   {
-#line 229
+#line 236
   
     logFormatCommon = 1;
 ;
@@ -793,7 +800,7 @@ YY_ACTION(void) yy_1_pidfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pidfile\n"));
   {
-#line 222
+#line 229
   
     pidFileName = stripQuotes(yytext);
     if (!pidFileName)
@@ -811,7 +818,7 @@ YY_ACTION(void) yy_1_logfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logfile\n"));
   {
-#line 215
+#line 222
   
     logFileName = stripQuotes(yytext);
     if (!logFileName)
@@ -829,7 +836,7 @@ YY_ACTION(void) yy_1_auth_key(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_key\n"));
   {
-#line 212
+#line 219
    yy->isAuthAllow = (yytext[0] == 'a'); ;
   }
 #undef yythunkpos
@@ -843,7 +850,7 @@ YY_ACTION(void) yy_1_auth_rule(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_auth_rule\n"));
   {
-#line 192
+#line 199
   
     allRules = (Rule *)
         realloc(allRules, sizeof(Rule) * (allRulesCount + 1));
@@ -875,7 +882,7 @@ YY_ACTION(void) yy_3_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_3_proto\n"));
   {
-#line 189
+#line 196
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -889,7 +896,7 @@ YY_ACTION(void) yy_2_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_2_proto\n"));
   {
-#line 188
+#line 195
    yy->tmpProto = IPPROTO_UDP; ;
   }
 #undef yythunkpos
@@ -903,7 +910,7 @@ YY_ACTION(void) yy_1_proto(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_proto\n"));
   {
-#line 187
+#line 194
    yy->tmpProto = IPPROTO_TCP; ;
   }
 #undef yythunkpos
@@ -917,8 +924,8 @@ YY_ACTION(void) yy_1_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_port\n"));
   {
-#line 186
-   yy->tmpPort = strdup(yytext); ;
+#line 193
+   yy->tmpPort = strdup_or_die(yytext); ;
   }
 #undef yythunkpos
 #undef yypos
@@ -931,7 +938,7 @@ YY_ACTION(void) yy_1_option_mode(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_mode\n"));
   {
-#line 171
+#line 178
   
     char *end;
     errno = 0;
@@ -954,7 +961,7 @@ YY_ACTION(void) yy_1_option_connect_timeout(yycontext *yy, char *yytext, int yyl
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_connect_timeout\n"));
   {
-#line 170
+#line 177
    yy->connectTimeout = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -968,7 +975,7 @@ YY_ACTION(void) yy_1_option_dns_refresh(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_dns_refresh\n"));
   {
-#line 169
+#line 176
    yy->dns_refresh_period = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -982,7 +989,7 @@ YY_ACTION(void) yy_1_option_keepalive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_keepalive\n"));
   {
-#line 168
+#line 175
    yy->keepalive = (yytext[1] == 'n') ? 1 : 0; ;
   }
 #undef yythunkpos
@@ -996,8 +1003,8 @@ YY_ACTION(void) yy_1_option_source(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_source\n"));
   {
-#line 167
-   yy->sourceAddress = strdup(yytext); ;
+#line 174
+   yy->sourceAddress = strdup_or_die(yytext); ;
   }
 #undef yythunkpos
 #undef yypos
@@ -1010,7 +1017,7 @@ YY_ACTION(void) yy_1_option_timeout(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_option_timeout\n"));
   {
-#line 166
+#line 173
    yy->serverTimeout = atoi(yytext); ;
   }
 #undef yythunkpos
@@ -1024,7 +1031,7 @@ YY_ACTION(void) yy_1_connect_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_port\n"));
   {
-#line 161
+#line 168
    yy->connectPort = yy->tmpPort; yy->connectProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -1038,7 +1045,7 @@ YY_ACTION(void) yy_1_bind_port(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_port\n"));
   {
-#line 160
+#line 167
    yy->bindPort = yy->tmpPort; yy->bindProto = yy->tmpProto; ;
   }
 #undef yythunkpos
@@ -1052,8 +1059,8 @@ YY_ACTION(void) yy_1_connect_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_address\n"));
   {
-#line 159
-   yy->connectAddress = strdup(yytext); ;
+#line 166
+   yy->connectAddress = strdup_or_die(yytext); ;
   }
 #undef yythunkpos
 #undef yypos
@@ -1066,8 +1073,8 @@ YY_ACTION(void) yy_1_bind_address(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_bind_address\n"));
   {
-#line 158
-   yy->bindAddress = strdup(yytext); ;
+#line 165
+   yy->bindAddress = strdup_or_die(yytext); ;
   }
 #undef yythunkpos
 #undef yypos
@@ -1080,10 +1087,10 @@ YY_ACTION(void) yy_1_unix_connect(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_unix_connect\n"));
   {
-#line 151
+#line 158
   
-    yy->connectAddress = strdup(yytext);
-    yy->connectPort = strdup("0");
+    yy->connectAddress = strdup_or_die(yytext);
+    yy->connectPort = strdup_or_die("0");
     yy->connectProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
 ;
   }
@@ -1098,10 +1105,10 @@ YY_ACTION(void) yy_1_unix_bind(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_unix_bind\n"));
   {
-#line 146
+#line 153
   
-    yy->bindAddress = strdup(yytext);
-    yy->bindPort = strdup("0");
+    yy->bindAddress = strdup_or_die(yytext);
+    yy->bindPort = strdup_or_die("0");
     yy->bindProto = IPPROTO_TCP;  /* Stream mode for Unix sockets */
 ;
   }
@@ -1116,7 +1123,7 @@ YY_ACTION(void) yy_1_server_rule(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_server_rule\n"));
   {
-#line 108
+#line 115
   
     /* keepalive: -1 = not set (default to on), 0 = off, 1 = on */
     int keepalive = (yy->keepalive == -1) ? 1 : yy->keepalive;
@@ -2496,7 +2503,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 404 "parse.peg"
+#line 411 "parse.peg"
 
 
 /* Utility functions for include directive support */
@@ -2526,7 +2533,7 @@ static void addIncludedFile(yycontext *ctx, char const *canonical_path)
     }
 
     /* Add to list */
-    ctx->includedFiles[ctx->includedFilesCount++] = strdup(canonical_path);
+    ctx->includedFiles[ctx->includedFilesCount++] = strdup_or_die(canonical_path);
 }
 
 /* Strip quotes from filename */
@@ -2540,7 +2547,7 @@ static char *stripQuotes(char const *str)
         result[len - 2] = '\0';
         return result;
     }
-    return strdup(str);
+    return strdup_or_die(str);
 }
 
 /* Resolve relative paths based on current file's directory */
@@ -2548,17 +2555,17 @@ static char *resolveIncludePath(char const *pattern, char const *current_file)
 {
     /* If absolute path, return as-is */
     if (pattern[0] == '/')
-        return strdup(pattern);
+        return strdup_or_die(pattern);
 
     /* Extract directory from current_file */
-    char *dir = strdup(current_file);
+    char *dir = strdup_or_die(current_file);
     char *last_slash = strrchr(dir, '/');
     if (last_slash) {
         *last_slash = '\0';
     } else {
         /* Current file has no directory component, use current working directory */
         free(dir);
-        return strdup(pattern);
+        return strdup_or_die(pattern);
     }
 
     /* Construct absolute path: dir/pattern */
@@ -2685,7 +2692,7 @@ void parseConfigurationFile(char const *file, yycontext *ctx)
     /* Set new state */
     ctx->fp = in;
     ctx->currentLine = 0;  /* Will be incremented by sol rule */
-    ctx->currentFile = strdup(file);
+    ctx->currentFile = strdup_or_die(file);
     ctx->includeDepth++;
 
     /* Parse the file */
@@ -2718,7 +2725,7 @@ void parseConfiguration(char const *file)
     ctx.includedFiles = NULL;
     ctx.includedFilesCount = 0;
     ctx.includedFilesCapacity = 0;
-    ctx.currentFile = strdup(file);
+    ctx.currentFile = strdup_or_die(file);
 
     /* Add main config file to included list to prevent self-inclusion */
     char *canonical = realpath(file, NULL);
