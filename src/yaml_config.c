@@ -85,18 +85,6 @@ static char *safe_strdup(const char *s, size_t max_len)
     return dup;
 }
 
-/* Helper: parse integer with range check */
-static int parse_int(const char *s, int min_val, int max_val, int default_val)
-{
-    if (!s)
-        return default_val;
-    char *end;
-    long val = strtol(s, &end, 10);
-    if (*end != '\0' || val < min_val || val > max_val)
-        return default_val;
-    return (int)val;
-}
-
 /* Helper: parse integer with strict validation - returns -1 on error, sets error message */
 static int parse_int_strict(const char *s, int min_val, int max_val, const char *field_name, char *error_msg, size_t error_msg_size)
 {
@@ -160,7 +148,7 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
 
     /* Check for Unix socket */
     if (strncmp(addr_str, "unix:", 5) == 0) {
-        *host = strdup(addr_str);
+        *host = safe_strdup(addr_str, 255);
         if (!*host) return -1;
         *port = NULL;
         *protocol = 0;
@@ -168,7 +156,7 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
     }
 
     /* Copy for parsing */
-    char *copy = strdup(addr_str);
+    char *copy = safe_strdup(addr_str, 4096);
     if (!copy)
         return -1;
 
@@ -198,11 +186,11 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
             return -1;
         }
         *bracket = '\0';
-        *host = strdup(copy + 1);
+        *host = safe_strdup(copy + 1, 255);
         if (!*host) { free(copy); return -1; }
         port_sep = bracket + 1;
         if (*port_sep == ':') {
-            *port = strdup(port_sep + 1);
+            *port = safe_strdup(port_sep + 1, 32);
             if (!*port) { free(*host); *host = NULL; free(copy); return -1; }
         } else
             *port = NULL;
@@ -211,12 +199,12 @@ static int parse_address_string(const char *addr_str, char **host, char **port, 
         port_sep = strrchr(copy, ':');
         if (port_sep) {
             *port_sep = '\0';
-            *host = strdup(copy);
+            *host = safe_strdup(copy, 255);
             if (!*host) { free(copy); return -1; }
-            *port = strdup(port_sep + 1);
+            *port = safe_strdup(port_sep + 1, 32);
             if (!*port) { free(*host); *host = NULL; free(copy); return -1; }
         } else {
-            *host = strdup(copy);
+            *host = safe_strdup(copy, 255);
             if (!*host) { free(copy); return -1; }
             *port = NULL;
         }
@@ -487,9 +475,9 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
 
         /* Duplicate hostname/port (don't use template pointers - they'll be freed) */
         new_backend.host = safe_strdup(hostname, 255);
-        new_backend.port = safe_strdup(template_backend->port, 10);
+        new_backend.port = safe_strdup(template_backend->port, 32);
         new_backend.host_saved = safe_strdup(hostname, 255);
-        new_backend.port_saved = safe_strdup(template_backend->port, 10);
+        new_backend.port_saved = safe_strdup(template_backend->port, 32);
 
         if (!new_backend.name || !new_backend.dns_parent_name || !new_backend.host ||
             !new_backend.host_saved || (template_backend->port && !new_backend.port) ||
@@ -718,6 +706,16 @@ static int finalize_rule(ParserContext *ctx)
         }
     }
 
+    /* Re-propagate rule settings to listeners (handles YAML key ordering) */
+    for (int i = 0; i < rule->listener_count; i++) {
+        ServerInfo *srv = rule->listeners[i];
+        srv->keepalive = rule->keepalive;
+        srv->connectTimeout = rule->connect_timeout;
+        srv->serverTimeout = rule->timeout > 0 ? rule->timeout : RINETD_DEFAULT_UDP_TIMEOUT;
+        srv->dns_refresh_period = rule->dns_refresh_period;
+        srv->socketMode = rule->socketMode;
+    }
+
     /* Set default algorithm if multiple backends and none specified */
     if (rule->backend_count > 1 && rule->algorithm == LB_NONE)
         rule->algorithm = LB_ROUND_ROBIN;
@@ -927,11 +925,17 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 if (add_listener_to_rule(ctx, value) != 0)
                     ctx->error = 1;
             } else if (strcmp(ctx->current_key, "timeout") == 0) {
-                ctx->current_rule->timeout = parse_int(value, 1, 86400, RINETD_DEFAULT_UDP_TIMEOUT);
+                char err_msg[256];
+                int val = parse_int_strict(value, 1, 86400, "timeout", err_msg, sizeof(err_msg));
+                if (val < 0) { logError("%s\n", err_msg); ctx->error = 1; }
+                else ctx->current_rule->timeout = val;
             } else if (strcmp(ctx->current_key, "keepalive") == 0) {
                 ctx->current_rule->keepalive = parse_bool(value, 1);
             } else if (strcmp(ctx->current_key, "connect_timeout") == 0) {
-                ctx->current_rule->connect_timeout = parse_int(value, 0, 86400, 0);
+                char err_msg[256];
+                int val = parse_int_strict(value, 0, 86400, "connect_timeout", err_msg, sizeof(err_msg));
+                if (val < 0) { logError("%s\n", err_msg); ctx->error = 1; }
+                else ctx->current_rule->connect_timeout = val;
             } else if (strcmp(ctx->current_key, "mode") == 0) {
                 /* Parse octal mode like "0660" */
                 char *end;
@@ -1003,7 +1007,10 @@ static void process_scalar(ParserContext *ctx, const char *value)
                     ctx->current_backend->weight = val;
                 }
             } else if (strcmp(ctx->current_key, "dns_refresh") == 0) {
-                ctx->current_backend->dns_refresh_period = parse_int(value, 0, 86400*7, 0);
+                char err_msg[256];
+                int val = parse_int_strict(value, 0, 86400*7, "dns_refresh", err_msg, sizeof(err_msg));
+                if (val < 0) { logError("%s\n", err_msg); ctx->error = 1; }
+                else ctx->current_backend->dns_refresh_period = val;
             } else if (strcmp(ctx->current_key, "src") == 0) {
                 /* Source address for outgoing connections */
                 int protocol = IPPROTO_TCP;
@@ -1088,7 +1095,7 @@ static void process_scalar(ParserContext *ctx, const char *value)
                     break;
                 }
                 allRules = tmp_rules;
-                allRules[allRulesCount].pattern = strdup(value);
+                allRules[allRulesCount].pattern = safe_strdup(value, 256);
                 if (!allRules[allRulesCount].pattern) {
                     logError("out of memory for access rule pattern\n");
                     ctx->error = 1;
@@ -1710,13 +1717,13 @@ void yaml_config_apply_globals(YamlConfig *config)
     if (config->log_file) {
         extern char *logFileName;
         free(logFileName);
-        logFileName = strdup(config->log_file);
+        logFileName = safe_strdup(config->log_file, 4096);
         if (!logFileName) { logError("out of memory for log filename\n"); exit(1); }
     }
 
     if (config->pid_file) {
         free(pidFileName);
-        pidFileName = strdup(config->pid_file);
+        pidFileName = safe_strdup(config->pid_file, 4096);
         if (!pidFileName) { logError("out of memory for pid filename\n"); exit(1); }
     }
 
