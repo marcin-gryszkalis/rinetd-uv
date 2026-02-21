@@ -105,8 +105,9 @@ static int parse_int_strict(const char *s, int min_val, int max_val, const char 
         return -1;
     }
     char *end;
+    errno = 0;
     long val = strtol(s, &end, 10);
-    if (*end != '\0') {
+    if (*end != '\0' || errno == ERANGE) {
         snprintf(error_msg, error_msg_size, "Invalid value for %s: '%s' (not a number)", field_name, s);
         return -1;
     }
@@ -294,6 +295,7 @@ static int add_listener_to_rule(ParserContext *ctx, const char *bind_str)
         char *path = NULL;
         int is_abstract = 0;
         if (parseUnixSocketPath(host, &path, &is_abstract) != 0) {
+            free(host);
             free(srv);
             return -1;
         }
@@ -305,6 +307,7 @@ static int add_listener_to_rule(ParserContext *ctx, const char *bind_str)
         struct addrinfo *ai = NULL;
         int ret = getAddrInfoWithProto(host, port, protocol, &ai);
         if (ret != 0) {
+            free(host);
             free(srv);
             free(port);
             return -1;
@@ -487,6 +490,14 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
         new_backend.port = safe_strdup(template_backend->port, 10);
         new_backend.host_saved = safe_strdup(hostname, 255);
         new_backend.port_saved = safe_strdup(template_backend->port, 10);
+
+        if (!new_backend.name || !new_backend.dns_parent_name || !new_backend.host ||
+            !new_backend.host_saved || (template_backend->port && !new_backend.port) ||
+            (template_backend->port && !new_backend.port_saved)) {
+            logError("out of memory expanding backend %s\n", name_buf);
+            lb_backend_cleanup(&new_backend);
+            continue;
+        }
 
         /* Deep-copy shared pointers that the template owns */
         if (template_backend->sourceAddrInfo) {
