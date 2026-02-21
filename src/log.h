@@ -13,20 +13,7 @@
 
 static int const RINETD_LOG_BUFFER_SIZE = 2048;
 
-/* Log event codes */
-enum {
-    logUnknownError = 0,
-    logLocalClosedFirst,
-    logRemoteClosedFirst,
-    logAcceptFailed,
-    logLocalSocketFailed,
-    logLocalBindFailed,
-    logLocalConnectFailed,
-    logOpened,
-    logAllowed,
-    logNotAllowed,
-    logDenied,
-};
+/* Log event codes (defined in types.h to avoid circular includes) */
 
 /* Log message strings (indexed by log event codes) */
 extern char const *logMessages[];
@@ -49,7 +36,7 @@ void logInfoConn(ConnectionInfo const *cnx, char const *fmt, ...);
 void logDebugConn(ConnectionInfo const *cnx, char const *fmt, ...);
 
 /* Connection event logging (to log file) */
-void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int result);
+void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, LogEventCode result);
 
 /* Initialize/shutdown logging subsystem */
 void log_init(void);

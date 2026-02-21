@@ -32,6 +32,21 @@ enum _rule_type {
     denyRule,
 };
 
+/* Log event codes */
+typedef enum {
+    logUnknownError = 0,
+    logLocalClosedFirst,
+    logRemoteClosedFirst,
+    logAcceptFailed,
+    logLocalSocketFailed,
+    logLocalBindFailed,
+    logLocalConnectFailed,
+    logOpened,
+    logAllowed,
+    logNotAllowed,
+    logDenied,
+} LogEventCode;
+
 /* Load balancing algorithm types */
 typedef enum _lb_algorithm LbAlgorithm;
 enum _lb_algorithm {
@@ -285,7 +300,7 @@ struct _connection_info
     struct sockaddr_storage remoteAddress;
     time_t remoteTimeout;
     int coClosing;
-    int coLog;
+    LogEventCode coLog;
     ServerInfo const *server; // only useful for logEvent
 
     /* Server info cached for logging (survives server reloads) */

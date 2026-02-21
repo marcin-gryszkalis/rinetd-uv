@@ -108,8 +108,8 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 static ConnectionInfo *allocateConnection(void);
 static void freeUnhandledConnection(ConnectionInfo *cnx);
 static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv);
-static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv);
-static int checkConnectionAllowed(ConnectionInfo const *cnx);
+static LogEventCode checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv);
+static LogEventCode checkConnectionAllowed(ConnectionInfo const *cnx);
 
 /* UDP hash table and LRU functions */
 static void init_udp_hash_table(void);
@@ -1196,7 +1196,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     cnx->remoteAddress = addr;
     cnx->server = srv;  /* Needed for checkConnectionAllowed */
 
-    int logCode = checkConnectionAllowed(cnx);
+    LogEventCode logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
         stats_connection_denied();
         cnx->remote_handle_closing = 1;  /* Set BEFORE uv_close() */
@@ -2511,7 +2511,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     memcpy(&cnx->remoteAddress, addr, addr_len);
     cnx->server = srv;
 
-    int logCode = checkConnectionAllowed(cnx);
+    LogEventCode logCode = checkConnectionAllowed(cnx);
     if (logCode != logAllowed) {
         stats_connection_denied();
         logEvent(cnx, srv, logCode);
@@ -2750,7 +2750,7 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
     }
 }
 
-static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv)
+static LogEventCode checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv)
 {
     char addressText[NI_MAXHOST];
     int gni_ret = getnameinfo((struct sockaddr *)addr, sizeof(*addr),
@@ -2811,7 +2811,7 @@ static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, Serve
     return logAllowed;
 }
 
-static int checkConnectionAllowed(ConnectionInfo const *cnx)
+static LogEventCode checkConnectionAllowed(ConnectionInfo const *cnx)
 {
     return checkConnectionAllowedAddr(&cnx->remoteAddress, cnx->server);
 }

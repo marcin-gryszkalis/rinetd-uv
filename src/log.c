@@ -274,7 +274,7 @@ void logDebugConn(ConnectionInfo const *cnx, char const *fmt, ...)
 
 
 /* Connection event logging (to log file) */
-void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int result)
+void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, LogEventCode result)
 {
     /* Bit of borrowing from Apache logging module here,
         thanks folks */
