@@ -140,7 +140,7 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
 
         logDebug("DNS refresh: %s resolved to new address %s (was %s)\n", srv->toHost, new_addr, old_addr);
 
-        freeaddrinfo(srv->toAddrInfo);
+        uv_freeaddrinfo(srv->toAddrInfo);
         srv->toAddrInfo = res;
         srv->consecutive_failures = 0;
     } else {
