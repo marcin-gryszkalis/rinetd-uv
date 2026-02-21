@@ -277,7 +277,11 @@ static void json_escape_string(const char *src, char *dest, size_t dest_size)
             }
             break;
         default:
-            dest[i++] = *src;
+            if ((unsigned char)*src < 0x20) {
+                if (i < dest_size - 7)
+                    i += snprintf(dest + i, dest_size - i, "\\u%04x", (unsigned char)*src);
+            } else
+                dest[i++] = *src;
             break;
         }
         src++;
