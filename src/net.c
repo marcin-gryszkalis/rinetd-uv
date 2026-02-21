@@ -51,7 +51,7 @@ int sameSocketAddress(struct sockaddr_storage *a, struct sockaddr_storage *b)
             struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)a;
             struct sockaddr_in6 *b6 = (struct sockaddr_in6 *)b;
             return a6->sin6_port == b6->sin6_port
-                && a6->sin6_addr.s6_addr == b6->sin6_addr.s6_addr;
+                && memcmp(&a6->sin6_addr, &b6->sin6_addr, sizeof(a6->sin6_addr)) == 0;
         }
     }
     return 0;
