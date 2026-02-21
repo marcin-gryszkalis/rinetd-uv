@@ -2736,7 +2736,12 @@ static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socke
 static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv)
 {
     char addressText[NI_MAXHOST];
-    getnameinfo((struct sockaddr *)addr, sizeof(*addr), addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
+    int gni_ret = getnameinfo((struct sockaddr *)addr, sizeof(*addr),
+        addressText, sizeof(addressText), NULL, 0, NI_NUMERICHOST);
+    if (gni_ret != 0) {
+        logError("getnameinfo failed: %s\n", gai_strerror(gni_ret));
+        return logDenied;
+    }
 
     /* 1. Check global allow rules. If there are no
         global allow rules, it's presumed OK at
