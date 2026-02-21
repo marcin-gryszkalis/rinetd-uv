@@ -21,6 +21,7 @@
 
 #include <errno.h>
 #include <glob.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -60,6 +61,19 @@ static char *strdup_or_die(const char *s)
     char *r = strdup(s);
     if (!r) MEMORY_ERROR;
     return r;
+}
+
+/* Safe atoi replacement using strtol -- avoids UB on overflow */
+static int safe_atoi(const char *s, int line)
+{
+    errno = 0;
+    char *end;
+    long val = strtol(s, &end, 10);
+    if (errno == ERANGE || *end != '\0' || val < INT_MIN || val > INT_MAX) {
+        logError("numeric value out of range at line %d: %s\n", line, s);
+        PARSE_ERROR;
+    }
+    return (int)val;
 }
 
 #if defined __clang__
@@ -170,11 +184,11 @@ server-options   =  "[" -? option-list -? "]"
 
 option-list       =  option (-? ',' -? option-list)?
 option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-connect-timeout | option-mode)
-option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = atoi(yytext); }
+option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = safe_atoi(yytext, yy->currentLine); }
 option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup_or_die(yytext); }
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
-option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = atoi(yytext); }
-option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = atoi(yytext); }
+option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = safe_atoi(yytext, yy->currentLine); }
+option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = safe_atoi(yytext, yy->currentLine); }
 option-mode       =  "mode"       -? "=" -? < octal_number > {
     char *end;
     errno = 0;
@@ -239,7 +253,7 @@ logcommon  =  "logcommon"
 
 buffersize  =  "buffersize" - < number >
 {
-    bufferSize = atoi(yytext);
+    bufferSize = safe_atoi(yytext, yy->currentLine);
     if (bufferSize < 1024 || bufferSize > 1048576) {
         logError("invalid buffer size %d at line %d (must be 1024-1048576)\n", bufferSize, yy->currentLine);
         PARSE_ERROR;
@@ -248,7 +262,7 @@ buffersize  =  "buffersize" - < number >
 
 dns-refresh-global  =  "dns-refresh" - < number >
 {
-    globalDnsRefreshPeriod = atoi(yytext);
+    globalDnsRefreshPeriod = safe_atoi(yytext, yy->currentLine);
     if (globalDnsRefreshPeriod < 0) {
         logError("invalid dns-refresh value at line %d\n", yy->currentLine);
         PARSE_ERROR;
@@ -285,7 +299,7 @@ proto_filter_value  =  [iI][pP][vV] '4' | [iI][pP][vV] '6' | [aA][nN][yY]
 
 connect-timeout-global  =  "connect-timeout" - < number >
 {
-    globalConnectTimeout = atoi(yytext);
+    globalConnectTimeout = safe_atoi(yytext, yy->currentLine);
     if (globalConnectTimeout < 0 || globalConnectTimeout > 86400) {
         logError("invalid connect-timeout value at line %d (must be 0-86400)\n", yy->currentLine);
         PARSE_ERROR;
@@ -294,7 +308,7 @@ connect-timeout-global  =  "connect-timeout" - < number >
 
 pool-min-free  =  "pool-min-free" - < number >
 {
-    poolMinFree = atoi(yytext);
+    poolMinFree = safe_atoi(yytext, yy->currentLine);
     if (poolMinFree < 0 || poolMinFree > 10000) {
         logError("invalid pool-min-free value %d at line %d (must be 0-10000)\n", poolMinFree, yy->currentLine);
         PARSE_ERROR;
@@ -303,7 +317,7 @@ pool-min-free  =  "pool-min-free" - < number >
 
 pool-max-free  =  "pool-max-free" - < number >
 {
-    poolMaxFree = atoi(yytext);
+    poolMaxFree = safe_atoi(yytext, yy->currentLine);
     if (poolMaxFree < 1 || poolMaxFree > 100000) {
         logError("invalid pool-max-free value %d at line %d (must be 1-100000)\n", poolMaxFree, yy->currentLine);
         PARSE_ERROR;
@@ -312,7 +326,7 @@ pool-max-free  =  "pool-max-free" - < number >
 
 pool-trim-delay  =  "pool-trim-delay" - < number >
 {
-    poolTrimDelay = atoi(yytext);
+    poolTrimDelay = safe_atoi(yytext, yy->currentLine);
     if (poolTrimDelay < 100 || poolTrimDelay > 300000) {
         logError("invalid pool-trim-delay value %d at line %d (must be 100-300000 ms)\n", poolTrimDelay, yy->currentLine);
         PARSE_ERROR;
@@ -321,7 +335,7 @@ pool-trim-delay  =  "pool-trim-delay" - < number >
 
 listen-backlog  =  "listen-backlog" - < number >
 {
-    listenBacklog = atoi(yytext);
+    listenBacklog = safe_atoi(yytext, yy->currentLine);
     if (listenBacklog < 1 || listenBacklog > 65535) {
         logError("invalid listen-backlog value %d at line %d (must be 1-65535)\n", listenBacklog, yy->currentLine);
         PARSE_ERROR;
@@ -330,7 +344,7 @@ listen-backlog  =  "listen-backlog" - < number >
 
 max-udp-connections  =  "max-udp-connections" - < number >
 {
-    maxUdpConnections = atoi(yytext);
+    maxUdpConnections = safe_atoi(yytext, yy->currentLine);
     if (maxUdpConnections < 1 || maxUdpConnections > 1000000) {
         logError("invalid max-udp-connections value %d at line %d (must be 1-1000000)\n", maxUdpConnections, yy->currentLine);
         PARSE_ERROR;
@@ -348,7 +362,7 @@ statusfile  =  "statusfile" - < filename >
 
 statusinterval  =  "statusinterval" - < number >
 {
-    statusConfig.interval = atoi(yytext);
+    statusConfig.interval = safe_atoi(yytext, yy->currentLine);
     if (statusConfig.interval < 1 || statusConfig.interval > 86400) {
         logError("invalid statusinterval value %d at line %d (must be 1-86400)\n", statusConfig.interval, yy->currentLine);
         PARSE_ERROR;
@@ -365,7 +379,7 @@ statusformat  =  "statusformat" - < ("json" | "text") >
 
 statsloginterval  =  "statsloginterval" - < number >
 {
-    statsLogInterval = atoi(yytext);
+    statsLogInterval = safe_atoi(yytext, yy->currentLine);
     if (statsLogInterval < 0 || statsLogInterval > 86400) {
         logError("invalid statsloginterval value %d at line %d (must be 0-86400)\n", statsLogInterval, yy->currentLine);
         PARSE_ERROR;
