@@ -722,7 +722,7 @@ static void signal_cb(uv_signal_t *handle, int signum)
 static void dns_refresh_timer_cb(uv_timer_t *timer)
 {
     ServerInfo *srv = (ServerInfo *)timer->data;
-    logDebug("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n", srv->fromHost, getPort(srv->fromAddrInfo), srv->toHost, srv->dns_refresh_period);
+    logDebug("Periodic DNS refresh for %s:%d -> %s (interval: %ds)\n", srv->fromHost, srv->fromAddrInfo ? getPort(srv->fromAddrInfo) : 0, srv->toHost, srv->dns_refresh_period);
     startAsyncDnsResolution(srv);
 }
 
@@ -2475,6 +2475,12 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
     ServerInfo *srv = (ServerInfo*)handle->data;
     uv_os_fd_t server_fd = INVALID_SOCKET;
     uv_fileno((uv_handle_t*)handle, &server_fd);
+
+    /* Reject unknown address families */
+    if (addr->sa_family != AF_INET && addr->sa_family != AF_INET6) {
+        buffer_pool_free(buf->base, buf->len);
+        return;
+    }
 
     /* Convert to sockaddr_storage for hashing (zero-init to avoid uninitialized padding) */
     struct sockaddr_storage addr_storage;

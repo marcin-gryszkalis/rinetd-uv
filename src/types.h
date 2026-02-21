@@ -239,8 +239,8 @@ struct _write_req
     uv_write_t req;
     ConnectionInfo *cnx;
     char *buffer;
-    int buffer_size;    /* Bytes being written (for statistics) */
-    int alloc_size;     /* Allocated buffer size (for buffer pool) */
+    size_t buffer_size;    /* Bytes being written (for statistics) */
+    size_t alloc_size;     /* Allocated buffer size (for buffer pool) */
     Socket *socket;     /* Which socket this write is for (local or remote) */
 };
 
@@ -251,8 +251,8 @@ struct _udp_send_req
     uv_udp_send_t req;
     ConnectionInfo *cnx;
     char *buffer;
-    int buffer_size;    /* Bytes being sent (for statistics) */
-    int alloc_size;     /* Allocated buffer size (for buffer pool) */
+    size_t buffer_size;    /* Bytes being sent (for statistics) */
+    size_t alloc_size;     /* Allocated buffer size (for buffer pool) */
     struct sockaddr_storage dest_addr;  /* Destination address for this send */
     int is_to_backend;  /* 1 if sending to backend, 0 if sending to client */
 };
