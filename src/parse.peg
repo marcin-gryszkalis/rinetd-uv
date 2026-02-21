@@ -19,6 +19,7 @@
 #include "parse.h"
 #include "stats.h"
 
+#include <errno.h>
 #include <glob.h>
 #include <stdlib.h>
 #include <string.h>
@@ -167,7 +168,16 @@ option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = 
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
 option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = atoi(yytext); }
 option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = atoi(yytext); }
-option-mode       =  "mode"       -? "=" -? < octal_number > { yy->socketMode = (int)strtol(yytext, NULL, 8); }
+option-mode       =  "mode"       -? "=" -? < octal_number > {
+    char *end;
+    errno = 0;
+    long m = strtol(yytext, &end, 8);
+    if (*end != '\0' || end == yytext || errno == ERANGE || m < 0 || m > 07777) {
+        logError("invalid socket mode '%s' at line %d (must be octal 0-7777)\n", yytext, yy->currentLine);
+        PARSE_ERROR;
+    }
+    yy->socketMode = (int)m;
+}
 
 keepalive_value   =  "on" | "off"
 

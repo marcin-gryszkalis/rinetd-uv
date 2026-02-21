@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <errno.h>
 #include <arpa/inet.h>
 #include <yaml.h>
 
@@ -393,12 +394,14 @@ static struct addrinfo *dup_single_addrinfo(struct addrinfo *src)
 
     if (src->ai_addr) {
         dst->ai_addr = malloc(src->ai_addrlen);
-        if (dst->ai_addr)
-            memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
+        if (!dst->ai_addr) { free(dst); return NULL; }
+        memcpy(dst->ai_addr, src->ai_addr, src->ai_addrlen);
     }
 
-    if (src->ai_canonname)
+    if (src->ai_canonname) {
         dst->ai_canonname = strdup(src->ai_canonname);
+        if (!dst->ai_canonname) { free(dst->ai_addr); free(dst); return NULL; }
+    }
 
     return dst;
 }
@@ -902,7 +905,15 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 ctx->current_rule->connect_timeout = parse_int(value, 0, 86400, 0);
             } else if (strcmp(ctx->current_key, "mode") == 0) {
                 /* Parse octal mode like "0660" */
-                ctx->current_rule->socketMode = (int)strtol(value, NULL, 8);
+                char *end;
+                errno = 0;
+                long m = strtol(value, &end, 8);
+                if (*end != '\0' || end == value || errno == ERANGE || m < 0 || m > 07777) {
+                    logError("invalid socket mode: %s (must be octal 0-7777)\n", value);
+                    ctx->error = 1;
+                } else {
+                    ctx->current_rule->socketMode = (int)m;
+                }
             } else if (strcmp(ctx->current_key, "connect") == 0) {
                 /* Single connect destination as scalar: connect: "host:port/proto" */
                 if (add_backend_from_dest(ctx, value) != 0 || add_backend_to_rule(ctx) != 0)
