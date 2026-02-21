@@ -20,7 +20,7 @@ int match(char const *sorig, char const *p)
     return matchBody(sorig, p, 0);
 }
 
-#define CASE(x) (nocase ? tolower(x) : (x))
+#define CASE(x) (nocase ? tolower((unsigned char)(x)) : (x))
 
 int matchBody(char const *sorig, char const *p, int nocase)
 {
