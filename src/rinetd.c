@@ -2903,31 +2903,35 @@ RETSIGTYPE quit(int s)
         /* Close local handle if initialized and not already closing */
         if (cnx->local_handle_initialized && !cnx->local_handle_closing) {
             cnx->local_handle_closing = 1;
-            if (cnx->local_handle_type == UV_TCP) {
-                uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, NULL);
-            } else if (cnx->local_handle_type == UV_UDP) {
-                uv_close((uv_handle_t*)&cnx->local_uv_handle.udp, NULL);
-            } else if (cnx->local_handle_type == UV_NAMED_PIPE) {
-                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, NULL);
-            }
+            if (cnx->local_handle_type == UV_TCP)
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.tcp, handle_close_cb);
+            else if (cnx->local_handle_type == UV_UDP)
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.udp, handle_close_cb);
+            else if (cnx->local_handle_type == UV_NAMED_PIPE)
+                uv_close((uv_handle_t*)&cnx->local_uv_handle.pipe, handle_close_cb);
         }
 
         /* Close remote handle if initialized and not already closing */
         if (cnx->remote_handle_initialized && !cnx->remote_handle_closing) {
             cnx->remote_handle_closing = 1;
-            if (cnx->remote_handle_type == UV_TCP) {
-                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, NULL);
-            } else if (cnx->remote_handle_type == UV_UDP) {
-                uv_close((uv_handle_t*)&cnx->remote_uv_handle.udp, NULL);
-            } else if (cnx->remote_handle_type == UV_NAMED_PIPE) {
-                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, NULL);
-            }
+            if (cnx->remote_handle_type == UV_TCP)
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.tcp, handle_close_cb);
+            else if (cnx->remote_handle_type == UV_UDP)
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.udp, handle_close_cb);
+            else if (cnx->remote_handle_type == UV_NAMED_PIPE)
+                uv_close((uv_handle_t*)&cnx->remote_uv_handle.pipe, handle_close_cb);
         }
 
         /* Close timeout timer if initialized and not already closing */
         if (cnx->timer_initialized && !cnx->timer_closing) {
             cnx->timer_closing = 1;
-            uv_close((uv_handle_t*)&cnx->timeout_timer, NULL);
+            uv_close((uv_handle_t*)&cnx->timeout_timer, handle_close_cb);
+        }
+
+        /* Close connect timer if initialized and not already closing */
+        if (cnx->connect_timer_initialized && !cnx->connect_timer_closing) {
+            cnx->connect_timer_closing = 1;
+            uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
         }
 
         cnx = next;
