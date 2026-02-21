@@ -29,7 +29,7 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
 
     int ret = getaddrinfo(address, port, &hints, ai);
     if (ret != 0) {
-        logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n", address, port ? port : "<null>", gai_strerror(ret));
+        logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n", address ? address : "<null>", port ? port : "<null>", gai_strerror(ret));
     }
 
     return ret;
@@ -74,6 +74,7 @@ int compareAddrinfo(struct addrinfo *a, struct addrinfo *b)
 {
     /* Compare first address only (rinetd uses first result) */
     if (!a || !b) return 0;
+    if (!a->ai_addr || !b->ai_addr) return 0;
     if (a->ai_family != b->ai_family || a->ai_protocol != b->ai_protocol) return 0;
 
     if (a->ai_family == AF_INET) {
@@ -140,7 +141,8 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
 
         logDebug("DNS refresh: %s resolved to new address %s (was %s)\n", srv->toHost, new_addr, old_addr);
 
-        uv_freeaddrinfo(srv->toAddrInfo);
+        if (srv->toAddrInfo)
+            uv_freeaddrinfo(srv->toAddrInfo);
         srv->toAddrInfo = res;
         srv->consecutive_failures = 0;
     } else {
@@ -298,7 +300,7 @@ int validateUnixSocketPath(const char *path, int is_abstract)
 
     /* Check length (sun_path is 108 bytes including null terminator) */
     if (len > UNIX_PATH_MAX) {
-        logError("Unix socket path too long (%zu > %d): %s\n", len, UNIX_PATH_MAX, path);
+        logError("Unix socket path too long (%zu > %zu): %s\n", len, UNIX_PATH_MAX, path);
         return -1;
     }
 
