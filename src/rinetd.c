@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
 {
     log_init();
     stats_init();
-    srandom((unsigned)time(NULL) ^ (unsigned)getpid());
+    srand((unsigned)time(NULL) ^ (unsigned)getpid());
 
 #ifdef _WIN32
     WSADATA wsaData;
