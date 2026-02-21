@@ -54,7 +54,7 @@ static int log_forked = 0;
 static int log_debug_enabled = 0;
 
 /* Forward declarations */
-static struct tm *get_gmtoff(int *tz);
+static void get_gmtoff(int *tz, struct tm *result);
 static void log_write_cb(uv_fs_t *req);
 
 
@@ -87,10 +87,11 @@ void log_set_debug(int debug)
 static char *format_timestamp(char *buf, size_t bufsize)
 {
     int timz;
-    struct tm *t = get_gmtoff(&timz);
+    struct tm t;
+    get_gmtoff(&timz, &t);
     char sign = (timz < 0 ? '-' : '+');
     if (timz < 0) timz = -timz;
-    int len = strftime(buf, bufsize, "%Y-%m-%dT%H:%M:%S", t);
+    int len = strftime(buf, bufsize, "%Y-%m-%dT%H:%M:%S", &t);
     if (len > 0 && (size_t)len < bufsize - 6)
         snprintf(buf + len, bufsize - len, "%c%02d%02d", sign, timz / 60, timz % 60);
     return buf;
@@ -280,11 +281,12 @@ void logEvent(ConnectionInfo const *cnx, ServerInfo const *srv, int result)
     int timz;
     char tstr[1024];
     char addressText[NI_MAXHOST] = { '?' };
-    struct tm *t = get_gmtoff(&timz);
+    struct tm t;
+    get_gmtoff(&timz, &t);
     char sign = (timz < 0 ? '-' : '+');
     if (timz < 0)
         timz = -timz;
-    strftime(tstr, sizeof(tstr), "%Y-%m-%dT%H:%M:%S", t);
+    strftime(tstr, sizeof(tstr), "%Y-%m-%dT%H:%M:%S", &t);
 
     int64_t bytesOut = 0, bytesIn = 0;
     if (cnx != NULL) {
@@ -383,17 +385,17 @@ static void log_write_cb(uv_fs_t *req)
 
 
 /* get_gmtoff was borrowed from Apache. Thanks folks. */
-static struct tm *get_gmtoff(int *tz)
+static void get_gmtoff(int *tz, struct tm *result)
 {
     time_t tt = time(NULL);
 
     /* Assume we are never more than 24 hours away. */
-    struct tm gmt = *gmtime(&tt); /* remember gmtime/localtime return ptr to static */
-    struct tm *t = localtime(&tt); /* buffer... so be careful */
-    int days = t->tm_yday - gmt.tm_yday;
+    struct tm gmt;
+    gmtime_r(&tt, &gmt);
+    localtime_r(&tt, result);
+    int days = result->tm_yday - gmt.tm_yday;
     int hours = ((days < -1 ? 24 : 1 < days ? -24 : days * 24)
-        + t->tm_hour - gmt.tm_hour);
-    int minutes = hours * 60 + t->tm_min - gmt.tm_min;
+        + result->tm_hour - gmt.tm_hour);
+    int minutes = hours * 60 + result->tm_min - gmt.tm_min;
     *tz = minutes;
-    return t;
 }

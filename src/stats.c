@@ -343,10 +343,11 @@ static char *generate_json_status(void)
 
     /* Format timestamps */
     char timestamp[64], reload_time[64];
-    struct tm *tm_info = gmtime(&now);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
-    tm_info = gmtime(&globalStats.last_reload_time);
-    strftime(reload_time, sizeof(reload_time), "%Y-%m-%dT%H:%M:%SZ", tm_info);
+    struct tm tm_buf;
+    gmtime_r(&now, &tm_buf);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
+    gmtime_r(&globalStats.last_reload_time, &tm_buf);
+    strftime(reload_time, sizeof(reload_time), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
 
     /* Get buffer pool stats */
     BufferPoolStats pool_stats;
@@ -534,8 +535,9 @@ static char *generate_text_status(void)
 
     /* Format timestamp and uptime */
     char timestamp[64], uptime_str[64];
-    struct tm *tm_info = localtime(&now);
-    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_buf);
     format_uptime(uptime, uptime_str, sizeof(uptime_str));
 
     /* Format bytes */
