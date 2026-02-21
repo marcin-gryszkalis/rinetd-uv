@@ -574,9 +574,13 @@ void addServer(char *bindAddress, char *bindPort, int bindProtocol,
     si.handle_initialized = 0;
 
     /* Allocate server info */
+    if (seTotal >= 10000) {
+        logError("too many server entries (max 10000)\n");
+        exit(1);
+    }
     seInfo = (ServerInfo *)realloc(seInfo, sizeof(ServerInfo) * (seTotal + 1));
     if (!seInfo) {
-        logError("realloc failed for ServerInfo");
+        logError("realloc failed for ServerInfo\n");
         exit(1);
     }
     seInfo[seTotal] = si;
