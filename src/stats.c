@@ -684,9 +684,10 @@ static void status_fs_cb(uv_fs_t *req)
     }
 
     /* Copy temp path from mkstemp BEFORE cleanup frees req->path */
-    if (ctx->phase == PHASE_MKSTEMP && req->path)
+    if (ctx->phase == PHASE_MKSTEMP && req->path) {
         strncpy(ctx->temp_path, req->path, sizeof(ctx->temp_path) - 1);
         ctx->temp_path[sizeof(ctx->temp_path) - 1] = '\0';
+    }
 
     uv_fs_req_cleanup(req);
 
