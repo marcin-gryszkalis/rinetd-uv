@@ -107,7 +107,7 @@ struct _backend_info {
 
     /* Weight for weighted algorithms */
     int weight;                         /* Configured weight (default: 1) */
-    int current_weight;                 /* For smooth weighted round-robin */
+    int64_t current_weight;              /* For smooth weighted round-robin */
     int effective_weight;               /* Weight adjusted by health */
 
     /* DNS refresh (per-backend override) */

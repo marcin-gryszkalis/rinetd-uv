@@ -70,7 +70,7 @@ static BackendInfo *select_weighted_round_robin(RuleInfo *rule)
         return NULL;
 
     BackendInfo *best = NULL;
-    int best_weight = -1;
+    int64_t best_weight = -1;
 
     /* Find backend with highest current_weight */
     for (int i = 0; i < rule->backend_count; i++) {
