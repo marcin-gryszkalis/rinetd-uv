@@ -662,7 +662,7 @@ static void set_socket_buffer_sizes(uv_handle_t *handle)
 #ifdef __linux__
     int requested = bufferSize;
 #else
-    int requested = bufferSize * 2;
+    int requested = (bufferSize <= INT_MAX / 2) ? bufferSize * 2 : INT_MAX;
 #endif
 
     int send_size = requested;
