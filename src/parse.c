@@ -464,7 +464,7 @@ YY_ACTION(void) yy_1_sol(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_sol\n"));
   {
-#line 421
+#line 423
    ++yy->currentLine; ;
   }
 #undef yythunkpos
@@ -478,7 +478,7 @@ YY_ACTION(void) yy_1_invalid_syntax(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_invalid_syntax\n"));
   {
-#line 395
+#line 397
   
     logError("invalid syntax at line %d: %s\n", yy->currentLine, yytext);
     PARSE_ERROR; /* FIXME */
@@ -495,7 +495,7 @@ YY_ACTION(void) yy_1_include_directive(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_include_directive\n"));
   {
-#line 390
+#line 392
   
     parseInclude(yytext, yy);
 ;
@@ -511,7 +511,7 @@ YY_ACTION(void) yy_1_statsloginterval(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statsloginterval\n"));
   {
-#line 381
+#line 383
   
     statsLogInterval = safe_atoi(yytext, yy->currentLine);
     if (statsLogInterval < 0 || statsLogInterval > 86400) {
@@ -531,7 +531,7 @@ YY_ACTION(void) yy_1_statusformat(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusformat\n"));
   {
-#line 373
+#line 375
   
     if (strcmp(yytext, "json") == 0)
         statusConfig.format = STATUS_FORMAT_JSON;
@@ -550,7 +550,7 @@ YY_ACTION(void) yy_1_statusinterval(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusinterval\n"));
   {
-#line 364
+#line 366
   
     statusConfig.interval = safe_atoi(yytext, yy->currentLine);
     if (statusConfig.interval < 1 || statusConfig.interval > 86400) {
@@ -570,7 +570,7 @@ YY_ACTION(void) yy_1_statusfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_statusfile\n"));
   {
-#line 355
+#line 357
   
     free(statusConfig.file);
     statusConfig.file = stripQuotes(yytext);
@@ -590,7 +590,7 @@ YY_ACTION(void) yy_1_max_udp_connections(yycontext *yy, char *yytext, int yyleng
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_max_udp_connections\n"));
   {
-#line 346
+#line 348
   
     maxUdpConnections = safe_atoi(yytext, yy->currentLine);
     if (maxUdpConnections < 1 || maxUdpConnections > 1000000) {
@@ -610,7 +610,7 @@ YY_ACTION(void) yy_1_listen_backlog(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_listen_backlog\n"));
   {
-#line 337
+#line 339
   
     listenBacklog = safe_atoi(yytext, yy->currentLine);
     if (listenBacklog < 1 || listenBacklog > 65535) {
@@ -630,7 +630,7 @@ YY_ACTION(void) yy_1_pool_trim_delay(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_trim_delay\n"));
   {
-#line 328
+#line 330
   
     poolTrimDelay = safe_atoi(yytext, yy->currentLine);
     if (poolTrimDelay < 100 || poolTrimDelay > 300000) {
@@ -650,7 +650,7 @@ YY_ACTION(void) yy_1_pool_max_free(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_max_free\n"));
   {
-#line 319
+#line 321
   
     poolMaxFree = safe_atoi(yytext, yy->currentLine);
     if (poolMaxFree < 1 || poolMaxFree > 100000) {
@@ -670,7 +670,7 @@ YY_ACTION(void) yy_1_pool_min_free(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pool_min_free\n"));
   {
-#line 310
+#line 312
   
     poolMinFree = safe_atoi(yytext, yy->currentLine);
     if (poolMinFree < 0 || poolMinFree > 10000) {
@@ -690,7 +690,7 @@ YY_ACTION(void) yy_1_connect_timeout_global(yycontext *yy, char *yytext, int yyl
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_connect_timeout_global\n"));
   {
-#line 301
+#line 303
   
     globalConnectTimeout = safe_atoi(yytext, yy->currentLine);
     if (globalConnectTimeout < 0 || globalConnectTimeout > 86400) {
@@ -710,7 +710,7 @@ YY_ACTION(void) yy_1_dns_multi_ip_proto_global(yycontext *yy, char *yytext, int 
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_multi_ip_proto_global\n"));
   {
-#line 285
+#line 287
   
     if (strcasecmp(yytext, "ipv4") == 0) {
         globalDnsMultiIpProto = 4;
@@ -735,7 +735,7 @@ YY_ACTION(void) yy_1_dns_multi_ip_expand_global(yycontext *yy, char *yytext, int
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_multi_ip_expand_global\n"));
   {
-#line 273
+#line 275
   
     if (strcmp(yytext, "on") == 0) {
         globalDnsMultiIpExpand = 1;
@@ -758,7 +758,7 @@ YY_ACTION(void) yy_1_dns_refresh_global(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_dns_refresh_global\n"));
   {
-#line 264
+#line 266
   
     globalDnsRefreshPeriod = safe_atoi(yytext, yy->currentLine);
     if (globalDnsRefreshPeriod < 0) {
@@ -778,7 +778,7 @@ YY_ACTION(void) yy_1_buffersize(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_buffersize\n"));
   {
-#line 255
+#line 257
   
     bufferSize = safe_atoi(yytext, yy->currentLine);
     if (bufferSize < 1024 || bufferSize > 1048576) {
@@ -798,7 +798,7 @@ YY_ACTION(void) yy_1_logcommon(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_logcommon\n"));
   {
-#line 250
+#line 252
   
     logFormatCommon = 1;
 ;
@@ -814,8 +814,9 @@ YY_ACTION(void) yy_1_pidfile(yycontext *yy, char *yytext, int yyleng)
 #define yythunkpos yy->__thunkpos
   yyprintf((stderr, "do yy_1_pidfile\n"));
   {
-#line 243
+#line 244
   
+    free(pidFileName);
     pidFileName = stripQuotes(yytext);
     if (!pidFileName)
         MEMORY_ERROR;
@@ -834,6 +835,7 @@ YY_ACTION(void) yy_1_logfile(yycontext *yy, char *yytext, int yyleng)
   {
 #line 236
   
+    free(logFileName);
     logFileName = stripQuotes(yytext);
     if (!logFileName)
         MEMORY_ERROR;
@@ -2517,7 +2519,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 425 "parse.peg"
+#line 427 "parse.peg"
 
 
 /* Utility functions for include directive support */

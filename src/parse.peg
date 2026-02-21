@@ -184,11 +184,29 @@ server-options   =  "[" -? option-list -? "]"
 
 option-list       =  option (-? ',' -? option-list)?
 option            =  (option-timeout | option-source | option-keepalive | option-dns-refresh | option-connect-timeout | option-mode)
-option-timeout    =  "timeout"    -? "=" -? < number >    { yy->serverTimeout = safe_atoi(yytext, yy->currentLine); }
+option-timeout    =  "timeout"    -? "=" -? < number > {
+    yy->serverTimeout = safe_atoi(yytext, yy->currentLine);
+    if (yy->serverTimeout < 0 || yy->serverTimeout > 86400) {
+        logError("invalid timeout value at line %d (must be 0-86400)\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
 option-source     =  "src"        -? "=" -? < address >   { yy->sourceAddress = strdup_or_die(yytext); }
 option-keepalive  =  "keepalive"  -? "=" -? < keepalive_value >  { yy->keepalive = (yytext[1] == 'n') ? 1 : 0; }
-option-dns-refresh =  "dns-refresh" -? "=" -? < number >  { yy->dns_refresh_period = safe_atoi(yytext, yy->currentLine); }
-option-connect-timeout = "connect-timeout" -? "=" -? < number > { yy->connectTimeout = safe_atoi(yytext, yy->currentLine); }
+option-dns-refresh =  "dns-refresh" -? "=" -? < number > {
+    yy->dns_refresh_period = safe_atoi(yytext, yy->currentLine);
+    if (yy->dns_refresh_period < 0 || yy->dns_refresh_period > 604800) {
+        logError("invalid dns-refresh value at line %d (must be 0-604800)\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
+option-connect-timeout = "connect-timeout" -? "=" -? < number > {
+    yy->connectTimeout = safe_atoi(yytext, yy->currentLine);
+    if (yy->connectTimeout < 0 || yy->connectTimeout > 86400) {
+        logError("invalid connect-timeout value at line %d (must be 0-86400)\n", yy->currentLine);
+        PARSE_ERROR;
+    }
+}
 option-mode       =  "mode"       -? "=" -? < octal_number > {
     char *end;
     errno = 0;
@@ -234,6 +252,7 @@ auth-key = < ("allow" | "deny") >         { yy->isAuthAllow = (yytext[0] == 'a')
 
 logfile  =  "logfile" - < filename >
 {
+    free(logFileName);
     logFileName = stripQuotes(yytext);
     if (!logFileName)
         MEMORY_ERROR;
@@ -241,6 +260,7 @@ logfile  =  "logfile" - < filename >
 
 pidfile  =  "pidfile" - < filename >
 {
+    free(pidFileName);
     pidFileName = stripQuotes(yytext);
     if (!pidFileName)
         MEMORY_ERROR;
@@ -263,8 +283,8 @@ buffersize  =  "buffersize" - < number >
 dns-refresh-global  =  "dns-refresh" - < number >
 {
     globalDnsRefreshPeriod = safe_atoi(yytext, yy->currentLine);
-    if (globalDnsRefreshPeriod < 0) {
-        logError("invalid dns-refresh value at line %d\n", yy->currentLine);
+    if (globalDnsRefreshPeriod < 0 || globalDnsRefreshPeriod > 604800) {
+        logError("invalid dns-refresh value at line %d (must be 0-604800)\n", yy->currentLine);
         PARSE_ERROR;
     }
 }
