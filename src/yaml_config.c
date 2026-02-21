@@ -1439,6 +1439,16 @@ YamlConfig *yaml_config_parse(const char *filename)
     fclose(file);
 
     if (ctx.error) {
+        /* Free uncommitted objects not yet added to config */
+        free(ctx.current_key);
+        if (ctx.current_backend) {
+            lb_backend_cleanup(ctx.current_backend);
+            free(ctx.current_backend);
+        }
+        if (ctx.current_rule) {
+            lb_rule_cleanup(ctx.current_rule);
+            free(ctx.current_rule);
+        }
         yaml_config_free(config);
         return NULL;
     }
