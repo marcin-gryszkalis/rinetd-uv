@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #define YYRULECOUNT 68
-#line 10 "parse.peg"
+#line 10 "src/parse.peg"
 
 #if HAVE_CONFIG_H
 #   include <config.h>
@@ -2537,7 +2537,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 445 "parse.peg"
+#line 445 "src/parse.peg"
 
 
 /* Utility functions for include directive support */
@@ -2718,7 +2718,11 @@ void parseConfigurationFile(char const *file, yycontext *ctx)
         exit(1);
     }
 
-    /* Save current state */
+    /* Save current state.
+     * Note: We only save our custom ctx members (fp, currentLine, currentFile).
+     * The leg runtime's internal buffer state (__buf, __pos, __limit) is shared
+     * across includes. This works because YY_INPUT reads from ctx->fp (which we
+     * swap), and the parser processes input character-by-character. */
     FILE *saved_fp = ctx->fp;
     int saved_line = ctx->currentLine;
     char *saved_file = ctx->currentFile;
