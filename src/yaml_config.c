@@ -479,6 +479,15 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
         new_backend.host_saved = safe_strdup(hostname, 255);
         new_backend.port_saved = safe_strdup(template_backend->port, 10);
 
+        /* Deep-copy shared pointers that the template owns */
+        if (template_backend->sourceAddrInfo) {
+            new_backend.sourceAddrInfo = dup_single_addrinfo(template_backend->sourceAddrInfo);
+            new_backend.sourceAddrInfo_is_dup = 1;
+        } else {
+            new_backend.sourceAddrInfo = NULL;
+        }
+        new_backend.unixPath = NULL;  /* Expanded backends are never Unix sockets */
+
         /* Log the IP for this backend */
         char ip_buf[INET6_ADDRSTRLEN];
         format_addr_ip(new_backend.addrInfo, ip_buf, sizeof(ip_buf));

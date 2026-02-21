@@ -76,6 +76,7 @@ struct _backend_info {
 
     /* Outbound source address */
     struct addrinfo *sourceAddrInfo;
+    int sourceAddrInfo_is_dup;           /* 1 if from dup_single_addrinfo, 0 if from getaddrinfo */
 
     /* Health state */
     int healthy;                        /* 1=healthy, 0=unhealthy */

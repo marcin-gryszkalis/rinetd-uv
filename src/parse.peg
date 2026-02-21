@@ -62,6 +62,34 @@
 #pragma GCC diagnostic ignored "-Wunused-label"
 #endif
 
+/* Safe allocator wrappers for leg-generated parser runtime.
+ * Override YY_MALLOC/YY_REALLOC to add:
+ * - NULL return checks (abort on OOM)
+ * - Size limit to prevent int overflow in leg's doubling logic
+ *   (leg uses int for buffer sizes; 64MB stays well within INT_MAX) */
+#define YY_PARSER_MAX_ALLOC (64 * 1024 * 1024)
+#define YY_MALLOC(ctx, size) yy_safe_malloc(size)
+#define YY_REALLOC(ctx, ptr, size) yy_safe_realloc(ptr, size)
+
+static void *yy_safe_malloc(size_t size) {
+    if (size == 0 || size > YY_PARSER_MAX_ALLOC) {
+        logError("parser allocation too large (%zu bytes)\n", size);
+        exit(1);
+    }
+    void *p = malloc(size);
+    if (!p) { logError("out of memory during config parsing\n"); exit(1); }
+    return p;
+}
+static void *yy_safe_realloc(void *ptr, size_t size) {
+    if (size == 0 || size > YY_PARSER_MAX_ALLOC) {
+        logError("parser allocation too large (%zu bytes)\n", size);
+        exit(1);
+    }
+    void *p = realloc(ptr, size);
+    if (!p) { logError("out of memory during config parsing\n"); exit(1); }
+    return p;
+}
+
 /* Forward declarations for functions called from grammar actions */
 struct _yycontext; /* Forward declaration - yycontext typedef defined later */
 void parseConfigurationFile(char const *file, struct _yycontext *ctx);

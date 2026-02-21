@@ -438,8 +438,12 @@ void lb_backend_cleanup(BackendInfo *backend)
         else
             freeaddrinfo(backend->addrInfo);
     }
-    if (backend->sourceAddrInfo)
-        freeaddrinfo(backend->sourceAddrInfo);
+    if (backend->sourceAddrInfo) {
+        if (backend->sourceAddrInfo_is_dup)
+            lb_free_dup_addrinfo(backend->sourceAddrInfo);
+        else
+            freeaddrinfo(backend->sourceAddrInfo);
+    }
 
     /* DNS multi-IP tracking cleanup */
     free(backend->dns_parent_name);
