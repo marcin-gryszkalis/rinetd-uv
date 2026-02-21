@@ -1147,8 +1147,12 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                 case STATE_RULES:
                     /* New rule */
                     ctx->current_rule = calloc(1, sizeof(RuleInfo));
-                    if (ctx->current_rule)
-                        lb_rule_init(ctx->current_rule);
+                    if (!ctx->current_rule) {
+                        logError("out of memory allocating rule\n");
+                        ctx->error = 1;
+                        break;
+                    }
+                    lb_rule_init(ctx->current_rule);
                     ctx->state = STATE_RULE;
                     break;
                 case STATE_BACKENDS:
@@ -1158,8 +1162,12 @@ static int process_event(ParserContext *ctx, yaml_event_t *event)
                         break;
                     }
                     ctx->current_backend = calloc(1, sizeof(BackendInfo));
-                    if (ctx->current_backend)
-                        lb_backend_init(ctx->current_backend);
+                    if (!ctx->current_backend) {
+                        logError("out of memory allocating backend\n");
+                        ctx->error = 1;
+                        break;
+                    }
+                    lb_backend_init(ctx->current_backend);
                     ctx->state = STATE_BACKEND;
                     break;
                 case STATE_RULE_KEY:
