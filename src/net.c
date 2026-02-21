@@ -152,6 +152,8 @@ void dns_refresh_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res)
 /* Check if a string is an IP address (IPv4 or IPv6) */
 static int isIpAddress(const char *str)
 {
+    if (!str) return 0;
+
     struct in_addr addr4;
     struct in6_addr addr6;
 
