@@ -1041,15 +1041,19 @@ static void process_scalar(ParserContext *ctx, const char *value)
                 extern Rule *allRules;
                 extern int allRulesCount;
 
-                allRules = realloc(allRules, (allRulesCount + 1) * sizeof(Rule));
-                if (allRules) {
-                    allRules[allRulesCount].pattern = strdup(value);
-                    allRules[allRulesCount].type = ctx->current_rule_type;
-                    if (ctx->current_rule->rulesCount == 0)
-                        ctx->current_rule->rulesStart = allRulesCount;
-                    ctx->current_rule->rulesCount++;
-                    allRulesCount++;
+                Rule *tmp_rules = realloc(allRules, (allRulesCount + 1) * sizeof(Rule));
+                if (!tmp_rules) {
+                    logError("out of memory for access rules\n");
+                    ctx->error = 1;
+                    break;
                 }
+                allRules = tmp_rules;
+                allRules[allRulesCount].pattern = strdup(value);
+                allRules[allRulesCount].type = ctx->current_rule_type;
+                if (ctx->current_rule->rulesCount == 0)
+                    ctx->current_rule->rulesStart = allRulesCount;
+                ctx->current_rule->rulesCount++;
+                allRulesCount++;
             }
             break;
 
