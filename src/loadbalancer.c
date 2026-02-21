@@ -29,7 +29,8 @@ static uint32_t hash_ip_address(struct sockaddr_storage *addr)
     } else if (addr->ss_family == AF_INET6) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
         /* XOR all 32-bit words of the IPv6 address */
-        uint32_t *words = (uint32_t *)&addr6->sin6_addr;
+        uint32_t words[4];
+        memcpy(words, &addr6->sin6_addr, 16);
         hash = words[0] ^ words[1] ^ words[2] ^ words[3];
     }
 

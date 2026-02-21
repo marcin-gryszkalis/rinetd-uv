@@ -56,7 +56,8 @@ static uint32_t hash_client_ip(struct sockaddr_storage *addr)
         hash = addr4->sin_addr.s_addr;
     } else if (addr->ss_family == AF_INET6) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
-        uint32_t *words = (uint32_t *)&addr6->sin6_addr;
+        uint32_t words[4];
+        memcpy(words, &addr6->sin6_addr, 16);
         hash = words[0] ^ words[1] ^ words[2] ^ words[3];
     }
 
