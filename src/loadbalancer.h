@@ -46,6 +46,10 @@ void lb_rule_cleanup(RuleInfo *rule);
 /* Free resources associated with a BackendInfo */
 void lb_backend_cleanup(BackendInfo *backend);
 
+/* Free an addrinfo allocated by dup_single_addrinfo (calloc/malloc),
+ * as opposed to one from getaddrinfo which requires freeaddrinfo() */
+void lb_free_dup_addrinfo(struct addrinfo *ai);
+
 /* Recalculate total_weight and healthy_count for a rule */
 void lb_rule_update_stats(RuleInfo *rule);
 

@@ -64,6 +64,8 @@ struct _backend_info {
 
     /* Address info (mutually exclusive with unixPath) */
     struct addrinfo *addrInfo;
+    int addrInfo_is_dup;                /* 1 if addrInfo from dup_single_addrinfo (free with free()),
+                                           0 if from getaddrinfo (free with freeaddrinfo()) */
     char *host;
     char *port;
     int protocol;                       /* IPPROTO_TCP or IPPROTO_UDP */

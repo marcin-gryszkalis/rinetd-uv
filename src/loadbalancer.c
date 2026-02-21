@@ -412,6 +412,14 @@ void lb_rule_cleanup(RuleInfo *rule)
     memset(rule, 0, sizeof(*rule));
 }
 
+void lb_free_dup_addrinfo(struct addrinfo *ai)
+{
+    if (!ai) return;
+    free(ai->ai_canonname);
+    free(ai->ai_addr);
+    free(ai);
+}
+
 void lb_backend_cleanup(BackendInfo *backend)
 {
     if (!backend)
@@ -424,8 +432,12 @@ void lb_backend_cleanup(BackendInfo *backend)
     free(backend->host_saved);
     free(backend->port_saved);
 
-    if (backend->addrInfo)
-        freeaddrinfo(backend->addrInfo);
+    if (backend->addrInfo) {
+        if (backend->addrInfo_is_dup)
+            lb_free_dup_addrinfo(backend->addrInfo);
+        else
+            freeaddrinfo(backend->addrInfo);
+    }
     if (backend->sourceAddrInfo)
         freeaddrinfo(backend->sourceAddrInfo);
 

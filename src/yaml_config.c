@@ -459,8 +459,9 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
         snprintf(name_buf, sizeof(name_buf), "%s[%d]", hostname, backend_idx);
         new_backend.name = safe_strdup(name_buf, 255);
 
-        /* Duplicate single addrinfo (break chain) */
+        /* Duplicate single addrinfo (break chain) -- manually allocated, not from getaddrinfo */
         new_backend.addrInfo = dup_single_addrinfo(cur);
+        new_backend.addrInfo_is_dup = 1;
         if (!new_backend.addrInfo) {
             logError("Failed to duplicate addrinfo for %s\n", name_buf);
             free(new_backend.name);
@@ -494,7 +495,7 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
                 free(new_backend.dns_parent_name);
                 free(new_backend.host_saved);
                 free(new_backend.port_saved);
-                freeaddrinfo(new_backend.addrInfo);
+                lb_free_dup_addrinfo(new_backend.addrInfo);
                 break;
             }
             BackendInfo *new_backends = realloc(rule->backends,
@@ -505,7 +506,7 @@ static int expand_backend_multi_ip(RuleInfo *rule, BackendInfo *template_backend
                 free(new_backend.dns_parent_name);
                 free(new_backend.host_saved);
                 free(new_backend.port_saved);
-                freeaddrinfo(new_backend.addrInfo);
+                lb_free_dup_addrinfo(new_backend.addrInfo);
                 break;
             }
             rule->backends = new_backends;
