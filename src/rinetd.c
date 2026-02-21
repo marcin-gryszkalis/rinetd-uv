@@ -106,6 +106,7 @@ static int config_reload_pending = 0;
 
 static void handleClose(ConnectionInfo *cnx, Socket *socket, Socket *other_socket);
 static ConnectionInfo *allocateConnection(void);
+static void freeUnhandledConnection(ConnectionInfo *cnx);
 static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv);
 static int checkConnectionAllowedAddr(struct sockaddr_storage const *addr, ServerInfo const *srv);
 static int checkConnectionAllowed(ConnectionInfo const *cnx);
@@ -609,6 +610,23 @@ static ConnectionInfo *allocateConnection(void)
     activeConnections++;
 
     return cnx;
+}
+
+/* Remove connection from linked list and free it.
+ * Only for connections with NO initialized uv handles -- those must go through
+ * handle_close_cb instead (which waits for pending I/O to complete). */
+static void freeUnhandledConnection(ConnectionInfo *cnx)
+{
+    if (cnx->prev)
+        cnx->prev->next = cnx->next;
+    else
+        connectionListHead = cnx->next;
+    if (cnx->next)
+        cnx->next->prev = cnx->prev;
+    activeConnections--;
+    free(cnx->log_fromHost);
+    free(cnx->log_toHost);
+    free(cnx);
 }
 
 /* Cache server info for logging - survives server reload/removal */
@@ -1137,7 +1155,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
     int ret = uv_tcp_init(main_loop, &cnx->remote_uv_handle.tcp);
     if (ret != 0) {
         logError("uv_tcp_init error: %s\n", uv_strerror(ret));
-        free(cnx);
+        freeUnhandledConnection(cnx);
         return;
     }
     cnx->remote_handle_type = UV_TCP;
@@ -1477,7 +1495,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
     int ret = uv_pipe_init(main_loop, &cnx->remote_uv_handle.pipe, 0);
     if (ret != 0) {
         logError("uv_pipe_init error: %s\n", uv_strerror(ret));
-        free(cnx);
+        freeUnhandledConnection(cnx);
         return;
     }
     cnx->remote_handle_type = UV_NAMED_PIPE;
@@ -2481,16 +2499,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
         stats_connection_denied();
         logEvent(cnx, srv, logCode);
         buffer_pool_free(buf->base, buf->len);
-        /* No handles initialized yet, just remove from list and free */
-        if (cnx->prev) {
-            cnx->prev->next = cnx->next;
-        } else {
-            connectionListHead = cnx->next;
-        }
-        if (cnx->next)
-            cnx->next->prev = cnx->prev;
-        activeConnections--;
-        free(cnx);
+        freeUnhandledConnection(cnx);
         return;
     }
 
@@ -2543,7 +2552,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
         logErrorConn(cnx, "uv_timer_init error: %s\n", uv_strerror(ret));
         if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);
         buffer_pool_free(buf->base, buf->len);
-        free(cnx);
+        freeUnhandledConnection(cnx);
         return;
     }
     cnx->timeout_timer.data = cnx;
