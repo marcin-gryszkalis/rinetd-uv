@@ -165,12 +165,18 @@ int main(int argc, char *argv[])
     if (!options.foreground) {
 #if HAVE_DAEMON
         if (daemon(0, 0) != 0) {
-            exit(0);
+            logError("daemon() failed: %s\n", strerror(errno));
+            exit(1);
         }
         forked = 1;
         log_set_forked(1);
 #elif HAVE_FORK
-        if (fork() != 0)
+        pid_t pid = fork();
+        if (pid < 0) {
+            logError("fork() failed: %s\n", strerror(errno));
+            exit(1);
+        }
+        if (pid > 0)
             exit(0);
         forked = 1;
         log_set_forked(1);
