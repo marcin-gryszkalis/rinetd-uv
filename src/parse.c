@@ -1277,11 +1277,11 @@ YY_RULE(int) yy_hexdigit(yycontext *yy)
 }
 YY_RULE(int) yy_hostname(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "hostname"));
+  yyprintf((stderr, "%s\n", "hostname"));  if (!yy_label(yy)) goto l20;
   l21:;	
-  {  int yypos22= yy->__pos, yythunkpos22= yy->__thunkpos;  if (!yy_label(yy)) goto l22;  if (!yymatchChar(yy, '.')) goto l22;  goto l21;
+  {  int yypos22= yy->__pos, yythunkpos22= yy->__thunkpos;  if (!yymatchChar(yy, '.')) goto l22;  if (!yy_label(yy)) goto l22;  goto l21;
   l22:;	  yy->__pos= yypos22; yy->__thunkpos= yythunkpos22;
-  }  if (!yy_name(yy)) goto l20;
+  }
   {  int yypos23= yy->__pos, yythunkpos23= yy->__thunkpos;  if (!yymatchChar(yy, '.')) goto l23;  goto l24;
   l23:;	  yy->__pos= yypos23; yy->__thunkpos= yythunkpos23;
   }
