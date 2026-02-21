@@ -858,7 +858,7 @@ static void startServerListening(ServerInfo *srv)
         if (ret == 0) {
             srv->dns_refresh_timer.data = srv;
             srv->dns_timer_initialized = 1;
-            ret = uv_timer_start(&srv->dns_refresh_timer, dns_refresh_timer_cb, srv->dns_refresh_period * 1000, srv->dns_refresh_period * 1000);
+            ret = uv_timer_start(&srv->dns_refresh_timer, dns_refresh_timer_cb, (uint64_t)srv->dns_refresh_period * 1000, (uint64_t)srv->dns_refresh_period * 1000);
             if (ret != 0) {
                 logError("uv_timer_start() failed for DNS refresh: %s\n", uv_strerror(ret));
                 uv_close((uv_handle_t*)&srv->dns_refresh_timer, NULL);
@@ -1399,7 +1399,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             if (ret == 0) {
                 cnx->connect_timer.data = cnx;
                 cnx->connect_timer_initialized = 1;
-                ret = uv_timer_start(&cnx->connect_timer, connect_timeout_cb, ct * 1000, 0);
+                ret = uv_timer_start(&cnx->connect_timer, connect_timeout_cb, (uint64_t)ct * 1000, 0);
                 if (ret != 0) {
                     cnx->connect_timer_closing = 1;
                     uv_close((uv_handle_t*)&cnx->connect_timer, handle_close_cb);
@@ -2461,7 +2461,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
         /* Refresh timeout (note: uv_timer_again is a no-op with repeat=0) */
         cnx->remoteTimeout = time(NULL) + srv->serverTimeout;
         uv_timer_stop(&cnx->timeout_timer);
-        int timer_ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
+        int timer_ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, (uint64_t)srv->serverTimeout * 1000, 0);
         if (timer_ret != 0)
             logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(timer_ret));
 
@@ -2556,7 +2556,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
         return;
     }
     cnx->timeout_timer.data = cnx;
-    ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, srv->serverTimeout * 1000, 0);
+    ret = uv_timer_start(&cnx->timeout_timer, udp_timeout_cb, (uint64_t)srv->serverTimeout * 1000, 0);
     if (ret != 0) {
         logErrorConn(cnx, "uv_timer_start error: %s\n", uv_strerror(ret));
         if (cnx->selected_backend) lb_backend_connection_end(cnx->selected_backend, 0, 0);

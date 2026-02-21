@@ -127,7 +127,7 @@ void stats_start_timers(void)
             status_file_timer_initialized = 1;
         }
         if (!status_file_timer_active) {
-            int ret = uv_timer_start(&status_file_timer, status_file_timer_cb, statusConfig.interval * 1000, statusConfig.interval * 1000);
+            int ret = uv_timer_start(&status_file_timer, status_file_timer_cb, (uint64_t)statusConfig.interval * 1000, (uint64_t)statusConfig.interval * 1000);
             if (ret != 0)
                 logError("uv_timer_start(status_file_timer) error: %s\n", uv_strerror(ret));
             else
@@ -145,7 +145,7 @@ void stats_start_timers(void)
             stats_log_timer_initialized = 1;
         }
         if (!stats_log_timer_active) {
-            int ret = uv_timer_start(&stats_log_timer, stats_log_timer_cb, statsLogInterval * 1000, statsLogInterval * 1000);
+            int ret = uv_timer_start(&stats_log_timer, stats_log_timer_cb, (uint64_t)statsLogInterval * 1000, (uint64_t)statsLogInterval * 1000);
             if (ret != 0)
                 logError("uv_timer_start(stats_log_timer) error: %s\n", uv_strerror(ret));
             else
