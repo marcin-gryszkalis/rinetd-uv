@@ -2588,7 +2588,11 @@ void parseInclude(char const *pattern, yycontext *ctx)
 
     /* 4. Expand glob pattern */
     glob_t glob_result;
-    int glob_flags = GLOB_TILDE | GLOB_BRACE;
+#ifdef GLOB_BRACE
+    int glob_flags = GLOB_BRACE;
+#else
+    int glob_flags = 0;
+#endif
     int ret = glob(abs_pattern, glob_flags, NULL, &glob_result);
 
     if (ret == GLOB_NOMATCH) {
