@@ -1651,7 +1651,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
         /* Connect to Unix socket backend */
         if (backend_is_abstract) {
             /* Abstract socket */
-            char abstract_name[UNIX_PATH_MAX + 1];
+            char abstract_name[UNIX_PATH_MAX + 2];
             size_t name_len = prepareAbstractSocketName(backend_unix_path, abstract_name);
             if (name_len == 0) {
                 free(connect_req);
@@ -2264,8 +2264,9 @@ static uint32_t hash_udp_connection(ServerInfo const *srv, struct sockaddr_stora
 {
     uint32_t hash = 5381;  /* DJB2 hash initialization */
 
-    /* Hash server pointer */
-    hash = ((hash << 5) + hash) + (uintptr_t)srv;
+    /* Hash server pointer (fold 64-bit to 32-bit to avoid truncation) */
+    uintptr_t p = (uintptr_t)srv;
+    hash = ((hash << 5) + hash) + (uint32_t)(p ^ (p >> 32));
 
     /* Hash address based on family */
     if (addr->ss_family == AF_INET) {
