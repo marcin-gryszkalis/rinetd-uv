@@ -1078,7 +1078,11 @@ rules:
 
 ## REINITIALIZING RINETD-UV
 
-The SIGHUP signal can be used to cause **rinetd-uv** to reload its configuration file without interrupting existing connections.
+The SIGHUP signal can be used to cause **rinetd-uv** to reload its configuration file.
+
+**TCP connections** are not interrupted — existing connections continue using cached routing information until they close naturally.
+
+**UDP sessions** are closed on reload. Because UDP is stateless at the transport level, the next packet from a client automatically creates a new session using the updated configuration. This also means that load balancing affinity is reset on reload.
 
 ```bash
 kill -HUP $(cat /var/run/rinetd-uv.pid)

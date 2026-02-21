@@ -311,9 +311,14 @@ static void cleanup_yaml_rules(void)
 
 static void clearConfiguration(void)
 {
-    /* Remove server references from all active connections */
-    for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next)
+    /* Close UDP connections (they hold server pointers for hash/LRU cleanup).
+     * TCP connections survive reload -- they already have cached log info and
+     * don't reference server for data forwarding. */
+    for (ConnectionInfo *cnx = connectionListHead; cnx; cnx = cnx->next) {
+        if (cnx->remote.protocol == IPPROTO_UDP && !cnx->coClosing)
+            handleClose(cnx, &cnx->remote, &cnx->local);
         cnx->server = NULL;
+    }
     /* Close existing server libuv handles and sockets. */
     int any_handles_to_close = 0;
     for (int i = 0; i < seTotal; ++i) {
@@ -2111,7 +2116,15 @@ static void udp_send_to_backend(ConnectionInfo *cnx, char *data, int data_len, i
 
     /* Use selected backend address or fall back to server address */
     struct addrinfo *backend_addr = cnx->selected_backend ?
-        cnx->selected_backend->addrInfo : cnx->server->toAddrInfo;
+        cnx->selected_backend->addrInfo :
+        (cnx->server ? cnx->server->toAddrInfo : NULL);
+    if (!backend_addr) {
+        /* No valid destination -- server removed during config reload */
+        logDebug("UDP send dropped: no backend address (server removed?)\n");
+        buffer_pool_free(data, alloc_size);
+        free(sreq);
+        return;
+    }
 
     /* Copy address with correct size (not full sockaddr_storage which would overrun) */
     memset(&sreq->dest_addr, 0, sizeof(sreq->dest_addr));
