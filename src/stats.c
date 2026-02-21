@@ -211,13 +211,13 @@ static void format_bytes(uint64_t bytes, char *buf, size_t buf_size)
 /* Format uptime as human-readable string */
 static void format_uptime(time_t seconds, char *buf, size_t buf_size)
 {
-    int days = seconds / 86400;
-    int hours = (seconds % 86400) / 3600;
-    int mins = (seconds % 3600) / 60;
-    int secs = seconds % 60;
+    long days = (long)(seconds / 86400);
+    int hours = (int)((seconds % 86400) / 3600);
+    int mins = (int)((seconds % 3600) / 60);
+    int secs = (int)(seconds % 60);
 
     if (days > 0)
-        snprintf(buf, buf_size, "%d day%s, %d:%02d:%02d", days, days == 1 ? "" : "s", hours, mins, secs);
+        snprintf(buf, buf_size, "%ld day%s, %d:%02d:%02d", days, days == 1 ? "" : "s", hours, mins, secs);
     else
         snprintf(buf, buf_size, "%d:%02d:%02d", hours, mins, secs);
 }
@@ -686,6 +686,7 @@ static void status_fs_cb(uv_fs_t *req)
     /* Copy temp path from mkstemp BEFORE cleanup frees req->path */
     if (ctx->phase == PHASE_MKSTEMP && req->path)
         strncpy(ctx->temp_path, req->path, sizeof(ctx->temp_path) - 1);
+        ctx->temp_path[sizeof(ctx->temp_path) - 1] = '\0';
 
     uv_fs_req_cleanup(req);
 
@@ -716,7 +717,7 @@ static void status_fs_cb(uv_fs_t *req)
         /* Apply permissions: 0666 & ~umask */
         ctx->phase = PHASE_CHMOD;
         ctx->req.data = ctx;
-        r = uv_fs_chmod(main_loop, &ctx->req, ctx->temp_path, 0666, status_fs_cb);
+        r = uv_fs_chmod(main_loop, &ctx->req, ctx->temp_path, 0644, status_fs_cb);
         if (r < 0) {
             logWarning("uv_fs_chmod failed synchronously: %s\n", uv_strerror(r));
             cleanup_status_context(ctx);
