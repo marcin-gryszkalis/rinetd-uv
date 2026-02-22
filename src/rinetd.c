@@ -378,7 +378,27 @@ static void clearConfiguration(void)
         /* If config reload is pending, reload now (no async handles to wait for) */
         if (config_reload_pending) {
             config_reload_pending = 0;
+            /* Free OLD config data before loading the new one.
+             * In the async path this cleanup runs unconditionally below (after
+             * the handles finish closing), but here readConfiguration() is called
+             * immediately.  If we left the cleanup for later it would run after
+             * initializeFromYamlRules() has already installed pointers from
+             * yamlRules into seInfo, causing a use-after-free. */
+            for (int i = 0; i < allRulesCount; ++i)
+                free(allRules[i].pattern);
+            free(allRules);
+            allRules = NULL;
+            allRulesCount = globalRulesCount = 0;
+            cleanup_yaml_rules();
+            free(logFileName);
+            logFileName = NULL;
+            free(pidFileName);
+            pidFileName = NULL;
             readConfiguration(options.conf_file);
+            /* YAML config stores rules separately; populate seInfo now.
+             * Legacy .conf populates seInfo inline inside parseConfiguration(). */
+            if (usingYamlConfig)
+                initializeFromYamlRules();
             /* Update buffer pool config (stale buffers handled on return) */
             buffer_pool_update_config(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
             /* Start new servers listening */
@@ -388,6 +408,7 @@ static void clearConfiguration(void)
             stats_on_config_reload();
             stats_restart_timers_if_needed();
             logInfo("configuration reloaded, %d server(s) listening\n", seTotal);
+            return;
         }
     }
     /* Otherwise, seInfo will be freed in server_handle_close_cb after all handles close */
@@ -923,6 +944,10 @@ static void check_all_servers_closed(void)
         if (config_reload_pending) {
             config_reload_pending = 0;
             readConfiguration(options.conf_file);
+            /* YAML config stores rules separately; populate seInfo now.
+             * Legacy .conf populates seInfo inline inside parseConfiguration(). */
+            if (usingYamlConfig)
+                initializeFromYamlRules();
             /* Update buffer pool config (stale buffers handled on return) */
             buffer_pool_update_config(bufferSize, poolMinFree, poolMaxFree, poolTrimDelay);
             /* Start new servers listening */
