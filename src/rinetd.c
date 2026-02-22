@@ -325,6 +325,13 @@ static void clearConfiguration(void)
         if (cnx->remote.protocol == IPPROTO_UDP && !cnx->coClosing)
             handleClose(cnx, &cnx->remote, &cnx->local);
         cnx->server = NULL;
+        /* cleanup_yaml_rules() below frees all BackendInfo objects.  Null
+         * these out now so that callbacks on surviving TCP connections never
+         * dereference freed backend/rule memory (use-after-free / heap
+         * corruption).  Stats for connections that survive a reload are simply
+         * not attributed to any rule after the config changes. */
+        cnx->selected_backend = NULL;
+        cnx->rule = NULL;
     }
     /* Close existing server libuv handles and sockets. */
     int any_handles_to_close = 0;
