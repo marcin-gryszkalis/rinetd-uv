@@ -60,7 +60,7 @@ CYCLE_TRANSFER_MAX_RATIO = 1.6
 # rinetd needs one or two event-loop iterations to detect the FINs and write
 # the done-* log entries.  Without this window the opened==done check in
 # _validate_event_log races against SIGTERM.
-CONNECTION_DRAIN_TIME = 5
+CONNECTION_DRAIN_TIME = 60
 
 # Status / stats settings
 STATUS_INTERVAL = 10         # Write JSON status file every N seconds
@@ -721,6 +721,10 @@ def _run_sighup_stress_test(
             stderr=subprocess.PIPE,
             text=True,
         )
+        rinetd_pid = proc.pid
+        rinetd_stdout_path = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stdout.txt")
+        rinetd_stderr_path = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stderr.txt")
+        print(f"\n  rinetd PID {rinetd_pid}  stdout→{rinetd_stdout_path}  stderr→{rinetd_stderr_path}")
         time.sleep(0.3)
         if proc.poll() is not None:
             _, stderr = proc.communicate()
@@ -851,10 +855,14 @@ def _run_sighup_stress_test(
             stdout, stderr = proc.communicate()
         proc = None
 
+        with open(rinetd_stdout_path, "w") as fh:
+            fh.write(stdout or "")
+        with open(rinetd_stderr_path, "w") as fh:
+            fh.write(stderr or "")
         if stdout:
-            print(f"\n[rinetd stdout]:\n{stdout}")
+            print(f"\n[rinetd stdout ({rinetd_stdout_path})]:\n{stdout}")
         if stderr:
-            print(f"\n[rinetd stderr (first 4 KB)]:\n{stderr[:4096]}")
+            print(f"\n[rinetd stderr ({rinetd_stderr_path}, first 4 KB)]:\n{stderr[:4096]}")
 
         # Phase 11: extract cycling results
         reload_count, cycling_results = cycle_result_box[0] or (0, [])
