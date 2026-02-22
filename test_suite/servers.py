@@ -10,6 +10,19 @@ from enum import Enum
 
 BACKLOG = 512
 
+def _poll_read(sock, timeout_ms):
+    """
+    Wait up to timeout_ms milliseconds for sock to become readable.
+    Returns True if readable, False on timeout.
+
+    Uses poll() instead of select() to avoid the FD_SETSIZE=1024 limit that
+    select() imposes; stress tests can easily exceed 1024 open FDs.
+    """
+    p = select.poll()
+    p.register(sock, select.POLLIN)
+    events = p.poll(timeout_ms)
+    return bool(events)
+
 class TransferMode(Enum):
     """Transfer modes for testing different data flow patterns."""
     ECHO = "echo"                    # Client sends, server echoes back
@@ -57,8 +70,7 @@ class TcpEchoServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     conn, addr = self.sock.accept()
@@ -106,8 +118,7 @@ class TcpEchoServerIPv6(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     conn, addr = self.sock.accept()
@@ -156,8 +167,7 @@ class UdpEchoServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     data, addr = self.sock.recvfrom(65535)
@@ -187,8 +197,7 @@ class UnixEchoServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     conn, addr = self.sock.accept()
@@ -249,8 +258,7 @@ class TcpUploadServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_upload, args=(conn,))
@@ -323,8 +331,7 @@ class TcpDownloadServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_download, args=(conn,))
@@ -399,8 +406,7 @@ class TcpUploadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_upload_sha256, args=(conn,))
@@ -486,8 +492,7 @@ class TcpDownloadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_download_sha256, args=(conn,))
@@ -576,8 +581,7 @@ class UdpDownloadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     data, addr = self.sock.recvfrom(65535)
@@ -644,8 +648,7 @@ class UdpUploadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
 
                     data, addr = self.sock.recvfrom(65535)
@@ -703,8 +706,7 @@ class UnixUploadServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_upload, args=(conn,))
@@ -777,8 +779,7 @@ class UnixDownloadServer(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_download, args=(conn,))
@@ -856,8 +857,7 @@ class UnixUploadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_upload_sha256, args=(conn,))
@@ -942,8 +942,7 @@ class UnixDownloadSha256Server(BaseEchoServer):
 
             while self.running:
                 try:
-                    r, _, _ = select.select([self.sock], [], [], 0.5)
-                    if not r:
+                    if not _poll_read(self.sock, 500):
                         continue
                     conn, addr = self.sock.accept()
                     client_thread = threading.Thread(target=self.handle_download_sha256, args=(conn,))
