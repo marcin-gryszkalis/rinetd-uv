@@ -62,6 +62,13 @@ CYCLE_TRANSFER_MAX_RATIO = 1.6
 # _validate_event_log races against SIGTERM.
 CONNECTION_DRAIN_TIME = 60
 
+# Stop sending SIGHUP this many seconds before the test deadline.
+# A SIGHUP cycle that fires too close to the deadline can still be in-flight
+# when SIGTERM arrives (both signals logged at the same second, incomplete
+# transfers).  Setting this to SIGHUP_INTERVAL + a small safety margin ensures
+# the last reload completes and connections stabilise before shutdown.
+SIGHUP_QUIET_WINDOW = SIGHUP_INTERVAL + 5
+
 # Status / stats settings
 STATUS_INTERVAL = 10         # Write JSON status file every N seconds
 STATS_LOG_INTERVAL = 10      # Log stats to stderr every N seconds
@@ -565,6 +572,13 @@ def _cycle_manager(
                     "message": f"rule {ar.rule_id}: exception: {exc}",
                 })
             ar.server.stop()
+
+        # --- grow + reload + connect: skip if too close to test deadline ---
+        # A SIGHUP sent within SIGHUP_QUIET_WINDOW seconds of the deadline can
+        # still be in-flight when SIGTERM arrives, causing simultaneous signal
+        # handling and incomplete transfers.
+        if test_deadline - time.time() < SIGHUP_QUIET_WINDOW:
+            continue
 
         # --- grow: add EXTRA_RULES_CHANGE new cycling rules ---
         new_rules = []
