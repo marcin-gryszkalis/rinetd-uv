@@ -136,6 +136,88 @@ def _acl_yaml(rng: random.Random, always_allow=None, catchall_deny: bool = True)
 
 
 # ============================================================
+# Log validation
+# ============================================================
+
+def _parse_event_log(log_file: str) -> dict:
+    """
+    Parse a rinetd event log (tab-separated, non-common format) and return a
+    dict with event type → count and a separate list of (bytesIn, event) tuples
+    for every ``done-*`` entry.
+
+    Log columns (9, tab-separated):
+      timestamp  remote_addr  fromHost  fromPort  toHost  toPort  bytesIn  bytesOut  event
+    """
+    counts: dict = {}
+    done_bytes: list = []
+    with open(log_file) as fh:
+        for line in fh:
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 9:
+                continue
+            event = fields[8]
+            counts[event] = counts.get(event, 0) + 1
+            if event.startswith("done-"):
+                try:
+                    done_bytes.append(int(fields[6]))
+                except ValueError:
+                    pass
+    return {"counts": counts, "done_bytes": done_bytes}
+
+
+def _validate_event_log(log_file: str, num_pairs: int) -> None:
+    """
+    Assert that the event log is internally consistent and matches expectations
+    for a test run with ``num_pairs`` persistent connections.
+
+    Invariants checked:
+    - ``opened`` == ``done``   (no leaked connections)
+    - ``done`` with bytesIn > 0 == num_pairs   (one persistent connection per pair)
+    - zero ``denied`` / ``not-allowed`` entries   (ACL must not block test clients)
+    - zero ``local-connect-failed`` entries   (all backends were up)
+    """
+    if not os.path.exists(log_file):
+        pytest.fail(f"Event log not written: {log_file}")
+
+    parsed = _parse_event_log(log_file)
+    counts = parsed["counts"]
+    done_bytes = parsed["done_bytes"]
+
+    opened = counts.get("opened", 0)
+    done = counts.get("done-local-closed", 0) + counts.get("done-remote-closed", 0)
+    failed = counts.get("local-connect-failed -", 0)
+    denied = counts.get("denied", 0) + counts.get("not-allowed", 0)
+    done_with_bytes = sum(1 for b in done_bytes if b > 0)
+
+    errors = []
+    if opened != done:
+        errors.append(
+            f"Unbalanced log entries: {opened} 'opened' but {done} 'done-*'"
+            " (possible connection leak or incomplete shutdown)"
+        )
+    if done_with_bytes != num_pairs:
+        errors.append(
+            f"Expected {num_pairs} 'done-*' entries with bytesIn > 0"
+            f" (one persistent connection per pair), got {done_with_bytes}"
+        )
+    if failed > 0:
+        errors.append(
+            f"{failed} 'local-connect-failed' entries: backends were unreachable"
+        )
+    if denied > 0:
+        errors.append(
+            f"{denied} 'denied/not-allowed' entries: ACL blocked test clients"
+        )
+
+    if errors:
+        pytest.fail(
+            "Event log validation failed:\n"
+            + "\n".join(f"  {e}" for e in errors)
+            + f"\n  Full event counts: {counts}"
+        )
+
+
+# ============================================================
 # Config writers
 # ============================================================
 
@@ -580,10 +662,25 @@ def _run_sighup_stress_test(
         stop_event.set()
         reload_thread.join(timeout=SIGHUP_INTERVAL + 5)
 
-        # Phase 7: rinetd must still be alive
+        # Phase 7: rinetd must still be alive before we terminate it
         assert proc.poll() is None, "rinetd crashed during stress test"
 
-        # Phase 8: status file must exist and be valid JSON (if interval has elapsed)
+        # Phase 8: terminate rinetd now so the event log is fully flushed
+        # before we read it.  The finally block skips termination when proc=None.
+        proc.terminate()
+        try:
+            stdout, stderr = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+        proc = None
+
+        if stdout:
+            print(f"\n[rinetd stdout]:\n{stdout}")
+        if stderr:
+            print(f"\n[rinetd stderr (first 4 KB)]:\n{stderr[:4096]}")
+
+        # Phase 9: status file must exist and be valid JSON (if interval has elapsed)
         if os.path.exists(status_file):
             with open(status_file, "r") as fh:
                 status_data = json.load(fh)
@@ -595,7 +692,16 @@ def _run_sighup_stress_test(
                 f" (statusinterval={STATUS_INTERVAL}s)"
             )
 
-        # Phase 9: report and validate
+        # Phase 10: event log validation (rinetd is terminated, log is complete).
+        # Each pair generates exactly 2 connections in the log: one from
+        # wait_for_port (0 bytes, immediate close) and one persistent client
+        # connection (large byte count).  We verify:
+        #   opened == done         (no leaked/unclosed connections)
+        #   done with bytes > 0 == num_pairs  (one real connection per pair)
+        #   no denied/failed entries          (ACL and backends OK)
+        _validate_event_log(log_file, num_pairs)
+
+        # Phase 11: report and validate transfer results
         total_ok = sum(r.get("transfers_ok", 0) for r in results)
         failed_pairs = [r for r in results if not r["success"]]
 
@@ -620,6 +726,7 @@ def _run_sighup_stress_test(
         )
 
     finally:
+        # Only reached on error paths where proc was not already terminated above
         if proc is not None:
             if proc.poll() is None:
                 proc.terminate()
@@ -631,7 +738,6 @@ def _run_sighup_stress_test(
             if stdout:
                 print(f"\n[rinetd stdout]:\n{stdout}")
             if stderr:
-                # Truncate to avoid overwhelming pytest output
                 print(f"\n[rinetd stderr (first 4 KB)]:\n{stderr[:4096]}")
 
         for srv in servers:
