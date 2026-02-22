@@ -691,6 +691,27 @@ static void cacheServerInfoForLogging(ConnectionInfo *cnx, ServerInfo const *srv
         logWarning("strdup failed in cacheServerInfoForLogging, log entries may be incomplete\n");
 }
 
+/* Update cached destination log info from the selected LB backend.
+ * For YAML/LB rules the ServerInfo listener has no single destination (toAddrInfo
+ * is NULL), so log_toPort would be 0 after cacheServerInfoForLogging.  Call this
+ * after lb_select_backend() so log messages show the actual chosen backend. */
+static void cacheBackendInfoForLogging(ConnectionInfo *cnx, BackendInfo const *backend)
+{
+    if (!cnx || !backend)
+        return;
+
+    free(cnx->log_toHost);
+    cnx->log_toHost = NULL;
+    cnx->log_toPort = 0;
+
+    if (backend->unixPath) {
+        cnx->log_toHost = strdup(backend->unixPath);
+    } else if (backend->host) {
+        cnx->log_toHost = strdup(backend->host);
+        cnx->log_toPort = backend->addrInfo ? getPort(backend->addrInfo) : 0;
+    }
+}
+
 /* libuv callback forward declarations */
 static void tcp_server_accept_cb(uv_stream_t *server, int status);
 static void unix_server_accept_cb(uv_stream_t *server, int status);
@@ -1293,6 +1314,7 @@ static void tcp_server_accept_cb(uv_stream_t *server, int status)
             cnx->selected_backend = backend;
             cnx->rule = srv->rule;
             lb_backend_connection_start(backend);
+            cacheBackendInfoForLogging(cnx, backend);
             backend_addr = backend->addrInfo;
             backend_unix_path = backend->unixPath;
             backend_is_abstract = backend->isAbstract;
@@ -1608,6 +1630,7 @@ static void unix_server_accept_cb(uv_stream_t *server, int status)
             cnx->selected_backend = backend;
             cnx->rule = srv->rule;
             lb_backend_connection_start(backend);
+            cacheBackendInfoForLogging(cnx, backend);
             backend_addr = backend->addrInfo;
             backend_unix_path = backend->unixPath;
             backend_is_abstract = backend->isAbstract;
@@ -2590,6 +2613,7 @@ static void udp_server_recv_cb(uv_udp_t *handle, ssize_t nread, const uv_buf_t *
             cnx->selected_backend = backend;
             cnx->rule = srv->rule;
             lb_backend_connection_start(backend);
+            cacheBackendInfoForLogging(cnx, backend);
             backend_addr = backend->addrInfo;
             backend_source = backend->sourceAddrInfo;
 
