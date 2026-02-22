@@ -3,10 +3,13 @@ Stress test with periodic SIGHUP reloads and dynamic config changes.
 
 Tests two key properties of rinetd-uv under simultaneous load:
   1. Existing TCP connections are NOT disrupted by SIGHUP config reload.
-     Each pair uses a single persistent TCP connection for the full test
-     duration.  Any mid-test connection drop is a hard test failure.
-  2. Config reload correctly handles rule addition and removal while the
-     server keeps running under load.
+     Permanent pair connections use a single persistent TCP connection for the
+     full test duration; any mid-test connection drop is a hard failure.
+  2. Every forwarding rule carries real traffic: each cycling rule has a
+     dedicated backend echo server and a client running for a randomised
+     duration that straddles the SIGHUP interval.  Roughly half of cycling
+     transfers finish before the next reload (testing clean rule removal) and
+     half survive across it (testing that active connections are not severed).
 
 Both the legacy .conf format and YAML format are tested.
 
@@ -41,9 +44,16 @@ from .utils import (
 # How often rinetd receives SIGHUP (seconds)
 SIGHUP_INTERVAL = 15
 
-# Extra (decoy) forwarding rules that are added/removed on each reload cycle
-EXTRA_RULES_COUNT = 20       # Initial number of extra (decoy) rules
-EXTRA_RULES_CHANGE = 2       # Rules removed AND added per reload
+# Number of cycling rules in the initial config pool
+EXTRA_RULES_COUNT = 20
+# Rules added (and swept) per reload cycle
+EXTRA_RULES_CHANGE = 2
+
+# Transfer duration for cycling rules expressed as a fraction of SIGHUP_INTERVAL.
+# The range straddles 1.0 so roughly half of cycling transfers finish before
+# the next SIGHUP and half survive across it.
+CYCLE_TRANSFER_MIN_RATIO = 0.6
+CYCLE_TRANSFER_MAX_RATIO = 1.6
 
 # Status / stats settings
 STATUS_INTERVAL = 10         # Write JSON status file every N seconds
@@ -63,12 +73,12 @@ DEFAULT_STRESS_DURATION = 90  # seconds
 QUICK_STRESS_DURATION = 20    # seconds for the "quick" parametrize variant
 
 # IP addresses used for port allocation (all within 127.0.0.0/8 on Linux)
-LISTEN_IP = "127.0.0.2"       # rinetd listeners for test pairs
-BACKEND_IP = "127.0.0.3"      # backend echo servers
-EXTRA_LISTEN_IP = "127.0.0.5" # rinetd listeners for decoy rules (no test clients)
-EXTRA_BACKEND_IP = "127.0.0.6"# decoy backend address (no server running here)
+LISTEN_IP = "127.0.0.2"        # rinetd listeners for permanent pairs
+BACKEND_IP = "127.0.0.3"       # backend echo servers for permanent pairs
+EXTRA_LISTEN_IP = "127.0.0.5"  # rinetd listeners for cycling rules
+EXTRA_BACKEND_IP = "127.0.0.6" # backend echo servers for cycling rules
 
-# Port bases: actual port = base + pair_id / extra_id
+# Port bases: actual port = base + pair_id / rule_id
 PAIR_BASE_PORT = 20000
 EXTRA_BASE_PORT = 45000
 
@@ -85,6 +95,38 @@ _NOISE_RANGES = [
     "1.2.3.*", "4.5.6.*", "7.8.9.*",
     "203.0.113.*", "198.51.100.*",
 ]
+
+
+# ============================================================
+# Cycling rule management
+# ============================================================
+
+class ActiveCycleRule:
+    """
+    A forwarding rule that carries real traffic throughout its lifetime.
+
+    Each instance owns a TcpEchoServer backend and a concurrent.futures.Future
+    for its client worker (_client_worker).  The rule stays in the rinetd
+    config until the client worker completes; it is swept out on the next
+    reload cycle after completion, so no active connection is ever severed
+    by config removal.
+    """
+    __slots__ = ("rule_id", "listen_ip", "listen_port", "backend_ip",
+                 "backend_port", "server", "future")
+
+    def __init__(self, rule_id: int, listen_ip: str, listen_port: int,
+                 backend_ip: str, backend_port: int):
+        self.rule_id = rule_id
+        self.listen_ip = listen_ip
+        self.listen_port = listen_port
+        self.backend_ip = backend_ip
+        self.backend_port = backend_port
+        self.server = TcpEchoServer(host=backend_ip, port=backend_port)
+        self.future = None
+
+    @property
+    def rule(self) -> tuple:
+        return (self.listen_ip, self.listen_port, self.backend_ip, self.backend_port)
 
 
 # ============================================================
@@ -165,14 +207,15 @@ def _parse_event_log(log_file: str) -> dict:
     return {"counts": counts, "done_bytes": done_bytes}
 
 
-def _validate_event_log(log_file: str, num_pairs: int) -> None:
+def _validate_event_log(log_file: str, min_data_connections: int) -> None:
     """
-    Assert that the event log is internally consistent and matches expectations
-    for a test run with ``num_pairs`` persistent connections.
+    Assert that the event log is internally consistent.
 
     Invariants checked:
     - ``opened`` == ``done``   (no leaked connections)
-    - ``done`` with bytesIn > 0 == num_pairs   (one persistent connection per pair)
+    - ``done`` with bytesIn > 0 >= min_data_connections
+      (at least one real connection per permanent pair; cycling connections
+      add more, so we only enforce a lower bound)
     - zero ``denied`` / ``not-allowed`` entries   (ACL must not block test clients)
     - zero ``local-connect-failed`` entries   (all backends were up)
     """
@@ -195,10 +238,10 @@ def _validate_event_log(log_file: str, num_pairs: int) -> None:
             f"Unbalanced log entries: {opened} 'opened' but {done} 'done-*'"
             " (possible connection leak or incomplete shutdown)"
         )
-    if done_with_bytes != num_pairs:
+    if done_with_bytes < min_data_connections:
         errors.append(
-            f"Expected {num_pairs} 'done-*' entries with bytesIn > 0"
-            f" (one persistent connection per pair), got {done_with_bytes}"
+            f"Expected at least {min_data_connections} 'done-*' entries with"
+            f" bytesIn > 0, got {done_with_bytes}"
         )
     if failed > 0:
         errors.append(
@@ -232,11 +275,13 @@ def _write_legacy_config(
     """
     Write a rinetd legacy .conf file with all required directives.
 
-    pair_rules are permanent across reload cycles; extra_rules change on each
-    SIGHUP.  Both are lists of (listen_ip, listen_port, backend_ip, backend_port).
+    pair_rules are permanent across reload cycles; extra_rules are the current
+    set of active cycling rules (changes on each reload).  Both are lists of
+    (listen_ip, listen_port, backend_ip, backend_port).
 
     Per-rule ACLs on pair rules always allow ``127.0.0.*`` first so test
-    clients are never blocked.  Decoy rule ACLs are fully random.
+    clients are never blocked.  Cycling rule ACLs are also client-permissive
+    since they carry real traffic from the same address range.
     """
     lines = [
         f"logfile {log_file}",
@@ -275,8 +320,8 @@ def _write_legacy_config(
             f"{listen_ip} {listen_port} {backend_ip} {backend_port}"
             f" [connect-timeout={ct}]"
         )
-        # Decoy rules: fully random ACLs (no test clients connect here)
-        lines += _acl_legacy(rng, always_allow=None)
+        # Cycling rules also carry real traffic from 127.0.0.x clients.
+        lines += _acl_legacy(rng, always_allow=["127.0.0.*"], catchall_deny=False)
         lines.append("")
 
     with open(config_path, "w") as fh:
@@ -354,7 +399,8 @@ def _write_yaml_config(
 
     for listen_ip, listen_port, backend_ip, backend_port in extra_rules:
         ct = rng.randint(CONNECT_TIMEOUT_MIN, CONNECT_TIMEOUT_MAX)
-        r_allow, r_deny = _acl_yaml(rng, always_allow=None)
+        # Cycling rules carry real traffic; always allow test clients.
+        r_allow, r_deny = _acl_yaml(rng, always_allow=["127.0.0.*"], catchall_deny=False)
         lines += [
             f"  - name: extra-{listen_port}",
             f'    bind: "{listen_ip}:{listen_port}/tcp"',
@@ -378,71 +424,8 @@ def _write_yaml_config(
 
 
 # ============================================================
-# Reload thread
-# ============================================================
-
-def _reload_worker(
-    proc: subprocess.Popen,
-    config_path: str,
-    write_fn,
-    pair_rules: list,
-    initial_extra_rules: list,
-    status_file: str,
-    log_file: str,
-    stop_event: threading.Event,
-) -> int:
-    """
-    Background thread body: every SIGHUP_INTERVAL seconds, mutate the extra
-    rules pool, rewrite the config file with ``write_fn``, then send SIGHUP.
-
-    pair_rules are never modified – they remain in every config revision.
-    On each cycle exactly EXTRA_RULES_CHANGE decoy rules are removed at
-    random and the same number of fresh ones (with new ports) are added.
-
-    Returns the number of SIGHUP signals successfully delivered.
-    """
-    # Dedicated RNG: never shared with any other thread
-    rng = random.Random(0xDEADBEEF)
-    extra_rules = list(initial_extra_rules)
-    # next_id starts after the initial pool; used to allocate new unique ports
-    next_id = EXTRA_RULES_COUNT
-    reload_count = 0
-
-    while not stop_event.wait(timeout=SIGHUP_INTERVAL):
-        if proc.poll() is not None:
-            break
-
-        # Remove a random subset of decoy rules
-        for _ in range(min(EXTRA_RULES_CHANGE, len(extra_rules))):
-            extra_rules.pop(rng.randrange(len(extra_rules)))
-
-        # Add fresh decoy rules (ports keep increasing, so names stay unique)
-        for _ in range(EXTRA_RULES_CHANGE):
-            port = EXTRA_BASE_PORT + next_id
-            extra_rules.append((EXTRA_LISTEN_IP, port, EXTRA_BACKEND_IP, port))
-            next_id += 1
-
-        try:
-            write_fn(
-                config_path,
-                rng,
-                pair_rules,
-                extra_rules,
-                status_file,
-                log_file,
-            )
-            if proc.poll() is None:
-                proc.send_signal(signal.SIGHUP)
-                reload_count += 1
-        except OSError:
-            # Transient I/O error on config rewrite; retry next cycle
-            pass
-
-    return reload_count
-
-
-# ============================================================
-# Persistent-connection client worker
+# Persistent-connection client worker (used for both permanent pairs
+# and cycling rules)
 # ============================================================
 
 def _client_worker(pair_id: int, listen_ip: str, listen_port: int, deadline: float) -> dict:
@@ -518,6 +501,137 @@ def _client_worker(pair_id: int, listen_ip: str, listen_port: int, deadline: flo
 
 
 # ============================================================
+# Cycle manager – manages cycling rules with real traffic
+# ============================================================
+
+def _cycle_manager(
+    proc: subprocess.Popen,
+    config_path: str,
+    write_fn,
+    pair_rules: list,
+    status_file: str,
+    log_file: str,
+    stop_event: threading.Event,
+    active_cycling: list,
+    executor: concurrent.futures.ThreadPoolExecutor,
+    test_deadline: float,
+    rng_seed: int = 0xDEADBEEF,
+) -> tuple:
+    """
+    Background thread: on each SIGHUP_INTERVAL, sweep finished cycling rules,
+    add fresh ones with real backend servers and client workers, then rewrite
+    the config and send SIGHUP.
+
+    active_cycling is a mutable list of ActiveCycleRule objects owned
+    exclusively by this thread after handoff from the main thread.
+
+    Rules are removed from the config only after their client finishes, so
+    no active connection is ever severed by a reload.  Newly added rules have
+    their client worker started only after wait_for_port confirms rinetd is
+    listening on the new port, avoiding spurious connection failures.
+
+    Returns (reload_count, cycling_results) where cycling_results is a list
+    of result dicts (same format as _client_worker) from all completed cycling
+    clients.
+    """
+    rng = random.Random(rng_seed)
+    # IDs 0..EXTRA_RULES_COUNT-1 already used by the initial cycling pool
+    next_id = EXTRA_RULES_COUNT
+    reload_count = 0
+    cycling_results = []
+
+    while not stop_event.wait(timeout=SIGHUP_INTERVAL):
+        if proc.poll() is not None:
+            break
+
+        # --- sweep: collect finished cycling rules ---
+        done = [ar for ar in active_cycling
+                if ar.future is not None and ar.future.done()]
+        for ar in done:
+            active_cycling.remove(ar)
+            try:
+                cycling_results.append(ar.future.result())
+            except Exception as exc:
+                cycling_results.append({
+                    "success": False,
+                    "transfers_ok": 0,
+                    "message": f"rule {ar.rule_id}: exception: {exc}",
+                })
+            ar.server.stop()
+
+        # --- grow: add EXTRA_RULES_CHANGE new cycling rules ---
+        new_rules = []
+        for _ in range(EXTRA_RULES_CHANGE):
+            port = EXTRA_BASE_PORT + next_id
+            ar = ActiveCycleRule(next_id, EXTRA_LISTEN_IP, port, EXTRA_BACKEND_IP, port)
+            ar.server.start()
+            if not ar.server.wait_ready(timeout=5):
+                ar.server.stop()
+                continue
+            active_cycling.append(ar)
+            new_rules.append(ar)
+            next_id += 1
+
+        # --- reload: rewrite config and send SIGHUP ---
+        try:
+            write_fn(
+                config_path, rng, pair_rules,
+                [ar.rule for ar in active_cycling],
+                status_file, log_file,
+            )
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGHUP)
+                reload_count += 1
+        except OSError:
+            pass
+
+        # --- connect: wait for new listen ports, then start client workers ---
+        for ar in new_rules:
+            if not wait_for_port(ar.listen_port, host=ar.listen_ip, timeout=10):
+                cycling_results.append({
+                    "success": False,
+                    "transfers_ok": 0,
+                    "message": (
+                        f"rule {ar.rule_id}: listen port {ar.listen_ip}:{ar.listen_port}"
+                        f" never opened after SIGHUP"
+                    ),
+                })
+                active_cycling.remove(ar)
+                ar.server.stop()
+                continue
+
+            duration = SIGHUP_INTERVAL * rng.uniform(
+                CYCLE_TRANSFER_MIN_RATIO, CYCLE_TRANSFER_MAX_RATIO
+            )
+            # Cap at test_deadline so workers don't outlive the test
+            ar_deadline = min(time.time() + duration, test_deadline - 5)
+            ar.future = executor.submit(
+                _client_worker, ar.rule_id, ar.listen_ip, ar.listen_port, ar_deadline
+            )
+
+    # --- cleanup: drain remaining cycling workers ---
+    for ar in list(active_cycling):
+        if ar.future is not None:
+            try:
+                cycling_results.append(ar.future.result(timeout=DEFAULT_TIMEOUT))
+            except concurrent.futures.TimeoutError:
+                cycling_results.append({
+                    "success": False,
+                    "transfers_ok": 0,
+                    "message": f"rule {ar.rule_id}: worker timed out during cleanup",
+                })
+            except Exception as exc:
+                cycling_results.append({
+                    "success": False,
+                    "transfers_ok": 0,
+                    "message": f"rule {ar.rule_id}: exception during cleanup: {exc}",
+                })
+        ar.server.stop()
+
+    return reload_count, cycling_results
+
+
+# ============================================================
 # Shared test body
 # ============================================================
 
@@ -546,9 +660,11 @@ def _run_sighup_stress_test(
         stress_duration = int(os.environ["STRESS_DURATION"])
 
     soft, _ = get_file_limit()
-    if num_pairs * 4 + 100 > soft * 0.8:
+    # Each connection needs ~4 FDs; cycling backend servers add one listener each
+    estimated_fds = (num_pairs + EXTRA_RULES_COUNT) * 5 + 100
+    if estimated_fds > soft * 0.8:
         pytest.skip(
-            f"Insufficient file descriptors: need ~{num_pairs * 4 + 100},"
+            f"Insufficient file descriptors: need ~{estimated_fds},"
             f" have {soft}"
         )
 
@@ -557,29 +673,41 @@ def _run_sighup_stress_test(
     config_file = str(tmp_path / f"rinetd_stress.{config_ext}")
     rng = random.Random(42)
 
+    # Permanent backend servers (one per pair); kept alive for the whole test
     servers = []
     pair_rules = []
     proc = None
 
     try:
-        # Phase 1: start one backend echo server per pair
+        # Phase 1: start one permanent backend echo server per pair
         for i in range(num_pairs):
             port = PAIR_BASE_PORT + i
             srv = TcpEchoServer(host=BACKEND_IP, port=port)
             srv.start()
             if not srv.wait_ready(timeout=10):
-                pytest.fail(f"Backend server {i} failed to start within 10s")
+                pytest.fail(f"Permanent backend server {i} failed to start within 10s")
             servers.append(srv)
             pair_rules.append((LISTEN_IP, port, BACKEND_IP, port))
 
-        # Phase 2: build initial decoy rule set
-        initial_extra = [
-            (EXTRA_LISTEN_IP, EXTRA_BASE_PORT + i, EXTRA_BACKEND_IP, EXTRA_BASE_PORT + i)
-            for i in range(EXTRA_RULES_COUNT)
-        ]
+        # Phase 2: create the initial cycling rule pool with real backend servers
+        initial_cycling = []
+        for i in range(EXTRA_RULES_COUNT):
+            port = EXTRA_BASE_PORT + i
+            ar = ActiveCycleRule(i, EXTRA_LISTEN_IP, port, EXTRA_BACKEND_IP, port)
+            ar.server.start()
+            if not ar.server.wait_ready(timeout=10):
+                pytest.fail(f"Cycling backend server {i} failed to start within 10s")
+            initial_cycling.append(ar)
+            # Also register for finally-block cleanup (cycle manager stops them
+            # too, but stop() is idempotent so double-stopping is harmless)
+            servers.append(ar.server)
 
-        # Phase 3: write config and start rinetd
-        write_fn(config_file, rng, pair_rules, initial_extra, status_file, log_file)
+        # Phase 3: write initial config (pair rules + all initial cycling rules)
+        write_fn(
+            config_file, rng, pair_rules,
+            [ar.rule for ar in initial_cycling],
+            status_file, log_file,
+        )
         proc = subprocess.Popen(
             [rinetd_path, "-f", "-c", config_file],
             stdout=subprocess.PIPE,
@@ -591,43 +719,41 @@ def _run_sighup_stress_test(
             _, stderr = proc.communicate()
             pytest.fail(f"rinetd failed to start:\n{stderr}")
 
+        # Phase 4: wait for all listen ports to open
         for listen_ip, listen_port, _, _ in pair_rules:
             if not wait_for_port(listen_port, host=listen_ip, timeout=15):
                 pytest.fail(
                     f"rinetd listen port {listen_ip}:{listen_port}"
                     f" did not open within 15s"
                 )
+        for ar in initial_cycling:
+            if not wait_for_port(ar.listen_port, host=ar.listen_ip, timeout=15):
+                pytest.fail(
+                    f"rinetd cycling port {ar.listen_ip}:{ar.listen_port}"
+                    f" did not open within 15s"
+                )
 
-        # Phase 4: start SIGHUP reload thread
-        stop_event = threading.Event()
-        reload_count_box = [0]
-
-        def _reload_body():
-            reload_count_box[0] = _reload_worker(
-                proc=proc,
-                config_path=config_file,
-                write_fn=write_fn,
-                pair_rules=pair_rules,
-                initial_extra_rules=initial_extra,
-                status_file=status_file,
-                log_file=log_file,
-                stop_event=stop_event,
-            )
-
-        reload_thread = threading.Thread(target=_reload_body, daemon=True)
-        reload_thread.start()
-
-        # Phase 5: run persistent-connection clients in parallel
-        deadline = time.time() + stress_duration
+        # Phase 5: launch all client workers (permanent pairs + initial cycling)
+        test_deadline = time.time() + stress_duration
+        # Max concurrent workers: permanent pairs + initial cycling pool +
+        # headroom for a couple of reload cycles worth of new workers
+        max_workers = num_pairs + EXTRA_RULES_COUNT + EXTRA_RULES_CHANGE * 4
 
         print(f"\n{'='*70}")
         print(
-            f"Stress SIGHUP ({config_ext}): {num_pairs} pairs,"
+            f"Stress SIGHUP ({config_ext}): {num_pairs} pairs"
+            f" + {EXTRA_RULES_COUNT} cycling rules,"
             f" {stress_duration}s, SIGHUP every {SIGHUP_INTERVAL}s"
         )
         print(
-            f"  Extra decoy rules: {EXTRA_RULES_COUNT}"
-            f" (±{EXTRA_RULES_CHANGE}/reload)"
+            f"  Cycling transfer duration: "
+            f"{CYCLE_TRANSFER_MIN_RATIO}–{CYCLE_TRANSFER_MAX_RATIO}"
+            f" × {SIGHUP_INTERVAL}s"
+            f" ({CYCLE_TRANSFER_MIN_RATIO * SIGHUP_INTERVAL:.0f}–"
+            f"{CYCLE_TRANSFER_MAX_RATIO * SIGHUP_INTERVAL:.0f}s)"
+        )
+        print(
+            f"  Cycling rules per reload: +{EXTRA_RULES_CHANGE} new"
         )
         print(
             f"  Pool: min_free={POOL_MIN_FREE} max_free={POOL_MAX_FREE}"
@@ -639,34 +765,72 @@ def _run_sighup_stress_test(
         )
         print(f"{'='*70}")
 
-        results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_pairs) as executor:
-            futures = {
+        stop_event = threading.Event()
+        cycle_result_box = [None]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit permanent pair workers (run until overall test deadline)
+            pair_futures = {
                 executor.submit(
-                    _client_worker, i, LISTEN_IP, PAIR_BASE_PORT + i, deadline
+                    _client_worker, i, LISTEN_IP, PAIR_BASE_PORT + i, test_deadline
                 ): i
                 for i in range(num_pairs)
             }
-            for future in concurrent.futures.as_completed(futures):
-                pair_id = futures[future]
+
+            # Submit initial cycling workers (each with its own shorter deadline)
+            rng_cycle = random.Random(0xCAFEBABE)
+            for ar in initial_cycling:
+                duration = SIGHUP_INTERVAL * rng_cycle.uniform(
+                    CYCLE_TRANSFER_MIN_RATIO, CYCLE_TRANSFER_MAX_RATIO
+                )
+                ar_deadline = min(time.time() + duration, test_deadline - 5)
+                ar.future = executor.submit(
+                    _client_worker, ar.rule_id, ar.listen_ip, ar.listen_port, ar_deadline
+                )
+
+            # Phase 6: start cycle manager thread
+            # It takes exclusive ownership of initial_cycling from this point
+            def _cycle_body():
+                cycle_result_box[0] = _cycle_manager(
+                    proc=proc,
+                    config_path=config_file,
+                    write_fn=write_fn,
+                    pair_rules=pair_rules,
+                    status_file=status_file,
+                    log_file=log_file,
+                    stop_event=stop_event,
+                    active_cycling=initial_cycling,
+                    executor=executor,
+                    test_deadline=test_deadline,
+                )
+
+            cycle_thread = threading.Thread(target=_cycle_body, daemon=True)
+            cycle_thread.start()
+
+            # Phase 7: collect permanent pair results
+            pair_results = []
+            for future in concurrent.futures.as_completed(pair_futures):
+                pair_id = pair_futures[future]
                 try:
-                    results.append(future.result())
+                    pair_results.append(future.result())
                 except Exception as exc:
-                    results.append({
+                    pair_results.append({
                         "success": False,
                         "transfers_ok": 0,
                         "message": f"pair {pair_id} raised exception: {exc}",
                     })
 
-        # Phase 6: stop reload thread
-        stop_event.set()
-        reload_thread.join(timeout=SIGHUP_INTERVAL + 5)
+            # Phase 8: stop cycle manager and wait for its cleanup to finish
+            stop_event.set()
+            cycle_thread.join(timeout=SIGHUP_INTERVAL + DEFAULT_TIMEOUT + 10)
 
-        # Phase 7: rinetd must still be alive before we terminate it
+        # executor.__exit__ waits for all submitted futures (cycling workers
+        # that the cycle manager already drained in cleanup, so this is instant)
+
+        # Phase 9: rinetd must still be alive before we terminate it
         assert proc.poll() is None, "rinetd crashed during stress test"
 
-        # Phase 8: terminate rinetd now so the event log is fully flushed
-        # before we read it.  The finally block skips termination when proc=None.
+        # Phase 10: terminate rinetd so the event log is fully flushed
         proc.terminate()
         try:
             stdout, stderr = proc.communicate(timeout=10)
@@ -680,7 +844,10 @@ def _run_sighup_stress_test(
         if stderr:
             print(f"\n[rinetd stderr (first 4 KB)]:\n{stderr[:4096]}")
 
-        # Phase 9: status file must exist and be valid JSON (if interval has elapsed)
+        # Phase 11: extract cycling results
+        reload_count, cycling_results = cycle_result_box[0] or (0, [])
+
+        # Phase 12: status file must exist and be valid JSON (if interval has elapsed)
         if os.path.exists(status_file):
             with open(status_file, "r") as fh:
                 status_data = json.load(fh)
@@ -692,41 +859,49 @@ def _run_sighup_stress_test(
                 f" (statusinterval={STATUS_INTERVAL}s)"
             )
 
-        # Phase 10: event log validation (rinetd is terminated, log is complete).
-        # Each pair generates exactly 2 connections in the log: one from
-        # wait_for_port (0 bytes, immediate close) and one persistent client
-        # connection (large byte count).  We verify:
-        #   opened == done         (no leaked/unclosed connections)
-        #   done with bytes > 0 == num_pairs  (one real connection per pair)
-        #   no denied/failed entries          (ACL and backends OK)
+        # Phase 13: event log validation (rinetd is terminated, log is complete).
+        # With cycling rules, done_with_bytes will be >= num_pairs (permanent
+        # pairs always have one large connection; cycling connections add more).
         _validate_event_log(log_file, num_pairs)
 
-        # Phase 11: report and validate transfer results
-        total_ok = sum(r.get("transfers_ok", 0) for r in results)
-        failed_pairs = [r for r in results if not r["success"]]
+        # Phase 14: report results
+        pair_total_ok = sum(r.get("transfers_ok", 0) for r in pair_results)
+        pair_failed = [r for r in pair_results if not r["success"]]
+        cycling_total_ok = sum(r.get("transfers_ok", 0) for r in cycling_results)
+        cycling_failed = [r for r in cycling_results if not r["success"]]
 
         print(f"\n{'='*70}")
         print(
-            f"Results ({config_ext}): {num_pairs} pairs,"
-            f" {reload_count_box[0]} SIGHUP reloads"
+            f"Results ({config_ext}): {num_pairs} permanent pairs,"
+            f" {len(cycling_results)} cycling rules,"
+            f" {reload_count} SIGHUP reloads"
         )
-        print(f"  Transfers completed: {total_ok}")
-        print(f"  Failed pairs:        {len(failed_pairs)}/{num_pairs}")
-        for fp in failed_pairs[:5]:
+        print(f"  Permanent pair transfers:  {pair_total_ok}")
+        print(f"  Cycling rule transfers:    {cycling_total_ok}")
+        print(f"  Failed permanent pairs:    {len(pair_failed)}/{num_pairs}")
+        print(f"  Failed cycling rules:      {len(cycling_failed)}/{len(cycling_results)}")
+        for fp in (pair_failed + cycling_failed)[:5]:
             print(f"    -> {fp['message']}")
         print(f"{'='*70}")
 
-        assert total_ok > 0, "No transfers completed successfully"
+        assert pair_total_ok > 0, "No permanent-pair transfers completed successfully"
 
-        # Existing TCP connections must survive SIGHUP: zero pair failures allowed
-        assert len(failed_pairs) == 0, (
-            f"{len(failed_pairs)} pair(s) failed – persistent TCP connections"
+        # Persistent connections must survive every SIGHUP
+        assert len(pair_failed) == 0, (
+            f"{len(pair_failed)} permanent pair(s) failed – persistent TCP connections"
             f" must not be disrupted by SIGHUP reload:\n"
-            + "\n".join(f"  {r['message']}" for r in failed_pairs)
+            + "\n".join(f"  {r['message']}" for r in pair_failed)
+        )
+
+        # Cycling transfers must also succeed – both those that finish before a
+        # SIGHUP and those that survive across one
+        assert len(cycling_failed) == 0, (
+            f"{len(cycling_failed)} cycling rule(s) failed:\n"
+            + "\n".join(f"  {r['message']}" for r in cycling_failed)
         )
 
     finally:
-        # Only reached on error paths where proc was not already terminated above
+        # Handles error paths where proc was not yet terminated above
         if proc is not None:
             if proc.poll() is None:
                 proc.terminate()
