@@ -55,6 +55,13 @@ EXTRA_RULES_CHANGE = 2
 CYCLE_TRANSFER_MIN_RATIO = 0.6
 CYCLE_TRANSFER_MAX_RATIO = 1.6
 
+# Seconds to wait after all client sockets close before sending SIGTERM to
+# rinetd.  Pair workers close their connections exactly at the test deadline;
+# rinetd needs one or two event-loop iterations to detect the FINs and write
+# the done-* log entries.  Without this window the opened==done check in
+# _validate_event_log races against SIGTERM.
+CONNECTION_DRAIN_TIME = 5
+
 # Status / stats settings
 STATUS_INTERVAL = 10         # Write JSON status file every N seconds
 STATS_LOG_INTERVAL = 10      # Log stats to stderr every N seconds
@@ -829,6 +836,11 @@ def _run_sighup_stress_test(
 
         # Phase 9: rinetd must still be alive before we terminate it
         assert proc.poll() is None, "rinetd crashed during stress test"
+
+        # Pair workers just closed their sockets at test_deadline.  Give rinetd
+        # time to process the incoming FINs and write done-* log entries before
+        # SIGTERM halts the libuv loop mid-iteration (opened != done race).
+        time.sleep(CONNECTION_DRAIN_TIME)
 
         # Phase 10: terminate rinetd so the event log is fully flushed
         proc.terminate()
