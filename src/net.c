@@ -27,7 +27,20 @@ int getAddrInfoWithProto(char *address, char *port, int protocol, struct addrinf
         .ai_flags = AI_PASSIVE,
     };
 
+    /* Fast path for numeric addresses: skip NSS/DNS entirely.
+     *
+     * AI_NUMERICHOST | AI_NUMERICSERV parses the address and port strings directly without any resolver involvement.
+     *
+     * If the address is a hostname (EAI_NONAME) or the port is a service name,
+     * fall through to the full lookup below. */
+    hints.ai_flags = AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV;
     int ret = getaddrinfo(address, port, &hints, ai);
+    if (ret == 0)
+        return 0;
+
+    /* Not numeric (or numeric parse failed) — do a full NSS/DNS lookup. */
+    hints.ai_flags = AI_PASSIVE;
+    ret = getaddrinfo(address, port, &hints, ai);
     if (ret != 0) {
         logError("cannot resolve host \"%s\" port %s (getaddrinfo() error: %s)\n", address ? address : "<null>", port ? port : "<null>", gai_strerror(ret));
     }
