@@ -698,6 +698,8 @@ def _run_sighup_stress_test(
     servers = []
     pair_rules = []
     proc = None
+    rinetd_stdout_path = None
+    rinetd_stderr_path = None
 
     try:
         # Phase 1: start one permanent backend echo server per pair
@@ -729,20 +731,34 @@ def _run_sighup_stress_test(
             [ar.rule for ar in initial_cycling],
             status_file, log_file,
         )
-        proc = subprocess.Popen(
-            [rinetd_path, "-f", "-c", config_file],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        # Redirect stdout/stderr directly to files rather than pipes.
+        # With stderr=PIPE, the ~64 KB pipe buffer fills when rinetd writes
+        # hundreds of "Rule 'pair-XXXXX'" messages; write(2) then blocks,
+        # freezing the single-threaded libuv event loop for the entire test.
+        rinetd_stdout_path = str(tmp_path / "rinetd-uv.stdout.txt")
+        rinetd_stderr_path = str(tmp_path / "rinetd-uv.stderr.txt")
+        with open(rinetd_stdout_path, "w") as _stdout_fh, \
+             open(rinetd_stderr_path, "w") as _stderr_fh:
+            proc = subprocess.Popen(
+                [rinetd_path, "-f", "-c", config_file],
+                stdout=_stdout_fh,
+                stderr=_stderr_fh,
+            )
+        # File handles are closed in Python; the subprocess keeps its own fds.
         rinetd_pid = proc.pid
-        rinetd_stdout_path = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stdout.txt")
-        rinetd_stderr_path = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stderr.txt")
+        # Rename to include PID now that we have it
+        rinetd_stdout_final = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stdout.txt")
+        rinetd_stderr_final = str(tmp_path / f"rinetd-uv.{rinetd_pid}.stderr.txt")
+        os.rename(rinetd_stdout_path, rinetd_stdout_final)
+        os.rename(rinetd_stderr_path, rinetd_stderr_final)
+        rinetd_stdout_path = rinetd_stdout_final
+        rinetd_stderr_path = rinetd_stderr_final
         print(f"\n  rinetd PID {rinetd_pid}  stdout→{rinetd_stdout_path}  stderr→{rinetd_stderr_path}")
         time.sleep(0.3)
         if proc.poll() is not None:
-            _, stderr = proc.communicate()
-            pytest.fail(f"rinetd failed to start:\n{stderr}")
+            with open(rinetd_stderr_path) as _fh:
+                _err = _fh.read()
+            pytest.fail(f"rinetd failed to start:\n{_err}")
 
         # Phase 4: wait for all listen ports to open
         for listen_ip, listen_port, _, _ in pair_rules:
@@ -863,20 +879,21 @@ def _run_sighup_stress_test(
         # Phase 10: terminate rinetd so the event log is fully flushed
         proc.terminate()
         try:
-            stdout, stderr = proc.communicate(timeout=10)
+            proc.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            proc.communicate()
         proc = None
 
-        with open(rinetd_stdout_path, "w") as fh:
-            fh.write(stdout or "")
-        with open(rinetd_stderr_path, "w") as fh:
-            fh.write(stderr or "")
-        if stdout:
-            print(f"\n[rinetd stdout ({rinetd_stdout_path})]:\n{stdout}")
-        if stderr:
-            print(f"\n[rinetd stderr ({rinetd_stderr_path}, first 4 KB)]:\n{stderr[:4096]}")
+        # Output was written directly to files; read for display only
+        with open(rinetd_stdout_path) as _fh:
+            _stdout = _fh.read()
+        with open(rinetd_stderr_path) as _fh:
+            _stderr = _fh.read()
+        if _stdout:
+            print(f"\n[rinetd stdout ({rinetd_stdout_path})]:\n{_stdout}")
+        if _stderr:
+            print(f"\n[rinetd stderr ({rinetd_stderr_path}, first 4 KB)]:\n{_stderr[:4096]}")
 
         # Phase 11: extract cycling results
         reload_count, cycling_results = cycle_result_box[0] or (0, [])
@@ -940,14 +957,24 @@ def _run_sighup_stress_test(
             if proc.poll() is None:
                 proc.terminate()
             try:
-                stdout, stderr = proc.communicate(timeout=10)
+                proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
-                stdout, stderr = proc.communicate()
-            if stdout:
-                print(f"\n[rinetd stdout]:\n{stdout}")
-            if stderr:
-                print(f"\n[rinetd stderr (first 4 KB)]:\n{stderr[:4096]}")
+                proc.communicate()
+            # Read from files (output was never piped)
+            for _path, _label in (
+                (rinetd_stdout_path, "stdout"),
+                (rinetd_stderr_path, "stderr"),
+            ):
+                if not _path:
+                    continue
+                try:
+                    with open(_path) as _fh:
+                        _content = _fh.read()
+                    if _content:
+                        print(f"\n[rinetd {_label} ({_path}, first 4 KB)]:\n{_content[:4096]}")
+                except OSError:
+                    pass
 
         for srv in servers:
             srv.stop()
