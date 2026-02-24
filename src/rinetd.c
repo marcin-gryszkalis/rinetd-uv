@@ -3154,14 +3154,19 @@ static char const *findConfigFile(void)
         NULL
     };
 
+    char const *selected = NULL;
     for (int i = 0; candidates[i] != NULL; i++) {
-        if (access(candidates[i], R_OK) == 0) {
-            return candidates[i];
+        if (access(candidates[i], R_OK) != 0)
+            continue;
+        if (!selected) {
+            selected = candidates[i];
+        } else {
+            logWarning("multiple config files found: using %s, ignoring %s\n", selected, candidates[i]);
         }
     }
 
     /* None found - return the legacy default (will fail with clear error message) */
-    return RINETD_CONFIG_FILE_CONF;
+    return selected ? selected : RINETD_CONFIG_FILE_CONF;
 }
 
 static int readArgs (int argc, char **argv, RinetdOptions *options)

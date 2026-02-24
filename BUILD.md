@@ -141,7 +141,18 @@ sudo make install
 This installs (assuming default prefix (`/usr/local`) is used):
 - `/usr/local/sbin/rinetd-uv` - Main executable
 - `/usr/local/share/man/man8/rinetd-uv.8` - Man page
-- `/usr/local/etc/rinetd-uv.conf` - Example configuration file
+- `/usr/local/etc/rinetd-uv.conf` - Example configuration file (classic format)
+
+To use the YAML configuration format instead, copy `rinetd-uv.yaml` from the source tree:
+
+```bash
+sudo cp rinetd-uv.yaml /usr/local/etc/rinetd-uv.yaml
+```
+
+**Note:** rinetd-uv searches for its configuration file in this order: `.yaml`, `.yml`, `.conf`.
+If both `rinetd-uv.yaml` and `rinetd-uv.conf` exist in `sysconfdir`, the YAML file takes
+precedence and `rinetd-uv.conf` is ignored. Edit only the file you intend to use, or remove
+the other to avoid confusion.
 
 ## Development Build
 

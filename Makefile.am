@@ -6,10 +6,11 @@ SUBDIRS = src
 EXTRA_DIST = bootstrap LICENSE CHANGES.md README.md DOCUMENTATION.md BUILD.md \
 	TCP-UDP_MIXED_MODE.md \
 	index.html rinetd.vcxproj generate-manpage.sh generate-html.sh generate-conf.sh \
+	rinetd-uv.yaml \
 	$(man_MANS) $(sysconf_DATA)
 
 man_MANS = rinetd-uv.8
-sysconf_DATA = rinetd-uv.conf rinetd-uv.yaml
+sysconf_DATA = rinetd-uv.conf
 noinst_DATA = index.html
 
 # Generate man page from DOCUMENTATION.md using pandoc (if available)
