@@ -1,0 +1,24 @@
+rinetd-uv is a modernized implementation of the rinetd internet
+redirection and load-balancing proxy server, rewritten to use the
+libuv event loop library.
+
+This program efficiently redirects (proxies) TCP and UDP connections
+from one IP address/port combination to another. It is useful when
+operating virtual servers, firewalls, and similar network infrastructure.
+
+Key features:
+- Event-driven I/O using libuv (high performance, low overhead)
+- Both TCP and UDP support
+- UNIX domain socket support
+- IPv4 and IPv6 support
+- Load balancing (round-robin, least-connections, random, IP-hash)
+- Health checking with passive failure detection
+- Allow/deny rules for access control
+- Periodic DNS refresh for dynamic backend addresses
+- YAML and classic rinetd.conf configuration formats
+- Zero-copy buffer forwarding with configurable buffer pools
+
+Maintains backward compatibility with the original rinetd configuration
+format.
+
+WWW: https://github.com/marcin-gryszkalis/rinetd-uv

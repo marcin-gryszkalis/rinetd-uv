@@ -191,7 +191,7 @@ int main(int argc, char *argv[])
         initializeFromYamlRules();
 
     if (pidFileName || !options.foreground)
-        registerPID(pidFileName ? pidFileName : RINETD_PID_FILE);
+        registerPID(pidFileName ? pidFileName : RINETD_DEFAULT_PID_FILE);
 
     /* Initialize libuv event loop */
     main_loop = uv_default_loop();

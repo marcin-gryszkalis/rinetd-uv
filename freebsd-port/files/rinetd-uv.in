@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# PROVIDE: rinetd_uv
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+#
+# Add the following lines to /etc/rc.conf to enable rinetd-uv:
+#
+# rinetd_uv_enable (bool):   Set to YES to enable rinetd-uv.
+#                             Default: NO
+# rinetd_uv_config (str):    Path to configuration file.
+#                             Default: %%PREFIX%%/etc/rinetd-uv.conf
+# rinetd_uv_flags (str):     Additional flags passed to rinetd-uv.
+#                             Default: ""
+
+. /etc/rc.subr
+
+name="rinetd_uv"
+rcvar=rinetd_uv_enable
+desc="Internet redirection server"
+
+load_rc_config $name
+
+: ${rinetd_uv_enable:=NO}
+: ${rinetd_uv_config:=%%PREFIX%%/etc/rinetd-uv.conf}
+: ${rinetd_uv_flags:=}
+
+command="%%PREFIX%%/sbin/rinetd-uv"
+command_args="-c ${rinetd_uv_config} ${rinetd_uv_flags}"
+pidfile="/var/run/rinetd-uv.pid"
+
+required_files="${rinetd_uv_config}"
+
+run_rc_command "$1"

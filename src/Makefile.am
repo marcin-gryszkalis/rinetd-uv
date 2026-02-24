@@ -28,6 +28,7 @@ parse.c: parse.peg
 rinetd_uv_CFLAGS = -std=c99 -D_POSIX_C_SOURCE=200809L \
                    -D_XOPEN_SOURCE -D_GNU_SOURCE -D_DARWIN_C_SOURCE \
                    -D_BSD_SOURCE -D_DEFAULT_SOURCE -D__BSD_VISIBLE \
+                   -DSYSCONFDIR=\"$(sysconfdir)\" \
                    -Wall -Wextra -Wwrite-strings $(LIBUV_CFLAGS) $(YAML_CFLAGS)
 
 rinetd_uv_LDADD = $(LIBUV_LIBS) $(YAML_LIBS)

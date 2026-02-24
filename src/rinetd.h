@@ -28,10 +28,14 @@ static int const RINETD_DEFAULT_CONNECT_TIMEOUT = 0;
 static int const RINETD_DNS_REFRESH_FAILURE_THRESHOLD = 3;
 static int const RINETD_CLEANUP_MAX_ITERATIONS = 1000;
 
-#define RINETD_CONFIG_FILE_YAML "/etc/rinetd-uv.yaml"
-#define RINETD_CONFIG_FILE_YML "/etc/rinetd-uv.yml"
-#define RINETD_CONFIG_FILE_CONF "/etc/rinetd-uv.conf"
-#define RINETD_PID_FILE "/var/run/rinetd-uv.pid"
+#ifndef SYSCONFDIR
+#define SYSCONFDIR "/etc"
+#endif
+
+#define RINETD_CONFIG_FILE_YAML SYSCONFDIR "/rinetd-uv.yaml"
+#define RINETD_CONFIG_FILE_YML  SYSCONFDIR "/rinetd-uv.yml"
+#define RINETD_CONFIG_FILE_CONF SYSCONFDIR "/rinetd-uv.conf"
+#define RINETD_DEFAULT_PID_FILE "/var/run/rinetd-uv.pid"
 #define MAX_INCLUDE_DEPTH 10
 
 /* Global configuration */

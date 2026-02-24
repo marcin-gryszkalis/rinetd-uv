@@ -9,7 +9,7 @@ EXTRA_DIST = bootstrap LICENSE CHANGES.md README.md DOCUMENTATION.md BUILD.md \
 	$(man_MANS) $(sysconf_DATA)
 
 man_MANS = rinetd-uv.8
-sysconf_DATA = rinetd-uv.conf
+sysconf_DATA = rinetd-uv.conf rinetd-uv.yaml
 noinst_DATA = index.html
 
 # Generate man page from DOCUMENTATION.md using pandoc (if available)

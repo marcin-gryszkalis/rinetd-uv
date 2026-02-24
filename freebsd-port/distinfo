@@ -1,0 +1,5 @@
+# Regenerate with: make makesum (from /usr/ports/net/rinetd-uv)
+# GitHub archive checksums differ from the make-dist tarball.
+TIMESTAMP = 1771287568
+SHA256 (marcin-gryszkalis-rinetd-uv-v2.1.2_GH0.tar.gz) = PLACEHOLDER_RUN_MAKE_MAKESUM
+SIZE (marcin-gryszkalis-rinetd-uv-v2.1.2_GH0.tar.gz) = 0
