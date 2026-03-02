@@ -656,6 +656,50 @@ def _cycle_manager(
 # Shared test body
 # ============================================================
 
+def _check_valgrind_log(log_path: str) -> None:
+    """
+    Parse a valgrind log file and fail the test if errors or leaks are found.
+
+    Checks both the ERROR SUMMARY line and definitely/indirectly lost bytes,
+    mirroring the checks in conftest.py's rinetd fixture.
+    """
+    import re
+
+    if not os.path.exists(log_path):
+        pytest.fail(f"Valgrind log not written: {log_path}")
+
+    with open(log_path) as fh:
+        content = fh.read()
+
+    errors = []
+
+    def_lost = re.search(r'definitely lost:\s*([\d,]+)\s*bytes', content)
+    if def_lost:
+        bytes_lost = int(def_lost.group(1).replace(',', ''))
+        if bytes_lost > 0:
+            errors.append(f"definitely lost: {bytes_lost} bytes")
+
+    ind_lost = re.search(r'indirectly lost:\s*([\d,]+)\s*bytes', content)
+    if ind_lost:
+        bytes_lost = int(ind_lost.group(1).replace(',', ''))
+        if bytes_lost > 0:
+            errors.append(f"indirectly lost: {bytes_lost} bytes")
+
+    err_summary = re.search(r'ERROR SUMMARY:\s*(\d+)\s*errors', content)
+    if err_summary:
+        err_count = int(err_summary.group(1))
+        if err_count > 0:
+            errors.append(f"ERROR SUMMARY: {err_count} errors")
+
+    if errors:
+        pytest.fail(
+            "Valgrind reported errors in stress test:\n"
+            + "\n".join(f"  {e}" for e in errors)
+            + f"\n\nFull valgrind log: {log_path}\n"
+            + content[:4096]
+        )
+
+
 def _run_sighup_stress_test(
     rinetd_path: str,
     num_pairs: int,
@@ -663,6 +707,7 @@ def _run_sighup_stress_test(
     tmp_path,
     write_fn,
     config_ext: str,
+    use_valgrind: bool = False,
 ) -> None:
     """
     Core SIGHUP stress test implementation shared by both config-format variants.
@@ -737,10 +782,24 @@ def _run_sighup_stress_test(
         # freezing the single-threaded libuv event loop for the entire test.
         rinetd_stdout_path = str(tmp_path / "rinetd-uv.stdout.txt")
         rinetd_stderr_path = str(tmp_path / "rinetd-uv.stderr.txt")
+        valgrind_log_path = str(tmp_path / "valgrind.log") if use_valgrind else None
+
+        cmd = []
+        if use_valgrind:
+            cmd.extend([
+                "valgrind",
+                "--leak-check=full",
+                "--show-leak-kinds=definite,indirect",
+                "--track-fds=yes",
+                "--error-exitcode=1",
+                f"--log-file={valgrind_log_path}",
+            ])
+        cmd.extend([rinetd_path, "-f", "-c", config_file])
+
         with open(rinetd_stdout_path, "w") as _stdout_fh, \
              open(rinetd_stderr_path, "w") as _stderr_fh:
             proc = subprocess.Popen(
-                [rinetd_path, "-f", "-c", config_file],
+                cmd,
                 stdout=_stdout_fh,
                 stderr=_stderr_fh,
             )
@@ -753,8 +812,12 @@ def _run_sighup_stress_test(
         os.rename(rinetd_stderr_path, rinetd_stderr_final)
         rinetd_stdout_path = rinetd_stdout_final
         rinetd_stderr_path = rinetd_stderr_final
-        print(f"\n  rinetd PID {rinetd_pid}  stdout→{rinetd_stdout_path}  stderr→{rinetd_stderr_path}")
-        time.sleep(0.3)
+        if use_valgrind:
+            print(f"\n  rinetd PID {rinetd_pid}  stdout→{rinetd_stdout_path}  stderr→{rinetd_stderr_path}  valgrind→{valgrind_log_path}")
+        else:
+            print(f"\n  rinetd PID {rinetd_pid}  stdout→{rinetd_stdout_path}  stderr→{rinetd_stderr_path}")
+        # Valgrind needs extra time to instrument the process before it binds ports
+        time.sleep(1.0 if use_valgrind else 0.3)
         if proc.poll() is not None:
             with open(rinetd_stderr_path) as _fh:
                 _err = _fh.read()
@@ -895,6 +958,14 @@ def _run_sighup_stress_test(
         if _stderr:
             print(f"\n[rinetd stderr ({rinetd_stderr_path}, first 4 KB)]:\n{_stderr[:4096]}")
 
+        # Phase 10b: check valgrind log (rinetd has terminated, log is complete)
+        if use_valgrind and valgrind_log_path:
+            if os.path.exists(valgrind_log_path):
+                with open(valgrind_log_path) as _fh:
+                    _vg = _fh.read()
+                print(f"\n[valgrind ({valgrind_log_path}, first 4 KB)]:\n{_vg[:4096]}")
+            _check_valgrind_log(valgrind_log_path)
+
         # Phase 11: extract cycling results
         reload_count, cycling_results = cycle_result_box[0] or (0, [])
 
@@ -981,6 +1052,16 @@ def _run_sighup_stress_test(
 
 
 # ============================================================
+# Fixtures
+# ============================================================
+
+@pytest.fixture
+def use_valgrind(request):
+    """Return True when the test session was started with --valgrind."""
+    return request.config.getoption("--valgrind", default=False)
+
+
+# ============================================================
 # Test functions – one per config format
 # ============================================================
 
@@ -992,7 +1073,7 @@ def _run_sighup_stress_test(
     pytest.param(100, False),
     pytest.param(500, False, marks=pytest.mark.slow),
 ])
-def test_stress_sighup_reload_legacy(rinetd_path, num_pairs, is_quick, tmp_path):
+def test_stress_sighup_reload_legacy(rinetd_path, num_pairs, is_quick, tmp_path, use_valgrind):
     """
     SIGHUP stress test using legacy .conf configuration format.
 
@@ -1000,7 +1081,7 @@ def test_stress_sighup_reload_legacy(rinetd_path, num_pairs, is_quick, tmp_path)
     """
     _run_sighup_stress_test(
         rinetd_path, num_pairs, is_quick, tmp_path,
-        _write_legacy_config, "conf",
+        _write_legacy_config, "conf", use_valgrind,
     )
 
 
@@ -1012,7 +1093,7 @@ def test_stress_sighup_reload_legacy(rinetd_path, num_pairs, is_quick, tmp_path)
     pytest.param(100, False),
     pytest.param(500, False, marks=pytest.mark.slow),
 ])
-def test_stress_sighup_reload_yaml(rinetd_path, num_pairs, is_quick, tmp_path):
+def test_stress_sighup_reload_yaml(rinetd_path, num_pairs, is_quick, tmp_path, use_valgrind):
     """
     SIGHUP stress test using YAML configuration format.
 
@@ -1020,5 +1101,5 @@ def test_stress_sighup_reload_yaml(rinetd_path, num_pairs, is_quick, tmp_path):
     """
     _run_sighup_stress_test(
         rinetd_path, num_pairs, is_quick, tmp_path,
-        _write_yaml_config, "yaml",
+        _write_yaml_config, "yaml", use_valgrind,
     )
