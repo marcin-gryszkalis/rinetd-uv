@@ -1,3 +1,30 @@
+## Version 2.1.3 (2026-03-06)
+
+**TCP connect timeout and some random bugs**
+
+ * add `global.connect_timeout` and per-rule timeouts
+ * accept FQDN with trailing dot
+ * make `getaddrinfo` non-blocking if possible
+ * honor `SYSCONFDIR` (`/etc`)
+ * resolve possible config clash (both .conf and .yaml existing)
+ * number of fixes suggested by different SAST runs and different reviews by LLMs
+   - fix IPv6 comparison code
+   - switch timers to 64-bit
+   - add alloc checks here and there
+   - use `uv_freeaddrinfo` (consistency)
+   - proper cleanup for UDP connections on HUP reload
+   - make `get_gmtimeoff` use provided buffer
+   - compile-time check of `LogEventCode` in log calls
+   - compatibility: remove GLOB_TILDE, use GLOB_BRACE where available
+   - additional fixes in memory cleanup to make valgrind happy
+   - safe `atoi` using `strtol` (in config parsing)
+   - off-by-one in `abstract_name`
+   - use `size_t` where applicable
+   - fix possible stats overflow in very long runs
+   - force init rng (use by loadbalancer)
+   - fix possible use-after-free in yaml parser behavior on reload
+ * test suite: more tests (including better stress test, log testing)
+
 ## Version 2.1.2 (2026-02-17)
 
 **Support global access rules in YAML configuration**
