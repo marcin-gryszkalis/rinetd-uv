@@ -1,7 +1,8 @@
 .auto
 .deps
 .dirstamp
-Makefile
+src/Makefile
+/Makefile
 Makefile.in
 stamp-*
 aclocal.m4
