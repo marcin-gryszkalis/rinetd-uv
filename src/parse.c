@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #define YYRULECOUNT 68
-#line 10 "src/parse.peg"
+#line 10 "parse.peg"
 
 #if HAVE_CONFIG_H
 #   include <config.h>
@@ -2537,7 +2537,7 @@ YY_PARSE(yycontext *) YYRELEASE(yycontext *yyctx)
 }
 
 #endif
-#line 445 "src/parse.peg"
+#line 445 "parse.peg"
 
 
 /* Utility functions for include directive support */

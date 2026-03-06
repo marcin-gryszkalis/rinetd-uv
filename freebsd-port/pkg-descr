@@ -20,5 +20,3 @@ Key features:
 
 Maintains backward compatibility with the original rinetd configuration
 format.
-
-WWW: https://github.com/marcin-gryszkalis/rinetd-uv
